@@ -1,0 +1,7 @@
+# Local dependencies
+
+-e /path/to/your/RL-SCS/RL-SCS  # update with you local path to the lib
+
+
+
+# Project dependecies
