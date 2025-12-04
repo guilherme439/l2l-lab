@@ -2,7 +2,8 @@
 
 requirements.txt
 
-models/
+models/*
+!models/__init__.py
 
 # vscode
 .vscode/
