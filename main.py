@@ -1,16 +1,20 @@
+import warnings
+
 import ray
 
-from rllib.train_scs_rllib import SCSTrainer
+from rllib.SCSTrainer import SCSTrainer
 
-import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+
+CONFIG_PATH = "configs/files/training_config.yml"
+
 def main():
-    ray.init(ignore_reinit_error=True, num_cpus=4)
+    ray.init(ignore_reinit_error=True)
     
     try:
-        trainer = SCSTrainer(debug=False)
-        trainer.train_ppo(num_iterations=500, model_name="test")
+        trainer = SCSTrainer(CONFIG_PATH)
+        trainer.train()
         
     except Exception as e:
         print(f"\n✗ Error: {e}")

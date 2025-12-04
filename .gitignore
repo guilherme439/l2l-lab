@@ -5,6 +5,9 @@ requirements.txt
 models/*
 !models/__init__.py
 
+configs/files/*
+!configs/files/training_config.example.yml
+
 # vscode
 .vscode/
 

@@ -1,6 +1,6 @@
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,33 +12,42 @@ from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from ray.tune.registry import register_env
 from rl_scs import SCS_Game
 
-from neural_networks.architectures.dual_head import ResNet
+from configs.definition.TrainingConfig import TrainingConfig
+from neural_networks.architectures.dual_head.ConvNet import ConvNet
+from neural_networks.architectures.dual_head.ResNet import ResNet
+from neural_networks.architectures.dual_head.MLPNet import MLPNet
 
-from .dual_head_torch_model import DualHeadRLModule
+from .DualHeadRLModule import DualHeadRLModule
 
-DEFAULT_CONFIG_PATH = "/home/guilherme/Documents/Code/Personal/RL-SCS/RL-SCS/src/example_configurations/mirrored_config_5.yml"
 ENV_NAME = "scs_game"
 MODELS_DIR = Path("models")
+
+NETWORK_CLASSES = {
+    "ResNet": ResNet,
+    "ConvNet": ConvNet,
+    "MLPNet": MLPNet,
+}
 
 
 class SCSTrainer:
     
-    def __init__(self, config_path: str = DEFAULT_CONFIG_PATH, debug: bool = False):
-        self.config_path = config_path
-        self.debug = debug
+    def __init__(self, config_path: Union[str, Path]):
+        self.config = TrainingConfig.from_yaml(config_path)
         self.algo = None
         self.metrics: Dict[str, List] = {}
         self.current_model_dir: Optional[Path] = None
         self._register_env()
     
     def _register_env(self) -> None:
+        game_config = self.config.game_config
+        debug = self.config.debug
+        
         def env_creator(config: Dict):
-            game_config = config.get("game_config", self.config_path)
             env = SCS_Game(
                 game_config,
                 action_mask_location="obs",
                 obs_space_format="channels_first",
-                debug=self.debug,
+                debug=debug,
             )
             env.simulation_mode = False
             return PettingZooEnv(env)
@@ -47,7 +56,7 @@ class SCSTrainer:
     
     def _get_spaces(self):
         env = SCS_Game(
-            self.config_path,
+            self.config.game_config,
             action_mask_location="obs",
             obs_space_format="channels_first",
         )
@@ -56,29 +65,45 @@ class SCSTrainer:
         act_space = wrapped.action_space["player_0"]
         return obs_space, act_space
     
-    def _setup_model_dir(self, model_name: str) -> Path:
+    def _setup_model_dir(self) -> Path:
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        model_dir = MODELS_DIR / f"rllib_ppo_{model_name}"
+        model_dir = MODELS_DIR / f"rllib_{self.config.algorithm}_{self.config.name}"
         model_dir.mkdir(parents=True, exist_ok=True)
         (model_dir / "graphs").mkdir(exist_ok=True)
         self.current_model_dir = model_dir
         return model_dir
     
+    def _get_network_class(self):
+        arch = self.config.network.architecture
+        if arch not in NETWORK_CLASSES:
+            raise ValueError(f"Unknown architecture: {arch}. Available: {list(NETWORK_CLASSES.keys())}")
+        return NETWORK_CLASSES[arch]
     
-    def train_ppo(self, num_iterations: int, model_name: str) -> None:
+    def train(self) -> None:
+        if self.config.algorithm != "ppo":
+            raise ValueError(f"Unsupported algorithm: {self.config.algorithm}")
+        self._train_ppo()
+    
+    def _train_ppo(self) -> None:
+        cfg = self.config
+        algo_cfg = cfg.algorithm_config
+        
         print("\n" * 5)
         print("=" * 70)
         print("Training SCS_Game with PPO (new API stack)")
-        print(f"  Iterations: {num_iterations}, Debug: {self.debug}")
+        print(f"  Name: {cfg.name}")
+        print(f"  Iterations: {cfg.iterations}")
+        print(f"  Debug: {cfg.debug}")
         print("=" * 70)
         
-        self._setup_model_dir(model_name)
-        
+        self._setup_model_dir()
         obs_space, act_space = self._get_spaces()
         
         print(f"\nEnvironment Info:")
         print(f"  Observation space: {obs_space}")
         print(f"  Action space: {act_space}")
+        
+        network_class = self._get_network_class()
         
         config = (
             PPOConfig()
@@ -87,14 +112,15 @@ class SCSTrainer:
                 disable_env_checking=True,
             )
             .env_runners(
-                num_env_runners=0,
-                rollout_fragment_length=32,
+                num_env_runners=algo_cfg.num_env_runners,
+                rollout_fragment_length=algo_cfg.rollout_fragment_length,
             )
             .training(
-                train_batch_size_per_learner=256,
-                minibatch_size=32,
-                lr=2e-4,
-                gamma=0.99,
+                train_batch_size_per_learner=algo_cfg.train_batch_size_per_learner,
+                minibatch_size=algo_cfg.minibatch_size,
+                lr=algo_cfg.lr,
+                gamma=algo_cfg.gamma,
+                entropy_coeff=algo_cfg.entropy_coeff,
             )
             .multi_agent(
                 policies={"shared_policy"},
@@ -108,13 +134,8 @@ class SCSTrainer:
                             observation_space=obs_space,
                             action_space=act_space,
                             model_config={
-                                "network_class": ResNet,
-                                "network_kwargs": {
-                                    "num_filters": 64,
-                                    "num_blocks": 4,
-                                    "batch_norm": False,
-                                    "hex": False,
-                                },
+                                "network_class": network_class,
+                                "network_kwargs": cfg.network.to_kwargs(),
                             },
                         ),
                     },
@@ -122,7 +143,7 @@ class SCSTrainer:
             )
             .framework("torch")
             .resources(num_gpus=0)
-            .debugging(log_level="DEBUG" if self.debug else "WARN")
+            .debugging(log_level="DEBUG" if cfg.debug else "WARN")
         )
         
         print("\nBuilding PPO algorithm...\n\n")
@@ -136,10 +157,10 @@ class SCSTrainer:
             "win_rate_vs_random": [],
         }
         
-        print(f"\nStarting training for {num_iterations} iterations...")
+        print(f"\nStarting training for {cfg.iterations} iterations...")
         print("-" * 70)
         
-        for i in range(num_iterations):
+        for i in range(cfg.iterations):
             result = self.algo.train()
             
             env_runners = result.get("env_runners", {})
@@ -147,8 +168,8 @@ class SCSTrainer:
             total_loss = result.get("learners", {}).get("shared_policy", {}).get("total_loss", 0) or 0
 
             win_rate = None
-            if (i + 1) % 20 == 0:
-                win_rate = self.evaluate_vs_random(num_games=50)
+            if (i + 1) % cfg.eval_interval == 0:
+                win_rate = self.evaluate_vs_random(num_games=cfg.eval_games)
             
             self.metrics["iteration"].append(i + 1)
             self.metrics["episode_len_mean"].append(episode_len_mean)
@@ -156,24 +177,24 @@ class SCSTrainer:
             self.metrics["win_rate_vs_random"].append(win_rate)
             
             wr_str = f" => WinRate: {win_rate:.1%}" if win_rate is not None else ""
-            print(f"{i+1:3d}/{num_iterations} | EpLen: {episode_len_mean:6.1f} {wr_str}")
+            print(f"{i+1:8d}/{cfg.iterations} | EpLen: {episode_len_mean:6.1f} {wr_str}")
+            
+            if (i + 1) % cfg.plot_interval == 0:
+                self.plot_progress()
         
         print("-" * 70)
         print("✓ PPO Training completed!")
         
-        self.save_model(model_name)
-        
+        self.save_model()
         self.algo.stop()
         self.plot_progress()
     
-    def save_model(self, model_name: str) -> Path:
+    def save_model(self) -> Path:
         if self.algo is None:
             raise RuntimeError("No algorithm to save. Train first.")
         
-        model_dir = MODELS_DIR / f"rllib_ppo_{model_name}"
-        if not model_dir.exists():
-            raise RuntimeError(f"Model directory not found: {model_dir}. Call _setup_model_dir first.")
-        self.current_model_dir = model_dir
+        if self.current_model_dir is None:
+            raise RuntimeError("No model directory.")
         
         rl_module = self.algo.get_module("shared_policy")
         checkpoint = {
@@ -183,16 +204,16 @@ class SCSTrainer:
             "model_config": rl_module.model_config,
         }
         
-        torch.save(checkpoint, model_dir / "model.cp")
-        self.algo.save_to_path(str((model_dir / "algo_checkpoint").absolute()))
+        torch.save(checkpoint, self.current_model_dir / "model.cp")
+        self.algo.save_to_path(str((self.current_model_dir / "algo_checkpoint").absolute()))
         
-        print(f"✓ Model saved to: {model_dir}")
-        return model_dir
+        print(f"✓ Model saved to: {self.current_model_dir}")
+        return self.current_model_dir
     
     def load_model(self, model_name: str) -> None:
         from ray.rllib.algorithms.ppo import PPO
         
-        model_dir = MODELS_DIR / f"rllib_ppo_{model_name}"
+        model_dir = MODELS_DIR / f"rllib_{self.config.algorithm}_{model_name}"
         if not model_dir.exists():
             raise FileNotFoundError(f"Model not found: {model_dir}")
         
@@ -201,7 +222,7 @@ class SCSTrainer:
         print(f"✓ Algorithm loaded from: {model_dir}")
     
     def load_backbone_weights(self, model_name: str) -> Dict[str, Any]:
-        model_dir = MODELS_DIR / f"rllib_ppo_{model_name}"
+        model_dir = MODELS_DIR / f"rllib_{self.config.algorithm}_{model_name}"
         checkpoint_path = model_dir / "model.cp"
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
@@ -210,8 +231,6 @@ class SCSTrainer:
         print(f"✓ Backbone weights loaded from: {checkpoint_path}")
         return checkpoint
 
-
-    
     def evaluate_vs_random(self, num_games: int = 10) -> float:
         if self.algo is None:
             print("No algorithm trained yet!")
@@ -222,7 +241,7 @@ class SCSTrainer:
         
         wins = 0
         env = SCS_Game(
-            self.config_path,
+            self.config.game_config,
             action_mask_location="obs",
             obs_space_format="channels_first",
         )
@@ -275,7 +294,7 @@ class SCSTrainer:
         ax.plot(iterations, self.metrics["episode_len_mean"], "g-", linewidth=1.5)
         ax.set_xlabel("Iteration")
         ax.set_ylabel("Episode Length Mean")
-        ax.set_title("Episode Length (longer = better play)")
+        ax.set_title("Episode Length")
         ax.grid(True, alpha=0.3)
         plt.tight_layout()
         plt.savefig(graphs_dir / "episode_length.png", dpi=150, bbox_inches="tight")
@@ -320,4 +339,4 @@ class SCSTrainer:
         plt.savefig(graphs_dir / "episode_length_dist.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
         
-        print(f"\n📊 Graphs saved to: {graphs_dir}")
+        print(f"\n📊 Graphs saved to: {graphs_dir}\n")

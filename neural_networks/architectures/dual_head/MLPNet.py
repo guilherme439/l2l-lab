@@ -1,19 +1,11 @@
-import numpy as np
-import hexagdly
-import torch
-import math
-import time
-import os
-
 from torch import nn
 
 
-
-class MLP_Network(nn.Module):
+class MLPNet(nn.Module):
 
     def __init__(self, out_features, hidden_layers=4, neurons_per_layer=64):
 
-        super(MLP_Network, self).__init__()
+        super(MLPNet, self).__init__()
         self.recurrent=False
 
         # General Module
