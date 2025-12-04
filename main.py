@@ -10,7 +10,7 @@ def main():
     
     try:
         trainer = SCSTrainer(debug=False)
-        trainer.train_ppo(num_iterations=300, model_name="test")
+        trainer.train_ppo(num_iterations=500, model_name="test")
         
     except Exception as e:
         print(f"\n✗ Error: {e}")

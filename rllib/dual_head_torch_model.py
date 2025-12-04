@@ -46,15 +46,12 @@ class DualHeadRLModule(TorchRLModule, ValueFunctionAPI):
             **network_kwargs,
         )
     
-    def _forward(
-        self, batch: Dict[str, TensorType], **kwargs
-    ) -> Dict[str, TensorType]:
+    def _forward(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
         obs_dict = batch[Columns.OBS]
         obs = obs_dict["observation"].float()
         action_mask = obs_dict["action_mask"]
         
         policy_logits, value = self.backbone(obs)
-        
         policy_logits = policy_logits.reshape(policy_logits.shape[0], -1)
         
         inf_mask = torch.clamp(torch.log(action_mask.float() + 1e-10), min=FLOAT_MIN)
@@ -63,33 +60,22 @@ class DualHeadRLModule(TorchRLModule, ValueFunctionAPI):
         if value.dim() > 1:
             value = value.squeeze(-1)
         
-        return {
-            Columns.ACTION_DIST_INPUTS: policy_logits,
-            Columns.VF_PREDS: value,
-        }
+        return {Columns.ACTION_DIST_INPUTS: policy_logits, Columns.VF_PREDS: value}
     
     @override(TorchRLModule)
-    def _forward_inference(
-        self, batch: Dict[str, TensorType], **kwargs
-    ) -> Dict[str, TensorType]:
+    def _forward_inference(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
         return self._forward(batch, **kwargs)
     
     @override(TorchRLModule)
-    def _forward_exploration(
-        self, batch: Dict[str, TensorType], **kwargs
-    ) -> Dict[str, TensorType]:
+    def _forward_exploration(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
         return self._forward(batch, **kwargs)
     
     @override(TorchRLModule)
-    def _forward_train(
-        self, batch: Dict[str, TensorType], **kwargs
-    ) -> Dict[str, TensorType]:
+    def _forward_train(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
         return self._forward(batch, **kwargs)
     
     @override(ValueFunctionAPI)
-    def compute_values(
-        self, batch: Dict[str, TensorType], embeddings: Any = None
-    ) -> TensorType:
+    def compute_values(self, batch: Dict[str, TensorType], embeddings: Any = None) -> TensorType:
         obs_dict = batch[Columns.OBS]
         if isinstance(obs_dict, dict):
             obs = obs_dict["observation"].float()
