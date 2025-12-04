@@ -2,12 +2,12 @@
 Adapted from the Deepthinking repository.
 """
 import math
-import torch
-import hexagdly
 
+import hexagdly
+import torch
 from torch import nn
 
-from .blocks import *
+from .modules.blocks import *
 
 # Ignore statemenst for pylint:
 #     Too many branches (R0912), Too many statements (R0915), No member (E1101),

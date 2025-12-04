@@ -1,13 +1,13 @@
-import numpy as np
-import hexagdly
-import torch
 import math
-import time
 import os
+import time
 
+import hexagdly
+import numpy as np
+import torch
 from torch import nn
 
-from .blocks import * 
+from .modules.blocks import *
 
 
 class ResNet(nn.Module):

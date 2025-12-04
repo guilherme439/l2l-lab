@@ -1,13 +1,8 @@
-import numpy as np
 import hexagdly
-import torch
-import math
-import time
-import os
-
 from torch import nn
 
-from .blocks import *
+from .modules.blocks import *
+
 
 class ConvNet(nn.Module):
 
