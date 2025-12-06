@@ -10,7 +10,7 @@ from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from ray.tune.registry import register_env
-from rl_scs import SCS_Game
+from rl_scs.SCS_Game import SCS_Game
 
 from configs.definition.TrainingConfig import TrainingConfig
 from neural_networks.architectures.dual_head.ConvNet import ConvNet
@@ -90,7 +90,7 @@ class SCSTrainer:
         
         print("\n" * 5)
         print("=" * 70)
-        print("Training SCS_Game with PPO (new API stack)")
+        print(f"Training {ENV_NAME.capitalize()} with {cfg.algorithm.capitalize()}")
         print(f"  Name: {cfg.name}")
         print(f"  Iterations: {cfg.iterations}")
         print(f"  Debug: {cfg.debug}")
