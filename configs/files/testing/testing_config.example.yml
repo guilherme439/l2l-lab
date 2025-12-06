@@ -1,0 +1,5 @@
+model_name: "example"
+checkpoint_1: "model_iter_100.cp"
+checkpoint_2: "model_iter_200.cp"
+game_config: "/path/to/config.yml"
+num_games: 1

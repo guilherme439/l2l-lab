@@ -1,24 +1,24 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Union
+from typing import Union
 
 import yaml
 
-from .algorithms.PPOConfig import PPOConfig
+from .AlgorithmConfig import AlgorithmConfig
 from .NetworkConfig import NetworkConfig
 
 
 @dataclass
 class TrainingConfig:
     name: str
-    iterations: int
-    algorithm: Literal["ppo"] = "ppo"
-    algorithm_config: PPOConfig = field(default_factory=PPOConfig)
-    network: NetworkConfig = field(default_factory=NetworkConfig)
+    algorithm: AlgorithmConfig
+    network: NetworkConfig
     game_config: str = ""
     eval_interval: int = 20
     eval_games: int = 50
     plot_interval: int = 50
+    checkpoint_interval: int = 100
+    continue_training: bool = False
     debug: bool = False
     
     @classmethod
@@ -26,14 +26,21 @@ class TrainingConfig:
         with open(path, "r") as f:
             data = yaml.safe_load(f)
         
-        algo_data = data.pop("algorithm_config", {})
-        algo_config = PPOConfig(**algo_data)
+        algo_data = data.pop("algorithm", {})
+        algo_config = AlgorithmConfig(
+            name=algo_data.get("name"),
+            iterations=algo_data.get("iterations"),
+            config=algo_data.get("config", {}) or {},
+        )
         
         network_data = data.pop("network", {})
-        network_config = NetworkConfig(**network_data)
+        network_config = NetworkConfig(
+            architecture=network_data.pop("architecture"),
+            kwargs=network_data,
+        )
         
         return cls(
-            algorithm_config=algo_config,
+            algorithm=algo_config,
             network=network_config,
             **data,
         )

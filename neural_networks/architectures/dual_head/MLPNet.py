@@ -1,5 +1,8 @@
 from torch import nn
 
+from .modules.blocks import *
+from .modules.value_heads import *
+from .modules.policy_heads import *
 
 class MLPNet(nn.Module):
 
@@ -54,14 +57,17 @@ class MLPNet(nn.Module):
         
 
 
-    def forward(self, x):
+    def forward_trunk(self, x):
+        return self.general_module(x)
 
-        x = self.general_module(x)
-        
-        policy = self.policy_head(x)
-        value = self.value_head(x)
-        
+    def forward_heads(self, embeddings):
+        policy = self.policy_head(embeddings)
+        value = self.value_head(embeddings)
         return policy, value
+
+    def forward(self, x):
+        embeddings = self.forward_trunk(x)
+        return self.forward_heads(embeddings)
     
 
 

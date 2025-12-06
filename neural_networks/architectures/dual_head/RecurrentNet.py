@@ -1,13 +1,14 @@
 """ 
 Adapted from the Deepthinking repository.
 """
-import math
 
 import hexagdly
 import torch
 from torch import nn
 
 from .modules.blocks import *
+from .modules.value_heads import *
+from .modules.policy_heads import *
 
 # Ignore statemenst for pylint:
 #     Too many branches (R0912), Too many statements (R0915), No member (E1101),
@@ -15,11 +16,11 @@ from .modules.blocks import *
 # pylint: disable=R0912, R0915, E1101, E1102, C0103, W0702, R0914
 
 
+# FIXME: Have all the networks implement an interface with a ".recurrent()" method.
 class RecurrentNet(nn.Module):
 
     def __init__(self, in_channels, policy_channels, num_filters=256, num_blocks=2, recall=True, policy_head="conv", value_head="reduce", value_activation="tanh", hex=True):
         super().__init__()
-        self.recurrent = True
         
         self.recall = recall
         self.num_filters = int(num_filters)
@@ -58,18 +59,6 @@ class RecurrentNet(nn.Module):
         match value_head:
             case "reduce":
                 self.value_head = Reduce_ValueHead(num_filters, activation=value_activation, hex=hex)
-            case "depth":
-                self.value_head = Depth_ValueHead(num_filters, activation=value_activation, hex=hex)
-            case "combined":
-                self.value_head = Combined_ValueHead(num_filters, activation=value_activation, hex=hex)
-            case "separable":
-                self.value_head = Separable_ValueHead(num_filters, activation=value_activation, hex=hex)
-            case "reverse":
-                self.value_head = Reverse_ValueHead(num_filters, activation=value_activation, hex=hex)
-            case "rawsep":
-                self.value_head = RawSeparable_ValueHead(num_filters, activation=value_activation, hex=hex)
-            case "strange":
-                self.value_head = Strange_ValueHead(num_filters, activation=value_activation, hex=hex)
             case "dense":
                 self.value_head = Dense_ValueHead(num_filters)
             case _:

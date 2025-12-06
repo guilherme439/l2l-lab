@@ -9,3 +9,4 @@
 ray[default,rllib]~=2.50
 matplotlib~=3.9
 hexagdly~=2.0
+snakeviz~=2.2

@@ -5,11 +5,18 @@ requirements.txt
 models/*
 !models/__init__.py
 
-configs/files/*
-!configs/files/training_config.example.yml
+configs/files/training/*
+!configs/files/training/training_config.example.yml
+configs/files/testing/*
+!configs/files/testing/testing_config.example.yml
+
+profiling/*
 
 # vscode
 .vscode/
+
+# windsurf
+.windsurf/
 
 ########################################################################
 

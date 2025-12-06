@@ -1,7 +1,6 @@
 from typing import Any, Dict, Type, TypedDict
 
 import gymnasium as gym
-import torch
 from ray.rllib.core.columns import Columns
 from ray.rllib.core.rl_module.apis.value_function_api import ValueFunctionAPI
 from ray.rllib.core.rl_module.torch.torch_rl_module import TorchRLModule
@@ -49,18 +48,33 @@ class DualHeadRLModule(TorchRLModule, ValueFunctionAPI):
     def _forward(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
         obs_dict = batch[Columns.OBS]
         obs = obs_dict["observation"].float()
+
         action_mask = obs_dict["action_mask"]
-        
+        invalid = (action_mask == 0)
         policy_logits, value = self.backbone(obs)
         policy_logits = policy_logits.reshape(policy_logits.shape[0], -1)
-        
-        inf_mask = torch.clamp(torch.log(action_mask.float() + 1e-10), min=FLOAT_MIN)
-        policy_logits = policy_logits + inf_mask
+        policy_logits = policy_logits.masked_fill(invalid, FLOAT_MIN)
         
         if value.dim() > 1:
             value = value.squeeze(-1)
         
         return {Columns.ACTION_DIST_INPUTS: policy_logits, Columns.VF_PREDS: value}
+
+    def _forward_policy_only(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
+        obs_dict = batch[Columns.OBS]
+        obs = obs_dict["observation"].float()
+        action_mask = obs_dict["action_mask"]
+        invalid = (action_mask == 0)
+
+        embeddings = self.backbone.forward_trunk(obs)
+        policy_logits = self.backbone.policy_head(embeddings)
+        policy_logits = policy_logits.reshape(policy_logits.shape[0], -1)
+        policy_logits = policy_logits.masked_fill(invalid, FLOAT_MIN)
+        
+        return {
+            Columns.ACTION_DIST_INPUTS: policy_logits,
+            Columns.EMBEDDINGS: embeddings
+        }
     
     @override(TorchRLModule)
     def _forward_inference(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
@@ -72,17 +86,16 @@ class DualHeadRLModule(TorchRLModule, ValueFunctionAPI):
     
     @override(TorchRLModule)
     def _forward_train(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
-        return self._forward(batch, **kwargs)
+        return self._forward_policy_only(batch, **kwargs)
     
     @override(ValueFunctionAPI)
     def compute_values(self, batch: Dict[str, TensorType], embeddings: Any = None) -> TensorType:
-        obs_dict = batch[Columns.OBS]
-        if isinstance(obs_dict, dict):
-            obs = obs_dict["observation"].float()
+        if embeddings is not None:
+            value = self.backbone.value_head(embeddings)
         else:
-            obs = obs_dict.float()
-        
-        _, value = self.backbone(obs)
+            obs_dict = batch[Columns.OBS]
+            obs = obs_dict["observation"].float()
+            _, value = self.backbone(obs)
         
         if value.dim() > 1:
             value = value.squeeze(-1)

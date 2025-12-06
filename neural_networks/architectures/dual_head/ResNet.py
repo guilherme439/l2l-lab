@@ -1,13 +1,10 @@
-import math
-import os
-import time
 
 import hexagdly
-import numpy as np
-import torch
 from torch import nn
 
 from .modules.blocks import *
+from .modules.value_heads import *
+from .modules.policy_heads import *
 
 
 class ResNet(nn.Module):
@@ -15,7 +12,6 @@ class ResNet(nn.Module):
     def __init__(self, in_channels, policy_channels, num_filters=256, num_blocks=4, batch_norm=False, policy_head="conv", value_head="reduce", value_activation="tanh", hex=True):
 
         super().__init__()
-        self.recurrent = False
 
         # Input Module
         input_layers = []
@@ -59,15 +55,18 @@ class ResNet(nn.Module):
     
 
 
-    def forward(self, x):
+    def forward_trunk(self, x):
         projection = self.input_block(x)
+        return self.residual_blocks(projection)
 
-        processed_data = self.residual_blocks(projection)
-
-        policy = self.policy_head(processed_data)
-        value = self.value_head(processed_data)
-        
+    def forward_heads(self, embeddings):
+        policy = self.policy_head(embeddings)
+        value = self.value_head(embeddings)
         return policy, value
+
+    def forward(self, x):
+        embeddings = self.forward_trunk(x)
+        return self.forward_heads(embeddings)
     
 
 
