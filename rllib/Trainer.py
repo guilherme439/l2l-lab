@@ -85,6 +85,41 @@ class Trainer:
             else:
                 print(f"    {key}: {space}")
     
+    def _init_metrics(self) -> None:
+        self.metrics = {
+            "iteration": [],
+            "wins_vs_random": [],
+            "losses_vs_random": [],
+            "draws_vs_random": [],
+        }
+        if self.config.eval_vs_previous:
+            self.metrics["wins_vs_previous"] = []
+            self.metrics["losses_vs_previous"] = []
+            self.metrics["draws_vs_previous"] = []
+    
+    def _has_nan_metrics(self, metrics: Dict[str, Any]) -> bool:
+        for value in metrics.values():
+            if value is None:
+                continue
+            if isinstance(value, float) and (np.isnan(value) or np.isinf(value)):
+                return True
+        return False
+    
+    def _print_training_info(self, result: Dict[str, Any]) -> None:
+        learner_info = result.get("learners", {}).get("shared_policy", {})
+        env_runners = result.get("env_runners", {})
+        
+        timesteps = env_runners.get("num_env_steps_sampled_lifetime", 0)
+        curr_lr = learner_info.get("default_optimizer_learning_rate", None)
+        
+        print()
+        print("  ┌─ Training Info ─────────────────────────────")
+        print(f"  │ Timesteps: {timesteps:,}")
+        if curr_lr is not None:
+            print(f"  │ Learning Rate: {curr_lr:.2e}")
+        print("  └──────────────────────────────────────────────")
+        print()
+    
     def train(self) -> None:
         cfg = self.config
         algo_cfg = cfg.algorithm
@@ -110,28 +145,25 @@ class Trainer:
         rllib_config = algo_trainer.build_config(obs_space, act_space)
         
         if cfg.continue_training:
-            start_iteration = algo_trainer.load_checkpoint_for_continue(rllib_config, self.current_model_dir)
+            start_iteration, cp_data = algo_trainer.load_checkpoint_for_continue(
+                rllib_config, self.current_model_dir, target_iteration=cfg.continue_from_iteration
+            )
             self.algo = algo_trainer.algo
+            if cp_data and cp_data.metrics:
+                self.metrics = cp_data.metrics
+                print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint")
+            else:
+                self._init_metrics()
         else:
             start_iteration = 0
             print(f"\nBuilding {algo_cfg.name.upper()} algorithm...\n")
             self.algo = rllib_config.build_algo()
             algo_trainer.algo = self.algo
             print("\n✓ Algorithm built successfully!")
-        
-        self.metrics = {
-            "iteration": [],
-            "wins_vs_random": [],
-            "losses_vs_random": [],
-            "draws_vs_random": [],
-        }
-        if cfg.eval_vs_previous:
-            self.metrics["wins_vs_previous"] = []
-            self.metrics["losses_vs_previous"] = []
-            self.metrics["draws_vs_previous"] = []
+            self._init_metrics()
         
         previous_checkpoint: Optional[Path] = None
-        metrics_initialized = False
+        metrics_initialized = len(self.metrics.get("iteration", [])) > 0
         
         remaining_iterations = algo_cfg.iterations - start_iteration
         if remaining_iterations <= 0:
@@ -146,6 +178,14 @@ class Trainer:
         for i in range(start_iteration, algo_cfg.iterations):
             result = self.algo.train()
             metrics = algo_trainer.extract_metrics(result)
+            
+            if cfg.stop_on_nan and self._has_nan_metrics(metrics):
+                print(f"\n⚠️  NaN detected in metrics at iteration {i+1}!")
+                print("Saving checkpoint and stopping training...")
+                self.save_model(i)
+                self.algo.stop()
+                self.plot_progress()
+                break
             
             if not metrics_initialized:
                 for key in metrics.keys():
@@ -183,13 +223,16 @@ class Trainer:
             
             if (i + 1) % cfg.plot_interval == 0:
                 self.plot_progress()
-        
-        print("-" * 70)
-        print(f"✓ {algo_cfg.name.upper()} Training completed!")
-        
-        self.save_model(algo_cfg.iterations)
-        self.algo.stop()
-        self.plot_progress()
+            
+            if (i + 1) % cfg.info_interval == 0:
+                self._print_training_info(result)
+        else:
+            print("-" * 70)
+            print(f"✓ {algo_cfg.name.upper()} Training completed!")
+            
+            self.save_model(algo_cfg.iterations)
+            self.algo.stop()
+            self.plot_progress()
     
     def save_checkpoint(self, iteration: int) -> Path:
         if self.algo is None:
@@ -208,6 +251,7 @@ class Trainer:
             "action_space": rl_module.action_space,
             "model_config": rl_module.model_config,
             "iteration": iteration,
+            "metrics": self.metrics,
         }
         
         checkpoint_path = checkpoints_dir / f"model_iter_{iteration}.cp"
@@ -229,6 +273,7 @@ class Trainer:
             "action_space": rl_module.action_space,
             "model_config": rl_module.model_config,
             "iteration": iteration,
+            "metrics": self.metrics,
         }
         
         torch.save(checkpoint, self.current_model_dir / "model.cp")
@@ -281,5 +326,5 @@ class Trainer:
             raise RuntimeError("No model directory.")
         
         graphs_dir = self.current_model_dir / "graphs"
-        graphs.plot_metrics(graphs_dir, self.metrics)
+        graphs.plot_metrics(graphs_dir, self.metrics, self.config.eval_graph_split)
         print(f"\n📊 Graphs saved to: {graphs_dir}\n")

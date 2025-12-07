@@ -76,19 +76,19 @@ class PPOTrainer(BaseAlgorithmTrainer):
         )
         
         if cfg.use_curiosity:
-            return self._with_curiosity(config, obs_space, act_space)
+            return self._with_curiosity(config, cfg.curiosity_coeff, obs_space, act_space)
         return self._without_curiosity(config, obs_space, act_space)
     
     def _without_curiosity(self, config: PPOConfig, obs_space, act_space) -> PPOConfig:
         return config.rl_module(rl_module_spec=self.get_rl_module_spec(obs_space, act_space))
     
-    def _with_curiosity(self, config: PPOConfig, obs_space, act_space) -> PPOConfig:
+    def _with_curiosity(self, config: PPOConfig, curiosity_coeff: float, obs_space, act_space) -> PPOConfig:
         from .icm import build_icm_training_kwargs, build_icm_rl_module_kwargs
         
         base_spec = self.get_rl_module_spec(obs_space, act_space)
         return (
             config
-            .training(**build_icm_training_kwargs())
+            .training(**build_icm_training_kwargs(curiosity_coeff=curiosity_coeff))
             .rl_module(**build_icm_rl_module_kwargs(base_spec, obs_space, act_space))
         )
     

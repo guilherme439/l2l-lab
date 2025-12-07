@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import yaml
 
@@ -13,14 +13,19 @@ class TrainingConfig:
     name: str
     algorithm: AlgorithmConfig
     network: NetworkConfig
+    debug: bool = False
     game_config: str = ""
     eval_interval: int = 20
     eval_games: int = 50
     eval_vs_previous: bool = False
+    eval_graph_split: int = 500
     plot_interval: int = 50
+    info_interval: int = 100
     checkpoint_interval: int = 100
     continue_training: bool = False
-    debug: bool = False
+    continue_from_iteration: Optional[int] = None
+    stop_on_nan: bool = True
+    
     
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "TrainingConfig":

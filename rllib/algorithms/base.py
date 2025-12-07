@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, TYPE_CHECKING
+from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 
-import torch
 from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
 from rllib.DualHeadRLModule import DualHeadRLModule
+from rllib.checkpoint_utils import CheckpointData, load_checkpoint_data, trim_metrics_to_iteration
 
 if TYPE_CHECKING:
     from rllib.Trainer import Trainer
@@ -54,42 +54,37 @@ class BaseAlgorithmTrainer(ABC):
             },
         )
     
-    def load_checkpoint_for_continue(self, rllib_config, model_dir: Path) -> int:
+    def load_checkpoint_for_continue(
+        self, 
+        rllib_config, 
+        model_dir: Path,
+        target_iteration: Optional[int] = None,
+    ) -> Tuple[int, Optional[CheckpointData]]:
         algo_checkpoint_path = model_dir / "algo_checkpoint"
         if not algo_checkpoint_path.exists():
             print("\nNo existing checkpoint found. Starting fresh training...")
             print(f"\nBuilding {self.algorithm_name.upper()} algorithm...\n")
             self.algo = rllib_config.build_algo()
             print("\n✓ Algorithm built successfully!")
-            return 0
+            return 0, None
         
-        print("\nLoading algorithm from checkpoint for continued training...")
-        self.algo = self.load_from_checkpoint(algo_checkpoint_path)
+        print("\nContinuing training with current config...")
+        print(f"Building {self.algorithm_name.upper()} algorithm with new config...\n")
+        self.algo = rllib_config.build_algo()
+        print("\n✓ Algorithm built successfully!")
         
-        start_iteration = 0
-        latest_cp = self._get_latest_checkpoint(model_dir)
-        if latest_cp:
-            cp_data = torch.load(latest_cp, weights_only=False)
-            start_iteration = cp_data.get("iteration", 0)
+        print("Restoring weights from checkpoint...")
+        self.algo.restore_from_path(str(algo_checkpoint_path.absolute()))
+        print("✓ Weights restored from checkpoint")
+        
+        cp_data = load_checkpoint_data(model_dir, iteration=target_iteration)
+        start_iteration = cp_data.iteration if cp_data else 0
+        
+        if target_iteration is not None and cp_data and cp_data.metrics:
+            cp_data.metrics = trim_metrics_to_iteration(cp_data.metrics, start_iteration)
+            print(f"✓ Loaded checkpoint from iteration {start_iteration} (requested: {target_iteration})")
         else:
-            model_cp = model_dir / "model.cp"
-            if model_cp.exists():
-                cp_data = torch.load(model_cp, weights_only=False)
-                start_iteration = cp_data.get("iteration", 0)
+            print(f"✓ Resuming from iteration {start_iteration}")
         
-        print(f"✓ Resuming from iteration {start_iteration}")
-        return start_iteration
+        return start_iteration, cp_data
     
-    def _get_latest_checkpoint(self, model_dir: Path):
-        checkpoints_dir = model_dir / "checkpoints"
-        if not checkpoints_dir.exists():
-            return None
-        
-        checkpoints = list(checkpoints_dir.glob("model_iter_*.cp"))
-        if not checkpoints:
-            return None
-        
-        def get_iter(p: Path) -> int:
-            return int(p.stem.split("_")[-1])
-        
-        return max(checkpoints, key=get_iter)

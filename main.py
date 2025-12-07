@@ -9,7 +9,7 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-TRAINING_CONFIG_PATH = "configs/files/training/impala_training_config.yml"
+TRAINING_CONFIG_PATH = "configs/files/training/ppo_training_config.yml"
 TESTING_CONFIG_PATH = "configs/files/testing/testing_config.yml"
 PROFILE_OUTPUT_PATH = Path("profiling/profile_output.prof")
 

@@ -225,11 +225,11 @@ def build_icm_rl_module_spec(base_spec: MultiRLModuleSpec, obs_space, act_space)
     )
 
 
-def build_icm_training_kwargs() -> Dict[str, Any]:
+def build_icm_training_kwargs(curiosity_coeff: float = INTRINSIC_REWARD_COEFF) -> Dict[str, Any]:
     return {
         "learner_class": PPOLearnerWithICM,
         "learner_config_dict": {
-            "intrinsic_reward_coeff": INTRINSIC_REWARD_COEFF,
+            "intrinsic_reward_coeff": curiosity_coeff,
             "forward_loss_weight": FORWARD_LOSS_WEIGHT,
         },
     }
