@@ -6,7 +6,8 @@ models/*
 !models/__init__.py
 
 configs/files/training/*
-!configs/files/training/training_config.example.yml
+!configs/files/training/impala_training_config.example.yml
+!configs/files/training/ppo_training_config.example.yml
 configs/files/testing/*
 !configs/files/testing/testing_config.example.yml
 

@@ -9,18 +9,25 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-TRAINING_CONFIG_PATH = "configs/files/training/hex_training_config.yml"
+TRAINING_CONFIG_PATH = "configs/files/training/impala_training_config.yml"
 TESTING_CONFIG_PATH = "configs/files/testing/testing_config.yml"
 PROFILE_OUTPUT_PATH = Path("profiling/profile_output.prof")
 
 
 def train(config_path: str):
-    from rllib.SCSTrainer import SCSTrainer
+    from rllib.Trainer import Trainer
     
-    ray.init(ignore_reinit_error=True)
+    ray.init(
+        ignore_reinit_error=True,
+        _system_config={
+            "gcs_rpc_server_reconnect_timeout_s": 120,
+            "gcs_server_request_timeout_seconds": 120,
+        },
+        object_store_memory = 2 * 1024 * 1024 * 1024,  # Limit object store to 2GB
+    )
     
     try:
-        trainer = SCSTrainer(config_path)
+        trainer = Trainer(config_path)
         trainer.train()
         
     except Exception as e:
@@ -33,10 +40,10 @@ def train(config_path: str):
 
 
 def test(config_path: str):
-    from rllib.SCSTester import SCSTester
+    from rllib.Tester import Tester
     
     try:
-        tester = SCSTester(config_path)
+        tester = Tester(config_path)
         tester.test()
         
     except Exception as e:

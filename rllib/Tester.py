@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -14,7 +15,27 @@ from configs.definition.TestingConfig import TestingConfig
 MODELS_DIR = Path("models")
 
 
-class SCSTester:
+@dataclass
+class GameResults:
+    wins: int
+    losses: int
+    draws: int
+    total: int
+    
+    @property
+    def win_rate(self) -> float:
+        return self.wins / self.total if self.total > 0 else 0.0
+    
+    @property
+    def loss_rate(self) -> float:
+        return self.losses / self.total if self.total > 0 else 0.0
+    
+    @property
+    def draw_rate(self) -> float:
+        return self.draws / self.total if self.total > 0 else 0.0
+
+
+class Tester:
     
     def __init__(self, config_path: Union[str, Path]):
         self.config = TestingConfig.from_yaml(config_path)
@@ -140,15 +161,35 @@ class SCSTester:
         print("\n✓ Testing complete!")
 
     @staticmethod
-    def evaluate_vs_random(algo, game_config: str, num_games: int = 10) -> float:
-        if algo is None:
-            print("No algorithm trained yet!")
-            return 0.0
+    def evaluate_vs_checkpoint(algo, checkpoint_path: Path, game_config: str, num_games: int = 10) -> GameResults:
+        if algo is None or not checkpoint_path.exists():
+            return GameResults(0, 0, 0, 0)
+
+        checkpoint = torch.load(checkpoint_path, weights_only=False)
+        model_config = checkpoint["model_config"]
+        network_class = model_config["network_class"]
+        network_kwargs = model_config.get("network_kwargs", {})
+        
+        obs_space = checkpoint["observation_space"]
+        act_space = checkpoint["action_space"]
+        inner_obs_space = obs_space["observation"]
+        obs_shape = inner_obs_space.shape
+        in_channels = obs_shape[0]
+        rows, cols = obs_shape[1], obs_shape[2]
+        policy_channels = act_space.n // (rows * cols)
+        
+        opponent = network_class(
+            in_channels=in_channels,
+            policy_channels=policy_channels,
+            **network_kwargs,
+        )
+        opponent.load_state_dict(checkpoint["backbone_state_dict"])
+        opponent.eval()
 
         rl_module = algo.get_module("shared_policy")
         rl_module.eval()
 
-        wins = 0
+        wins, losses, draws = 0, 0, 0
         env = SCS_Game(
             game_config,
             action_mask_location="obs",
@@ -176,7 +217,70 @@ class SCSTester:
                         batch = {"obs": {"observation": obs_tensor, "action_mask": mask_tensor}}
                         output = rl_module.forward_inference(batch)
                         logits = output["action_dist_inputs"].squeeze(0)
-                        action = int(torch.argmax(logits).item())
+                        logits[action_mask == 0] = float("-inf")
+                        probs = torch.softmax(logits, dim=-1)
+                        action = int(torch.multinomial(probs, 1).item())
+                else:
+                    obs_tensor = torch.tensor(obs["observation"], dtype=torch.float32).unsqueeze(0)
+                    with torch.no_grad():
+                        policy_logits, _ = opponent(obs_tensor)
+                        policy_logits = policy_logits.reshape(policy_logits.shape[0], -1).squeeze(0)
+                        policy_logits[action_mask == 0] = float("-inf")
+                        probs = torch.softmax(policy_logits, dim=-1)
+                        action = int(torch.multinomial(probs, 1).item())
+
+                env.step(action)
+
+            if env.terminal_value > 0:
+                wins += 1
+            elif env.terminal_value < 0:
+                losses += 1
+            else:
+                draws += 1
+
+        rl_module.train()
+        return GameResults(wins=wins, losses=losses, draws=draws, total=num_games)
+
+    @staticmethod
+    def evaluate_vs_random(algo, game_config: str, num_games: int = 10) -> GameResults:
+        if algo is None:
+            print("No algorithm trained yet!")
+            return GameResults(0, 0, 0, 0)
+
+        rl_module = algo.get_module("shared_policy")
+        rl_module.eval()
+
+        wins, losses, draws = 0, 0, 0
+        env = SCS_Game(
+            game_config,
+            action_mask_location="obs",
+            obs_space_format="channels_first",
+        )
+
+        for _ in range(num_games):
+            env.reset()
+
+            while not env.terminal:
+                agent = env.agent_selection
+                obs = env.observe(agent)
+                action_mask = obs["action_mask"]
+                valid_actions = np.where(action_mask == 1)[0]
+
+                if len(valid_actions) == 0:
+                    env.step(0)
+                    continue
+
+                if agent == "player_0":
+                    obs_tensor = torch.tensor(obs["observation"], dtype=torch.float32).unsqueeze(0)
+                    mask_tensor = torch.tensor(action_mask, dtype=torch.float32).unsqueeze(0)
+
+                    with torch.no_grad():
+                        batch = {"obs": {"observation": obs_tensor, "action_mask": mask_tensor}}
+                        output = rl_module.forward_inference(batch)
+                        logits = output["action_dist_inputs"].squeeze(0)
+                        logits[action_mask == 0] = float("-inf")
+                        probs = torch.softmax(logits, dim=-1)
+                        action = int(torch.multinomial(probs, 1).item())
                 else:
                     action = random.choice(valid_actions)
 
@@ -184,6 +288,10 @@ class SCSTester:
 
             if env.terminal_value > 0:
                 wins += 1
+            elif env.terminal_value < 0:
+                losses += 1
+            else:
+                draws += 1
 
         rl_module.train()
-        return wins / num_games
+        return GameResults(wins=wins, losses=losses, draws=draws, total=num_games)

@@ -16,6 +16,7 @@ class TrainingConfig:
     game_config: str = ""
     eval_interval: int = 20
     eval_games: int = 50
+    eval_vs_previous: bool = False
     plot_interval: int = 50
     checkpoint_interval: int = 100
     continue_training: bool = False
@@ -27,11 +28,7 @@ class TrainingConfig:
             data = yaml.safe_load(f)
         
         algo_data = data.pop("algorithm", {})
-        algo_config = AlgorithmConfig(
-            name=algo_data.get("name"),
-            iterations=algo_data.get("iterations"),
-            config=algo_data.get("config", {}) or {},
-        )
+        algo_config = AlgorithmConfig.from_dict(algo_data)
         
         network_data = data.pop("network", {})
         network_config = NetworkConfig(
