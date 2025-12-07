@@ -97,14 +97,6 @@ class Trainer:
             self.metrics["losses_vs_previous"] = []
             self.metrics["draws_vs_previous"] = []
     
-    def _has_nan_metrics(self, metrics: Dict[str, Any]) -> bool:
-        for value in metrics.values():
-            if value is None:
-                continue
-            if isinstance(value, float) and (np.isnan(value) or np.isinf(value)):
-                return True
-        return False
-    
     def _print_training_info(self, result: Dict[str, Any]) -> None:
         learner_info = result.get("learners", {}).get("shared_policy", {})
         env_runners = result.get("env_runners", {})
@@ -178,14 +170,6 @@ class Trainer:
         for i in range(start_iteration, algo_cfg.iterations):
             result = self.algo.train()
             metrics = algo_trainer.extract_metrics(result)
-            
-            if cfg.stop_on_nan and self._has_nan_metrics(metrics):
-                print(f"\n⚠️  NaN detected in metrics at iteration {i+1}!")
-                print("Saving checkpoint and stopping training...")
-                self.save_model(i)
-                self.algo.stop()
-                self.plot_progress()
-                break
             
             if not metrics_initialized:
                 for key in metrics.keys():
