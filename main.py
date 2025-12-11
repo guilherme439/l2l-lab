@@ -5,17 +5,19 @@ from pathlib import Path
 
 import ray
 
+from Trainer import Trainer
+from Tester import Tester
+
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-TRAINING_CONFIG_PATH = "configs/files/training/ppo_training_config.yml"
+TRAINING_CONFIG_PATH = "configs/files/training/ppo_tictactoe_training_config.yml"
 TESTING_CONFIG_PATH = "configs/files/testing/testing_config.yml"
 PROFILE_OUTPUT_PATH = Path("profiling/profile_output.prof")
 
 
 def train(config_path: str):
-    from rllib.Trainer import Trainer
     
     ray.init(
         ignore_reinit_error=True,
@@ -40,8 +42,6 @@ def train(config_path: str):
 
 
 def test(config_path: str):
-    from rllib.Tester import Tester
-    
     try:
         tester = Tester(config_path)
         tester.test()

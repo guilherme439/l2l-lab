@@ -116,9 +116,13 @@ class ConvICM(TorchRLModule, SelfSupervisedLossAPI):
     def setup(self):
         cfg = self.model_config
         
+        self.obs_space_format = cfg.get("obs_space_format", "channels_first")
         obs_shape = self.observation_space["observation"].shape
-        in_channels = obs_shape[0]
-        h, w = obs_shape[1], obs_shape[2]
+        
+        if self.obs_space_format == "channels_first":
+            in_channels, h, w = obs_shape[0], obs_shape[1], obs_shape[2]
+        else:
+            h, w, in_channels = obs_shape[0], obs_shape[1], obs_shape[2]
         
         feature_dim = cfg.get("feature_dim", 256)
         conv_filters = cfg.get("conv_filters", 32)
@@ -145,10 +149,16 @@ class ConvICM(TorchRLModule, SelfSupervisedLossAPI):
             nn.Linear(256, feature_dim),
         )
     
+    def _preprocess_obs(self, obs):
+        obs = obs.float()
+        if self.obs_space_format == "channels_last":
+            obs = obs.permute(0, 3, 1, 2)
+        return obs
+    
     @override(TorchRLModule)
     def _forward_train(self, batch, **kwargs):
-        obs = batch[Columns.OBS]["observation"]
-        next_obs = batch[Columns.NEXT_OBS]["observation"]
+        obs = self._preprocess_obs(batch[Columns.OBS]["observation"])
+        next_obs = self._preprocess_obs(batch[Columns.NEXT_OBS]["observation"])
         
         combined = torch.cat([obs, next_obs], dim=0)
         phis = self._feature_net(combined)
@@ -207,7 +217,12 @@ class ConvICM(TorchRLModule, SelfSupervisedLossAPI):
         raise NotImplementedError("ConvICM should only be used for training")
 
 
-def build_icm_rl_module_spec(base_spec: MultiRLModuleSpec, obs_space, act_space) -> MultiRLModuleSpec:
+def build_icm_rl_module_spec(
+    base_spec: MultiRLModuleSpec,
+    obs_space,
+    act_space,
+    obs_space_format: str,
+) -> MultiRLModuleSpec:
     return MultiRLModuleSpec(
         rl_module_specs={
             "shared_policy": base_spec.rl_module_specs["shared_policy"],
@@ -219,6 +234,7 @@ def build_icm_rl_module_spec(base_spec: MultiRLModuleSpec, obs_space, act_space)
                 model_config={
                     "feature_dim": FEATURE_DIM,
                     "conv_filters": CONV_FILTERS,
+                    "obs_space_format": obs_space_format,
                 },
             ),
         },
@@ -237,7 +253,14 @@ def build_icm_training_kwargs(curiosity_coeff: float = INTRINSIC_REWARD_COEFF) -
 
 def build_icm_rl_module_kwargs(base_spec: MultiRLModuleSpec, obs_space, act_space) -> Dict[str, Any]:
     return {
-        "rl_module_spec": build_icm_rl_module_spec(base_spec, obs_space, act_space),
+        "rl_module_spec": build_icm_rl_module_spec(
+            base_spec,
+            obs_space,
+            act_space,
+            base_spec.rl_module_specs["shared_policy"].model_config.get(
+                "obs_space_format", "channels_first"
+            ),
+        ),
         "algorithm_config_overrides_per_module": {
             ICM_MODULE_ID: AlgorithmConfig.overrides(lr=ICM_LR)
         },

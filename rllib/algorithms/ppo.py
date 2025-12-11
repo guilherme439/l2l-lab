@@ -8,9 +8,7 @@ from ray.rllib.algorithms.ppo import PPO, PPOConfig
 from .base import BaseAlgorithmTrainer
 
 if TYPE_CHECKING:
-    from rllib.Trainer import Trainer
-
-ENV_NAME = "scs_game"
+    from Trainer import Trainer
 
 
 class PPOTrainer(BaseAlgorithmTrainer):
@@ -40,13 +38,13 @@ class PPOTrainer(BaseAlgorithmTrainer):
             "vf_explained_var": learner_stats.get("vf_explained_var"),
         }
     
-    def build_config(self, obs_space, act_space) -> PPOConfig:
+    def build_config(self, env_name: str, obs_space_format, obs_space, act_space, ) -> PPOConfig:
         cfg = self.config.algorithm.config
-        
+
         config = (
             PPOConfig()
             .environment(
-                env=ENV_NAME,
+                env=env_name,
                 disable_env_checking=True,
             )
             .env_runners(
@@ -72,22 +70,26 @@ class PPOTrainer(BaseAlgorithmTrainer):
             )
             .framework("torch")
             .resources(num_gpus=0)
-            .debugging(log_level="DEBUG" if self.config.debug else "WARN")
+            .debugging(log_level="WARN")
         )
-        
+
         if cfg.use_curiosity:
-            return self._with_curiosity(config, cfg.curiosity_coeff, obs_space, act_space)
-        return self._without_curiosity(config, obs_space, act_space)
+            curiosity_coeff = cfg.curiosity_coeff
+            self._with_curiosity(config, obs_space, obs_space_format, act_space, curiosity_coeff)
+        else:
+            self._without_curiosity(config, obs_space, obs_space_format, act_space)
+        
+        return config
     
-    def _without_curiosity(self, config: PPOConfig, obs_space, act_space) -> PPOConfig:
-        return config.rl_module(rl_module_spec=self.get_rl_module_spec(obs_space, act_space))
+    def _without_curiosity(self, rllib_config: PPOConfig, obs_space, obs_space_format, act_space) -> PPOConfig:
+        return rllib_config.rl_module(rl_module_spec=self.get_rl_module_spec(obs_space, obs_space_format, act_space))
     
-    def _with_curiosity(self, config: PPOConfig, curiosity_coeff: float, obs_space, act_space) -> PPOConfig:
+    def _with_curiosity(self, rllib_config: PPOConfig, obs_space, obs_space_format, act_space, curiosity_coeff: float) -> PPOConfig:
         from .icm import build_icm_training_kwargs, build_icm_rl_module_kwargs
         
-        base_spec = self.get_rl_module_spec(obs_space, act_space)
+        base_spec = self.get_rl_module_spec(obs_space, obs_space_format, act_space)
         return (
-            config
+            rllib_config
             .training(**build_icm_training_kwargs(curiosity_coeff=curiosity_coeff))
             .rl_module(**build_icm_rl_module_kwargs(base_spec, obs_space, act_space))
         )

@@ -1,5 +1,11 @@
 model_name: "example"
 checkpoint_1: "model_iter_100.cp"
 checkpoint_2: "model_iter_200.cp"
-game_config: "/path/to/config.yml"
 num_games: 1
+
+env:
+  name: "scs"
+  kwargs:
+    config: "/path/to/game_config.yml"
+    action_mask_location: "obs"
+    obs_space_format: "channels_first"

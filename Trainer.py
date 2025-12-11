@@ -3,22 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
-import numpy as np
 import torch
 from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from ray.tune.registry import register_env
-from rl_scs.SCS_Game import SCS_Game
 
 from configs.definition.TrainingConfig import TrainingConfig
-from .Tester import Tester
-from . import graphs
+from envs.registry import create_env
+from Tester import Tester
+import graphs
 
 if TYPE_CHECKING:
-    from .algorithms.base import BaseAlgorithmTrainer
+    from rllib.algorithms.base import BaseAlgorithmTrainer
 
 
 MODELS_DIR = Path("models")
-ENV_NAME = "scs_game"
 
 
 class Trainer:
@@ -31,30 +29,21 @@ class Trainer:
         self._register_env()
     
     def _register_env(self) -> None:
-        game_config = self.config.game_config
-        debug = self.config.debug
+        env_config = self.config.env
         
         def env_creator(config: Dict):
-            env = SCS_Game(
-                game_config,
-                action_mask_location="obs",
-                obs_space_format="channels_first",
-                debug=debug,
-            )
-            env.simulation_mode = False
+            env = create_env(env_config.name, **env_config.kwargs)
             return PettingZooEnv(env)
         
-        register_env(ENV_NAME, env_creator)
+        register_env(env_config.name, env_creator)
     
     def _get_spaces(self):
-        env = SCS_Game(
-            self.config.game_config,
-            action_mask_location="obs",
-            obs_space_format="channels_first",
-        )
+        env_config = self.config.env
+        env = create_env(env_config.name, **env_config.kwargs)
         wrapped = PettingZooEnv(env)
-        obs_space = wrapped.observation_space["player_0"]
-        act_space = wrapped.action_space["player_0"]
+        first_agent = list(wrapped.observation_space.keys())[0]
+        obs_space = wrapped.observation_space[first_agent]
+        act_space = wrapped.action_space[first_agent]
         return obs_space, act_space
     
     def _setup_model_dir(self) -> Path:
@@ -69,10 +58,10 @@ class Trainer:
         algo_name = self.config.algorithm.name.lower()
         
         if algo_name == "ppo":
-            from .algorithms.ppo import PPOTrainer
+            from rllib.algorithms.ppo import PPOTrainer
             return PPOTrainer(self)
         elif algo_name == "impala":
-            from .algorithms.impala import IMPALATrainer
+            from rllib.algorithms.impala import IMPALATrainer
             return IMPALATrainer(self)
         else:
             raise ValueError(f"Unsupported algorithm: {algo_name}. Supported: ppo, impala")
@@ -115,17 +104,18 @@ class Trainer:
     def train(self) -> None:
         cfg = self.config
         algo_cfg = cfg.algorithm
+        env_cfg = cfg.env
         
         print("\n" * 3)
         print("=" * 70)
-        print(f"\nTraining {ENV_NAME.upper()} with {algo_cfg.name.upper()}\n")
+        print(f"\nTraining {cfg.env.name.upper()} with {algo_cfg.name.upper()}\n")
         print(f"  Name: {cfg.name}")
-        print(f"  Debug: {cfg.debug}")
         print()
         print("=" * 70)
         
         self._setup_model_dir()
         obs_space, act_space = self._get_spaces()
+
         
         print(f"\nEnvironment Info:")
         self._print_observation_space(obs_space)
@@ -134,7 +124,7 @@ class Trainer:
         print("=" * 70)
         
         algo_trainer = self._get_algorithm_trainer()
-        rllib_config = algo_trainer.build_config(obs_space, act_space)
+        rllib_config = algo_trainer.build_config(env_cfg.name, env_cfg.obs_space_format, obs_space, act_space)
         
         if cfg.continue_training:
             start_iteration, cp_data = algo_trainer.load_checkpoint_for_continue(
@@ -179,10 +169,10 @@ class Trainer:
             results_random = None
             results_prev = None
             if (i + 1) % cfg.eval_interval == 0:
-                results_random = Tester.evaluate_vs_random(self.algo, cfg.game_config, num_games=cfg.eval_games)
+                results_random = Tester.evaluate_vs_random(self.algo, cfg.env, num_games=cfg.eval_games)
                 if cfg.eval_vs_previous and previous_checkpoint is not None:
                     results_prev = Tester.evaluate_vs_checkpoint(
-                        self.algo, previous_checkpoint, cfg.game_config, num_games=cfg.eval_games
+                        self.algo, previous_checkpoint, cfg.env, num_games=cfg.eval_games
                     )
             
             self.metrics["iteration"].append(i + 1)

@@ -7,10 +7,11 @@ from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import torch
-from rl_scs.SCS_Game import SCS_Game
 from rl_scs.render.SCS_Renderer import SCS_Renderer
 
+from configs.definition.EnvConfig import EnvConfig
 from configs.definition.TestingConfig import TestingConfig
+from envs.registry import create_env
 
 MODELS_DIR = Path("models")
 
@@ -92,17 +93,31 @@ class Tester:
         
         return action
     
-    def play_game(self, backbone_1: torch.nn.Module, backbone_2: torch.nn.Module) -> SCS_Game:
-        env = SCS_Game(
-            self.config.game_config,
-            action_mask_location="obs",
-            obs_space_format="channels_first",
-        )
+    @staticmethod
+    def _is_env_done(env) -> bool:
+        return all(env.terminations.values()) or all(env.truncations.values())
+    
+    @staticmethod
+    def _get_game_result(env) -> int:
+        rewards = env.rewards
+        agents = list(rewards.keys())
+        if len(agents) < 2:
+            return 0
+        r0, r1 = rewards.get(agents[0], 0), rewards.get(agents[1], 0)
+        if r0 > r1:
+            return 1
+        elif r0 < r1:
+            return -1
+        return 0
+    
+    def play_game(self, backbone_1: torch.nn.Module, backbone_2: torch.nn.Module):
+        env_config = self.config.env
+        env = create_env(env_config.name, **env_config.kwargs)
         env.reset()
         
         backbones = {"player_0": backbone_1, "player_1": backbone_2}
         
-        while not env.terminal:
+        while not self._is_env_done(env):
             agent = env.agent_selection
             obs = env.observe(agent)
             action_mask = obs["action_mask"]
@@ -161,7 +176,7 @@ class Tester:
         print("\n✓ Testing complete!")
 
     @staticmethod
-    def evaluate_vs_checkpoint(algo, checkpoint_path: Path, game_config: str, num_games: int = 10) -> GameResults:
+    def evaluate_vs_checkpoint(algo, checkpoint_path: Path, env_config: EnvConfig, num_games: int = 10) -> GameResults:
         if algo is None or not checkpoint_path.exists():
             return GameResults(0, 0, 0, 0)
 
@@ -169,13 +184,18 @@ class Tester:
         model_config = checkpoint["model_config"]
         network_class = model_config["network_class"]
         network_kwargs = model_config.get("network_kwargs", {})
+        obs_space_format = model_config.get("obs_space_format", "channels_first")
         
         obs_space = checkpoint["observation_space"]
         act_space = checkpoint["action_space"]
         inner_obs_space = obs_space["observation"]
         obs_shape = inner_obs_space.shape
-        in_channels = obs_shape[0]
-        rows, cols = obs_shape[1], obs_shape[2]
+        
+        if obs_space_format == "channels_first":
+            in_channels, rows, cols = obs_shape[0], obs_shape[1], obs_shape[2]
+        else:
+            rows, cols, in_channels = obs_shape[0], obs_shape[1], obs_shape[2]
+        
         policy_channels = act_space.n // (rows * cols)
         
         opponent = network_class(
@@ -190,16 +210,12 @@ class Tester:
         rl_module.eval()
 
         wins, losses, draws = 0, 0, 0
-        env = SCS_Game(
-            game_config,
-            action_mask_location="obs",
-            obs_space_format="channels_first",
-        )
+        env = create_env(env_config.name, **env_config.kwargs)
 
         for _ in range(num_games):
             env.reset()
 
-            while not env.terminal:
+            while not Tester._is_env_done(env):
                 agent = env.agent_selection
                 obs = env.observe(agent)
                 action_mask = obs["action_mask"]
@@ -222,6 +238,8 @@ class Tester:
                         action = int(torch.multinomial(probs, 1).item())
                 else:
                     obs_tensor = torch.tensor(obs["observation"], dtype=torch.float32).unsqueeze(0)
+                    if obs_space_format == "channels_last":
+                        obs_tensor = obs_tensor.permute(0, 3, 1, 2)
                     with torch.no_grad():
                         policy_logits, _ = opponent(obs_tensor)
                         policy_logits = policy_logits.reshape(policy_logits.shape[0], -1).squeeze(0)
@@ -231,9 +249,10 @@ class Tester:
 
                 env.step(action)
 
-            if env.terminal_value > 0:
+            result = Tester._get_game_result(env)
+            if result > 0:
                 wins += 1
-            elif env.terminal_value < 0:
+            elif result < 0:
                 losses += 1
             else:
                 draws += 1
@@ -242,7 +261,7 @@ class Tester:
         return GameResults(wins=wins, losses=losses, draws=draws, total=num_games)
 
     @staticmethod
-    def evaluate_vs_random(algo, game_config: str, num_games: int = 10) -> GameResults:
+    def evaluate_vs_random(algo, env_config: EnvConfig, num_games: int = 10) -> GameResults:
         if algo is None:
             print("No algorithm trained yet!")
             return GameResults(0, 0, 0, 0)
@@ -251,16 +270,12 @@ class Tester:
         rl_module.eval()
 
         wins, losses, draws = 0, 0, 0
-        env = SCS_Game(
-            game_config,
-            action_mask_location="obs",
-            obs_space_format="channels_first",
-        )
+        env = create_env(env_config.name, **env_config.kwargs)
 
         for _ in range(num_games):
             env.reset()
 
-            while not env.terminal:
+            while not Tester._is_env_done(env):
                 agent = env.agent_selection
                 obs = env.observe(agent)
                 action_mask = obs["action_mask"]
@@ -286,9 +301,10 @@ class Tester:
 
                 env.step(action)
 
-            if env.terminal_value > 0:
+            result = Tester._get_game_result(env)
+            if result > 0:
                 wins += 1
-            elif env.terminal_value < 0:
+            elif result < 0:
                 losses += 1
             else:
                 draws += 1

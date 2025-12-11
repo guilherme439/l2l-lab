@@ -1,0 +1,44 @@
+name: "tictactoe_example"
+
+env:
+  name: "tictactoe"
+  obs_space_format: "channels_last"
+  kwargs: {}
+
+algorithm:
+  name: "ppo"
+  iterations: 500
+  config:
+    use_curiosity: false
+    curiosity_coeff: 0.0
+
+    num_env_runners: 0
+    rollout_fragment_length: 64
+    train_batch_size_per_learner: 256
+    minibatch_size: 64
+    num_epochs: 2
+    lr: 0.0003
+    gamma: 0.99
+    entropy_coeff: 0.01
+    vf_loss_coeff: 0.5
+    clip_param: 0.2
+    use_kl_loss: false
+    kl_coeff: 0.2
+    kl_target: 0.01
+
+network:
+  architecture: "ConvNet"
+  num_filters: 16
+  num_layers: 3
+  hex: false
+
+
+eval_games: 50
+eval_interval: 25
+eval_vs_previous: false
+eval_graph_split: 100
+plot_interval: 50
+
+checkpoint_interval: 100
+continue_training: false
+info_interval: 50

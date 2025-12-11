@@ -8,10 +8,10 @@ from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
 from rllib.DualHeadRLModule import DualHeadRLModule
-from rllib.checkpoint_utils import CheckpointData, load_checkpoint_data, trim_metrics_to_iteration
+from checkpoint_utils import CheckpointData, load_checkpoint_data, trim_metrics_to_iteration
 
 if TYPE_CHECKING:
-    from rllib.Trainer import Trainer
+    from Trainer import Trainer
 
 
 class BaseAlgorithmTrainer(ABC):
@@ -19,7 +19,7 @@ class BaseAlgorithmTrainer(ABC):
     def __init__(self, trainer: Trainer):
         self.trainer = trainer
         self.config = trainer.config
-        self.algo = None
+        self.algo: Any = None
     
     @property
     @abstractmethod
@@ -27,7 +27,7 @@ class BaseAlgorithmTrainer(ABC):
         pass
     
     @abstractmethod
-    def build_config(self, obs_space, act_space):
+    def build_config(self, env_name: str, obs_space_format, obs_space, act_space):
         pass
     
     @abstractmethod
@@ -38,7 +38,7 @@ class BaseAlgorithmTrainer(ABC):
     def extract_metrics(self, result: Dict[str, Any]) -> Dict[str, Any]:
         pass
     
-    def get_rl_module_spec(self, obs_space, act_space) -> MultiRLModuleSpec:
+    def get_rl_module_spec(self, obs_space, obs_space_format, act_space) -> MultiRLModuleSpec:
         network_class = self.config.network.get_network_class()
         return MultiRLModuleSpec(
             rl_module_specs={
@@ -49,6 +49,7 @@ class BaseAlgorithmTrainer(ABC):
                     model_config={
                         "network_class": network_class,
                         "network_kwargs": self.config.network.to_kwargs(),
+                        "obs_space_format": obs_space_format,
                     },
                 ),
             },

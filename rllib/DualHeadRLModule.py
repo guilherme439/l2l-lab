@@ -1,4 +1,4 @@
-from typing import Any, Dict, Type, TypedDict
+from typing import Any, Dict, Literal, Type, TypedDict
 
 import gymnasium as gym
 from ray.rllib.core.columns import Columns
@@ -13,10 +13,10 @@ from torch import nn
 class DualHeadModelConfig(TypedDict):
     network_class: Type[nn.Module]
     network_kwargs: Dict[str, Any]
+    obs_space_format: Literal["channels_first", "channels_last", "flat"]
 
 
 class DualHeadRLModule(TorchRLModule, ValueFunctionAPI):
-    model_config: DualHeadModelConfig
     
     @override(TorchRLModule)
     def setup(self):
@@ -28,14 +28,19 @@ class DualHeadRLModule(TorchRLModule, ValueFunctionAPI):
                 "'observation' and 'action_mask' keys."
             )
         
+        self.obs_space_format = self.model_config.get("obs_space_format")
         inner_obs_space = self.observation_space["observation"]
         
         network_class = self.model_config["network_class"]
         network_kwargs = self.model_config.get("network_kwargs", {})
         
         obs_shape = inner_obs_space.shape
-        in_channels = obs_shape[0]
-        rows, cols = obs_shape[1], obs_shape[2]
+        if self.obs_space_format == "channels_first":
+            in_channels, rows, cols = obs_shape[0], obs_shape[1], obs_shape[2]
+        elif self.obs_space_format == "channels_last":
+            rows, cols, in_channels = obs_shape[0], obs_shape[1], obs_shape[2]
+        else:
+            raise ValueError(f"Unsupported obs_space_format: {self.obs_space_format}")
         
         policy_channels = self.action_space.n // (rows * cols)
         
@@ -45,9 +50,14 @@ class DualHeadRLModule(TorchRLModule, ValueFunctionAPI):
             **network_kwargs,
         )
     
-    def _forward(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
-        obs_dict = batch[Columns.OBS]
-        obs = obs_dict["observation"].float()
+    def _preprocess_obs(self, obs: TensorType) -> TensorType:
+        if self.obs_space_format == "channels_last":
+            return obs.permute(0, 3, 1, 2)
+        return obs
+    
+    def _forward(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:
+        obs_dict: Dict[str, Any] = batch[Columns.OBS]
+        obs = self._preprocess_obs(obs_dict["observation"].float())
 
         action_mask = obs_dict["action_mask"]
         invalid = (action_mask == 0)
@@ -60,9 +70,9 @@ class DualHeadRLModule(TorchRLModule, ValueFunctionAPI):
         
         return {Columns.ACTION_DIST_INPUTS: policy_logits, Columns.VF_PREDS: value}
 
-    def _forward_policy_only(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
-        obs_dict = batch[Columns.OBS]
-        obs = obs_dict["observation"].float()
+    def _forward_policy_only(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:
+        obs_dict: Dict[str, Any] = batch[Columns.OBS]
+        obs = self._preprocess_obs(obs_dict["observation"].float())
         action_mask = obs_dict["action_mask"]
         invalid = (action_mask == 0)
 
@@ -77,24 +87,24 @@ class DualHeadRLModule(TorchRLModule, ValueFunctionAPI):
         }
     
     @override(TorchRLModule)
-    def _forward_inference(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
+    def _forward_inference(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:
         return self._forward(batch, **kwargs)
     
     @override(TorchRLModule)
-    def _forward_exploration(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
+    def _forward_exploration(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:
         return self._forward(batch, **kwargs)
     
     @override(TorchRLModule)
-    def _forward_train(self, batch: Dict[str, TensorType], **kwargs) -> Dict[str, TensorType]:
+    def _forward_train(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:
         return self._forward_policy_only(batch, **kwargs)
     
     @override(ValueFunctionAPI)
-    def compute_values(self, batch: Dict[str, TensorType], embeddings: Any = None) -> TensorType:
+    def compute_values(self, batch: Dict[str, Any], embeddings: Any = None) -> TensorType:
         if embeddings is not None:
             value = self.backbone.value_head(embeddings)
         else:
-            obs_dict = batch[Columns.OBS]
-            obs = obs_dict["observation"].float()
+            obs_dict: Dict[str, Any] = batch[Columns.OBS]
+            obs = self._preprocess_obs(obs_dict["observation"].float())
             _, value = self.backbone(obs)
         
         if value.dim() > 1:

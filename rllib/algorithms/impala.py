@@ -8,9 +8,7 @@ from ray.rllib.algorithms.impala import IMPALA, IMPALAConfig
 from .base import BaseAlgorithmTrainer
 
 if TYPE_CHECKING:
-    from rllib.Trainer import Trainer
-
-ENV_NAME = "scs_game"
+    from Trainer import Trainer
 
 
 class IMPALATrainer(BaseAlgorithmTrainer):
@@ -37,13 +35,13 @@ class IMPALATrainer(BaseAlgorithmTrainer):
             "entropy": learner_stats.get("entropy"),
         }
     
-    def build_config(self, obs_space, act_space) -> IMPALAConfig:
+    def build_config(self, env_name: str, obs_space_format, obs_space, act_space) -> IMPALAConfig:
         cfg = self.config.algorithm.config
         
         return (
             IMPALAConfig()
             .environment(
-                env=ENV_NAME,
+                env=env_name,
                 disable_env_checking=True,
             )
             .env_runners(
@@ -68,11 +66,11 @@ class IMPALATrainer(BaseAlgorithmTrainer):
                 policy_mapping_fn=lambda agent_id, *args, **kwargs: "shared_policy",
             )
             .rl_module(
-                rl_module_spec=self.get_rl_module_spec(obs_space, act_space),
+                rl_module_spec=self.get_rl_module_spec(obs_space, obs_space_format, act_space),
             )
             .framework("torch")
             .resources(num_gpus=0)
-            .debugging(log_level="DEBUG" if self.config.debug else "WARN")
+            .debugging(log_level="WARN")
         )
     
     

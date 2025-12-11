@@ -5,16 +5,16 @@ from typing import Optional, Union
 import yaml
 
 from .AlgorithmConfig import AlgorithmConfig
+from .EnvConfig import EnvConfig
 from .NetworkConfig import NetworkConfig
 
 
 @dataclass
 class TrainingConfig:
     name: str
+    env: EnvConfig
     algorithm: AlgorithmConfig
     network: NetworkConfig
-    debug: bool = False
-    game_config: str = ""
     eval_interval: int = 20
     eval_games: int = 50
     eval_vs_previous: bool = False
@@ -24,7 +24,6 @@ class TrainingConfig:
     checkpoint_interval: int = 100
     continue_training: bool = False
     continue_from_iteration: Optional[int] = None
-    stop_on_nan: bool = True
     
     
     @classmethod
@@ -41,7 +40,15 @@ class TrainingConfig:
             kwargs=network_data,
         )
         
+        env_data = data.pop("env", {})
+        env_config = EnvConfig(
+            name=env_data.get("name"),
+            obs_space_format=env_data.get("obs_space_format", "channels_first"),
+            kwargs=env_data.get("kwargs", {}),
+        )
+        
         return cls(
+            env=env_config,
             algorithm=algo_config,
             network=network_config,
             **data,

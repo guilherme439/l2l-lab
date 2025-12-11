@@ -1,7 +1,11 @@
 name: "impala_example"
-debug: false
-game_config: "/path/to/config.yml"
 
+env:
+  name: "scs"
+  kwargs:
+    config: "/path/to/game_config.yml"
+    action_mask_location: "obs"
+    obs_space_format: "channels_first"
 
 algorithm:
   name: "impala"
@@ -35,6 +39,5 @@ plot_interval: 35
 checkpoint_interval: 50
 continue_training: false
 # continue_from_iteration: 100
-stop_on_nan: true
 info_interval: 50
 
