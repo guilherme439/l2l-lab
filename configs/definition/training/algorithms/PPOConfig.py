@@ -1,5 +1,7 @@
 from dataclasses import dataclass
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
+
+from ..PolicyConfig import PolicyConfig
 
 
 @dataclass
@@ -20,4 +22,6 @@ class AlgoPPOConfig:
     use_kl_loss: bool = True
     kl_coeff: float = 0.2
     kl_target: float = 0.01
+    
+    policy: Optional[PolicyConfig] = None
     

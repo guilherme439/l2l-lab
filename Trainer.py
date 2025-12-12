@@ -24,6 +24,7 @@ class Trainer:
     def __init__(self, config_path: Union[str, Path]):
         self.config = TrainingConfig.from_yaml(config_path)
         self.algo = None
+        self.algo_trainer = None
         self.metrics: Dict[str, List] = {}
         self.current_model_dir: Optional[Path] = None
         self._register_env()
@@ -99,7 +100,9 @@ class Trainer:
         return ""
     
     def _print_training_info(self, result: Dict[str, Any]) -> None:
-        learner_info = result.get("learners", {}).get("shared_policy", {})
+        policy_cfg = self.config.algorithm.config.policy
+        policy_name = "main_policy" if policy_cfg and policy_cfg.use_multiple_policies else "shared_policy"
+        learner_info = result.get("learners", {}).get(policy_name, {})
         env_runners = result.get("env_runners", {})
         
         timesteps = env_runners.get("num_env_steps_sampled_lifetime", 0)
@@ -135,14 +138,14 @@ class Trainer:
         print()
         print("=" * 70)
         
-        algo_trainer = self._get_algorithm_trainer()
-        rllib_config = algo_trainer.build_config(env_cfg.name, env_cfg.obs_space_format, obs_space, act_space)
+        self.algo_trainer = self._get_algorithm_trainer()
+        rllib_config = self.algo_trainer.build_config(env_cfg.name, env_cfg.obs_space_format, obs_space, act_space)
         
         if cfg.continue_training:
-            start_iteration, cp_data = algo_trainer.load_checkpoint_for_continue(
+            start_iteration, cp_data = self.algo_trainer.load_checkpoint_for_continue(
                 rllib_config, self.current_model_dir, target_iteration=cfg.continue_from_iteration
             )
-            self.algo = algo_trainer.algo
+            self.algo = self.algo_trainer.algo
             if cp_data and cp_data.metrics:
                 self.metrics = cp_data.metrics
                 print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint")
@@ -152,7 +155,7 @@ class Trainer:
             start_iteration = 0
             print(f"\nBuilding {algo_cfg.name.upper()} algorithm...\n")
             self.algo = rllib_config.build_algo()
-            algo_trainer.algo = self.algo
+            self.algo_trainer.algo = self.algo
             print("\n✓ Algorithm built successfully!")
             self._init_metrics()
         
@@ -171,7 +174,7 @@ class Trainer:
         
         for i in range(start_iteration, algo_cfg.iterations):
             result = self.algo.train()
-            metrics = algo_trainer.extract_metrics(result)
+            metrics = self.algo_trainer.extract_metrics(result)
             
             if not metrics_initialized:
                 for key in metrics.keys():
@@ -197,6 +200,9 @@ class Trainer:
                     )
                 checkpoint_dir = self.save_checkpoint(i + 1)
                 previous_checkpoint = checkpoint_dir / "model.cp"
+                
+                if hasattr(self.algo_trainer, 'update_opponent_policies'):
+                    self.algo_trainer.update_opponent_policies(self.current_model_dir, i + 1)
             eval_str += self._record_eval(results_prev, "vs_previous")
             
             print(f"{i+1:8d}/{algo_cfg.iterations} | EpLen: {metrics['episode_len_mean']:6.1f}{eval_str}")
@@ -224,7 +230,9 @@ class Trainer:
         checkpoint_dir = self.current_model_dir / "checkpoints" / str(iteration)
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
-        rl_module = self.algo.get_module("shared_policy")
+        policy_cfg = self.config.algorithm.config.policy
+        policy_name = "main_policy" if policy_cfg and policy_cfg.use_multiple_policies else "shared_policy"
+        rl_module = self.algo.get_module(policy_name)
         checkpoint = {
             "backbone_state_dict": rl_module.backbone.state_dict(),
             "observation_space": rl_module.observation_space,

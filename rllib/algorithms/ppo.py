@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from ray.rllib.algorithms.ppo import PPO, PPOConfig
+from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
 from .base import BaseAlgorithmTrainer
+from .multi_policy import (
+    PolicySampler,
+    build_multi_policy_spec,
+    create_policy_mapping_fn,
+    load_checkpoint_weights_into_policy,
+)
 
 if TYPE_CHECKING:
     from Trainer import Trainer
@@ -15,6 +22,8 @@ class PPOTrainer(BaseAlgorithmTrainer):
     
     def __init__(self, trainer: Trainer):
         super().__init__(trainer)
+        self.policy_sampler: Optional[PolicySampler] = None
+        self.available_checkpoints: List[int] = []
     
     @property
     def algorithm_name(self) -> str:
@@ -25,7 +34,9 @@ class PPOTrainer(BaseAlgorithmTrainer):
     
     def extract_metrics(self, result: Dict[str, Any]) -> Dict[str, Any]:
         env_runners = result.get("env_runners", {})
-        learner_stats = result.get("learners", {}).get("shared_policy", {})
+        policy_cfg = self.config.algorithm.config.policy
+        policy_name = "main_policy" if policy_cfg and policy_cfg.use_multiple_policies else "shared_policy"
+        learner_stats = result.get("learners", {}).get(policy_name, {})
         icm_stats = result.get("learners", {}).get("_intrinsic_curiosity_model", {})
         
         metrics = {
@@ -48,8 +59,9 @@ class PPOTrainer(BaseAlgorithmTrainer):
         
         return metrics
     
-    def build_config(self, env_name: str, obs_space_format, obs_space, act_space, ) -> PPOConfig:
+    def build_config(self, env_name: str, obs_space_format, obs_space, act_space) -> PPOConfig:
         cfg = self.config.algorithm.config
+        policy_cfg = self.config.algorithm.config.policy
 
         config = (
             PPOConfig()
@@ -74,22 +86,105 @@ class PPOTrainer(BaseAlgorithmTrainer):
                 kl_coeff=cfg.kl_coeff,
                 kl_target=cfg.kl_target,
             )
-            .multi_agent(
-                policies={"shared_policy"},
-                policy_mapping_fn=lambda agent_id, *args, **kwargs: "shared_policy",
-            )
             .framework("torch")
             .resources(num_gpus=0)
             .debugging(log_level="WARN")
         )
 
-        if cfg.use_curiosity:
-            curiosity_coeff = cfg.curiosity_coeff
-            self._with_curiosity(config, obs_space, obs_space_format, act_space, curiosity_coeff)
+        if policy_cfg and policy_cfg.use_multiple_policies:
+            self._setup_multi_policy(config, obs_space, obs_space_format, act_space, cfg.use_curiosity, cfg.curiosity_coeff if cfg.use_curiosity else 0.0)
         else:
-            self._without_curiosity(config, obs_space, obs_space_format, act_space)
+            config.multi_agent(
+                policies={"shared_policy"},
+                policy_mapping_fn=lambda agent_id, *args, **kwargs: "shared_policy",
+            )
+            if cfg.use_curiosity:
+                self._with_curiosity(config, obs_space, obs_space_format, act_space, cfg.curiosity_coeff)
+            else:
+                self._without_curiosity(config, obs_space, obs_space_format, act_space)
         
         return config
+    
+    def _setup_multi_policy(
+        self,
+        config: PPOConfig,
+        obs_space,
+        obs_space_format,
+        act_space,
+        use_curiosity: bool,
+        curiosity_coeff: float,
+    ):
+        policy_cfg = self.config.algorithm.config.policy
+        
+        policy_weights = policy_cfg.get_policy_weights(len(self.available_checkpoints))
+        self.policy_sampler = PolicySampler(policy_weights)
+        
+        base_rl_module_spec = self._get_base_rl_module_spec(obs_space, obs_space_format, act_space)
+        multi_spec = build_multi_policy_spec(base_rl_module_spec, policy_cfg)
+        
+        policy_names = set(multi_spec.rl_module_specs.keys())
+        
+        config.multi_agent(
+            policies=policy_names,
+            policy_mapping_fn=create_policy_mapping_fn(self.policy_sampler),
+            policies_to_train={"main_policy"},
+        )
+        
+        if use_curiosity:
+            raise NotImplementedError("Curiosity (ICM) is not yet supported with multi-policy setup")
+        
+        config.rl_module(rl_module_spec=multi_spec)
+    
+    def _get_base_rl_module_spec(self, obs_space, obs_space_format, act_space) -> RLModuleSpec:
+        from rllib.modules.networks.conv import ConvDualHeadRLModule
+        
+        network_class = self.config.network.get_network_class()
+        adapter_class = self.config.network.get_adapter_class()
+        
+        model_config = {
+            "network_class": network_class,
+            "network_kwargs": self.config.network.to_kwargs(),
+            "architecture": self.config.network.architecture,
+        }
+        
+        if adapter_class == ConvDualHeadRLModule:
+            model_config["obs_space_format"] = obs_space_format
+        
+        return RLModuleSpec(
+            module_class=adapter_class,
+            observation_space=obs_space,
+            action_space=act_space,
+            model_config=model_config,
+        )
+    
+    def update_opponent_policies(self, model_dir: Path, new_checkpoint: int):
+        policy_cfg = self.config.algorithm.config.policy
+        if not policy_cfg or not policy_cfg.use_multiple_policies:
+            return
+        
+        if new_checkpoint not in self.available_checkpoints:
+            self.available_checkpoints.append(new_checkpoint)
+        
+        n_prev = policy_cfg.number_previous_policies
+        
+        if n_prev == 0:
+            return
+        
+        recent = sorted(self.available_checkpoints, reverse=True)[:n_prev]
+        
+        for slot_idx, cp_iter in enumerate(recent):
+            policy_name = f"checkpoint_{slot_idx}"
+            cp_path = model_dir / "checkpoints" / str(cp_iter) / "model.cp"
+            
+            try:
+                if self.algo is not None:
+                    load_checkpoint_weights_into_policy(self.algo, policy_name, cp_path)
+            except Exception as e:
+                print(f"Warning: Could not load checkpoint {cp_iter} into {policy_name}: {e}")
+        
+        policy_weights = policy_cfg.get_policy_weights(len(self.available_checkpoints))
+        if self.policy_sampler:
+            self.policy_sampler.update_weights(policy_weights)
     
     def _without_curiosity(self, rllib_config: PPOConfig, obs_space, obs_space_format, act_space) -> PPOConfig:
         return rllib_config.rl_module(rl_module_spec=self.get_rl_module_spec(obs_space, obs_space_format, act_space))

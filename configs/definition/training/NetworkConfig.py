@@ -4,8 +4,8 @@ from typing import Any, Dict, Type
 from neural_networks.architectures.dual_head.ConvNet import ConvNet
 from neural_networks.architectures.dual_head.ResNet import ResNet
 from neural_networks.architectures.dual_head.MLPNet import MLPNet
-from rllib.networks.adapters.conv import ConvDualHeadRLModule
-from rllib.networks.adapters.mlp import MLPDualHeadRLModule
+from rllib.modules.networks.conv import ConvDualHeadRLModule
+from rllib.modules.networks.mlp import MLPDualHeadRLModule
 
 CONV_ARCHITECTURES = {"ResNet", "ConvNet"}
 MLP_ARCHITECTURES = {"MLPNet"}

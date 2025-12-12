@@ -85,31 +85,42 @@ def plot_loss_breakdown(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     policy_loss = metrics.get("policy_loss", [])
     vf_loss = metrics.get("vf_loss", [])
     
-    if not _has_valid_data(total_loss):
-        return
-    
-    fig, ax = plt.subplots(figsize=(10, 5))
-    
     iters_t, vals_t = _filter_none(iterations, total_loss)
     iters_p, vals_p = _filter_none(iterations, policy_loss)
     iters_v, vals_v = _filter_none(iterations, vf_loss)
     
     if vals_t:
-        ax.plot(iters_t, vals_t, color="#e74c3c", linewidth=1.5, alpha=0.8, label="Total Loss")
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.scatter(iters_t, vals_t, color="#e74c3c", s=8, alpha=0.6)
+        ax.set_xlabel("Iteration", fontsize=10)
+        ax.set_ylabel("Total Loss", fontsize=10)
+        ax.set_title("Total Loss", fontsize=12, fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(graphs_dir / "total_loss.png", dpi=150, bbox_inches="tight")
+        plt.close(fig)
+    
     if vals_p:
-        ax.plot(iters_p, vals_p, color="#9b59b6", linewidth=1.5, alpha=0.8, label="Policy Loss")
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.scatter(iters_p, vals_p, color="#9b59b6", s=8, alpha=0.6)
+        ax.set_xlabel("Iteration", fontsize=10)
+        ax.set_ylabel("Policy Loss", fontsize=10)
+        ax.set_title("Policy Loss", fontsize=12, fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(graphs_dir / "policy_loss.png", dpi=150, bbox_inches="tight")
+        plt.close(fig)
+    
     if vals_v:
-        ax.plot(iters_v, vals_v, color="#3498db", linewidth=1.5, alpha=0.8, label="Value Loss")
-    
-    ax.set_xlabel("Iteration", fontsize=10)
-    ax.set_ylabel("Loss", fontsize=10)
-    ax.set_title("Loss Breakdown", fontsize=12, fontweight="bold")
-    ax.legend(loc="upper right", fontsize=9)
-    ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(graphs_dir / "loss_breakdown.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.scatter(iters_v, vals_v, color="#3498db", s=8, alpha=0.6)
+        ax.set_xlabel("Iteration", fontsize=10)
+        ax.set_ylabel("Value Loss", fontsize=10)
+        ax.set_title("Value Loss", fontsize=12, fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(graphs_dir / "value_loss.png", dpi=150, bbox_inches="tight")
+        plt.close(fig)
 
 
 def plot_policy_health(graphs_dir: Path, metrics: Dict[str, List]) -> None:
@@ -137,9 +148,19 @@ def plot_policy_health(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     if has_kl:
         iters_k, vals_k = _filter_none(iterations, kl_div)
         ax2 = ax1.twinx() if has_entropy else ax1
-        ax2.plot(iters_k, vals_k, color="#e67e22", linewidth=1.5, linestyle="--", label="KL Divergence")
-        ax2.set_ylabel("KL Divergence", color="#e67e22", fontsize=10)
-        ax2.tick_params(axis="y", labelcolor="#e67e22")
+        ax2.plot(
+            iters_k,
+            vals_k,
+            color="#16a085",
+            linewidth=1,
+            alpha=0.8,
+            linestyle="-",
+            marker="o",
+            markersize=1,
+            label="KL Divergence",
+        )
+        ax2.set_ylabel("KL Divergence", color="#16a085", fontsize=10)
+        ax2.tick_params(axis="y", labelcolor="#16a085")
     
     ax1.set_title("Policy Health" + (" (Entropy + KL)" if has_kl else " (Entropy)"), fontsize=12, fontweight="bold")
     

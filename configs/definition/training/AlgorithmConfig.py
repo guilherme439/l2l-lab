@@ -3,6 +3,7 @@ from typing import Optional, Union
 
 from .algorithms.PPOConfig import AlgoPPOConfig
 from .algorithms.IMPALAConfig import AlgoIMPALAConfig
+from .PolicyConfig import PolicyConfig
 
 AlgoConfigType = Union[AlgoPPOConfig, AlgoIMPALAConfig]
 
@@ -33,5 +34,8 @@ class AlgorithmConfig:
         if config_class is None:
             raise ValueError(f"Unknown algorithm: {name}. Supported: {list(ALGO_CONFIG_MAP.keys())}")
         
-        config = config_class(**config_data)
+        policy_data = config_data.pop("policy", None)
+        policy = PolicyConfig.from_dict(policy_data) if policy_data else None
+        
+        config = config_class(**config_data, policy=policy)
         return cls(name=name, iterations=iterations, config=config)

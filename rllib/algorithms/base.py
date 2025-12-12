@@ -7,8 +7,8 @@ from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
-from rllib.networks.adapters.conv import ConvDualHeadRLModule
-from rllib.networks.adapters.mlp import MLPDualHeadRLModule
+from rllib.modules.networks.conv import ConvDualHeadRLModule
+from rllib.modules.networks.mlp import MLPDualHeadRLModule
 from checkpoint_utils import CheckpointData, load_checkpoint_data, trim_metrics_to_iteration, get_algo_checkpoint_path
 
 if TYPE_CHECKING:

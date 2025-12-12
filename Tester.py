@@ -318,13 +318,20 @@ class Tester:
         )
     
     @staticmethod
+    def _get_main_module(algo):
+        try:
+            return algo.get_module("main_policy")
+        except KeyError:
+            return algo.get_module("shared_policy")
+    
+    @staticmethod
     def evaluate_vs_checkpoint(algo, checkpoint_path: Path, env_config: EnvConfig, num_games: int = 10) -> GameResults:
         if algo is None or not checkpoint_path.exists():
             return GameResults(0, 0, 0, 0)
         
         opponent, obs_format = Tester._load_backbone_from_checkpoint(checkpoint_path)
         
-        rl_module = algo.get_module("shared_policy")
+        rl_module = Tester._get_main_module(algo)
         rl_module.eval()
         
         results = Tester._run_games(
@@ -342,7 +349,7 @@ class Tester:
             print("No algorithm trained yet!")
             return GameResults(0, 0, 0, 0)
         
-        rl_module = algo.get_module("shared_policy")
+        rl_module = Tester._get_main_module(algo)
         rl_module.eval()
         
         results = Tester._run_games(
