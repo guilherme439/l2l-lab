@@ -6,13 +6,13 @@ from .modules.policy_heads import *
 
 class MLPNet(nn.Module):
 
-    def __init__(self, out_features, hidden_layers=4, neurons_per_layer=64):
+    def __init__(self, out_features, hidden_layers=4, neurons_per_layer=64, head_layers=3):
 
         super(MLPNet, self).__init__()
         self.recurrent=False
 
         # General Module
-        general_module_layers = [nn.Flatten(), nn.LazyLinear(64), nn.SiLU()] # First layer and activation
+        general_module_layers = [nn.Flatten(), nn.LazyLinear(neurons_per_layer), nn.SiLU()] # First layer and activation
         for layer in range(hidden_layers):
             general_module_layers.append(nn.Linear(in_features=neurons_per_layer, out_features=neurons_per_layer))
             general_module_layers.append(nn.SiLU())
@@ -22,38 +22,10 @@ class MLPNet(nn.Module):
         
 
         # Policy Head
-        hidden_policy_layers = 3
-        policy_head_layers = []
-        
-        delta = out_features - neurons_per_layer
-        step = delta / hidden_policy_layers
-        previous_layer_neurons = neurons_per_layer
-        for layer in range(hidden_policy_layers):
-            current_layer_neurons = previous_layer_neurons + step
-            policy_head_layers.append(nn.Linear(in_features=int(previous_layer_neurons), out_features=int(current_layer_neurons)))
-            policy_head_layers.append(nn.ReLU())
-            previous_layer_neurons = current_layer_neurons
-        
-
-        self.policy_head = nn.Sequential(*policy_head_layers)
-
-
+        self.policy_head = ReduceMLP_PolicyHead(neurons_per_layer, out_features, num_layers=head_layers)
 
         # Value Head
-        hidden_value_layers = 3
-        value_head_layers = []
-        
-        delta = 1 - neurons_per_layer
-        step = delta / hidden_value_layers
-        previous_layer_neurons = neurons_per_layer
-        for layer in range(hidden_value_layers):
-            current_layer_neurons = previous_layer_neurons + step
-            value_head_layers.append(nn.Linear(in_features=int(previous_layer_neurons), out_features=int(current_layer_neurons)))
-            value_head_layers.append(nn.Tanh())
-            previous_layer_neurons = current_layer_neurons
-        
-
-        self.value_head = nn.Sequential(*value_head_layers)
+        self.value_head = ReduceMLP_ValueHead(neurons_per_layer, num_layers=head_layers)
         
 
 

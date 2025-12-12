@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 TRAINING_CONFIG_PATH = "configs/files/training/ppo_tictactoe_training_config.yml"
-TESTING_CONFIG_PATH = "configs/files/testing/testing_config.yml"
+TESTING_CONFIG_PATH = "configs/files/testing/tictactoe_testing_config.yml"
 PROFILE_OUTPUT_PATH = Path("profiling/profile_output.prof")
 
 
@@ -25,7 +25,7 @@ def train(config_path: str):
             "gcs_rpc_server_reconnect_timeout_s": 120,
             "gcs_server_request_timeout_seconds": 120,
         },
-        object_store_memory = 2 * 1024 * 1024 * 1024,  # Limit object store to 2GB
+        object_store_memory = 2 * 1024 * 1024 * 1024, # 2GB
     )
     
     try:

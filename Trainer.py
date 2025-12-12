@@ -7,7 +7,7 @@ import torch
 from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from ray.tune.registry import register_env
 
-from configs.definition.TrainingConfig import TrainingConfig
+from configs.definition.training.TrainingConfig import TrainingConfig
 from envs.registry import create_env
 from Tester import Tester
 import graphs
@@ -85,6 +85,18 @@ class Trainer:
             self.metrics["wins_vs_previous"] = []
             self.metrics["losses_vs_previous"] = []
             self.metrics["draws_vs_previous"] = []
+    
+    def _record_eval(self, results, prefix: str) -> str:
+        w_key, l_key, d_key = f"wins_{prefix}", f"losses_{prefix}", f"draws_{prefix}"
+        
+        if w_key in self.metrics:
+            self.metrics[w_key].append(results.wins if results else None)
+            self.metrics[l_key].append(results.losses if results else None)
+            self.metrics[d_key].append(results.draws if results else None)
+        
+        if results:
+            return f" | {prefix}: W{results.wins}/L{results.losses}/D{results.draws}"
+        return ""
     
     def _print_training_info(self, result: Dict[str, Any]) -> None:
         learner_info = result.get("learners", {}).get("shared_policy", {})
@@ -166,34 +178,28 @@ class Trainer:
                     self.metrics[key] = []
                 metrics_initialized = True
 
-            results_random = None
-            results_prev = None
-            if (i + 1) % cfg.eval_interval == 0:
-                results_random = Tester.evaluate_vs_random(self.algo, cfg.env, num_games=cfg.eval_games)
-                if cfg.eval_vs_previous and previous_checkpoint is not None:
-                    results_prev = Tester.evaluate_vs_checkpoint(
-                        self.algo, previous_checkpoint, cfg.env, num_games=cfg.eval_games
-                    )
-            
             self.metrics["iteration"].append(i + 1)
             for key, value in metrics.items():
                 self.metrics[key].append(value)
             
-            self.metrics["wins_vs_random"].append(results_random.wins if results_random else None)
-            self.metrics["losses_vs_random"].append(results_random.losses if results_random else None)
-            self.metrics["draws_vs_random"].append(results_random.draws if results_random else None)
+            eval_str = ""
             
-            if "wins_vs_previous" in self.metrics:
-                self.metrics["wins_vs_previous"].append(results_prev.wins if results_prev else None)
-                self.metrics["losses_vs_previous"].append(results_prev.losses if results_prev else None)
-                self.metrics["draws_vs_previous"].append(results_prev.draws if results_prev else None)
+            results_random = None
+            if (i + 1) % cfg.eval_interval == 0:
+                results_random = Tester.evaluate_vs_random(self.algo, cfg.env, num_games=cfg.eval_games)
+            eval_str += self._record_eval(results_random, "vs_random")
             
-            wr_str = f" | vs_rand: W{results_random.wins}/L{results_random.losses}/D{results_random.draws}" if results_random else ""
-            wr_prev_str = f" | vs_prev: W{results_prev.wins}/L{results_prev.losses}/D{results_prev.draws}" if results_prev else ""
-            print(f"{i+1:8d}/{algo_cfg.iterations} | EpLen: {metrics['episode_len_mean']:6.1f}{wr_str}{wr_prev_str}")
-            
+            results_prev = None
             if (i + 1) % cfg.checkpoint_interval == 0:
-                previous_checkpoint = self.save_checkpoint(i + 1)
+                if cfg.eval_vs_previous and previous_checkpoint is not None:
+                    results_prev = Tester.evaluate_vs_checkpoint(
+                        self.algo, previous_checkpoint, cfg.env, num_games=cfg.eval_games
+                    )
+                checkpoint_dir = self.save_checkpoint(i + 1)
+                previous_checkpoint = checkpoint_dir / "model.cp"
+            eval_str += self._record_eval(results_prev, "vs_previous")
+            
+            print(f"{i+1:8d}/{algo_cfg.iterations} | EpLen: {metrics['episode_len_mean']:6.1f}{eval_str}")
             
             if (i + 1) % cfg.plot_interval == 0:
                 self.plot_progress()
@@ -204,7 +210,7 @@ class Trainer:
             print("-" * 70)
             print(f"✓ {algo_cfg.name.upper()} Training completed!")
             
-            self.save_model(algo_cfg.iterations)
+            self.save_checkpoint(algo_cfg.iterations)
             self.algo.stop()
             self.plot_progress()
     
@@ -215,8 +221,8 @@ class Trainer:
         if self.current_model_dir is None:
             raise RuntimeError("No model directory.")
         
-        checkpoints_dir = self.current_model_dir / "checkpoints"
-        checkpoints_dir.mkdir(exist_ok=True)
+        checkpoint_dir = self.current_model_dir / "checkpoints" / str(iteration)
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
         rl_module = self.algo.get_module("shared_policy")
         checkpoint = {
@@ -228,63 +234,46 @@ class Trainer:
             "metrics": self.metrics,
         }
         
-        checkpoint_path = checkpoints_dir / f"model_iter_{iteration}.cp"
-        torch.save(checkpoint, checkpoint_path)
+        model_path = checkpoint_dir / "model.cp"
+        torch.save(checkpoint, model_path)
+        
+        algo_path = checkpoint_dir / "algo_checkpoint"
+        self.algo.save_to_path(str(algo_path.absolute()))
+        
         print(f"\n  [Checkpoint saved: iter {iteration}]\n")
-        return checkpoint_path
-    
-    def save_model(self, iteration: int = -1) -> Path:
-        if self.algo is None:
-            raise RuntimeError("No algorithm to save. Train first.")
-        
-        if self.current_model_dir is None:
-            raise RuntimeError("No model directory.")
-        
-        rl_module = self.algo.get_module("shared_policy")
-        checkpoint = {
-            "backbone_state_dict": rl_module.backbone.state_dict(),
-            "observation_space": rl_module.observation_space,
-            "action_space": rl_module.action_space,
-            "model_config": rl_module.model_config,
-            "iteration": iteration,
-            "metrics": self.metrics,
-        }
-        
-        torch.save(checkpoint, self.current_model_dir / "model.cp")
-        self.algo.save_to_path(str((self.current_model_dir / "algo_checkpoint").absolute()))
-        
-        print(f"✓ Model saved to: {self.current_model_dir}")
-        return self.current_model_dir
+        return checkpoint_dir
     
     def get_latest_checkpoint(self, model_dir: Path) -> Optional[Path]:
-        checkpoints_dir = model_dir / "checkpoints"
-        if not checkpoints_dir.exists():
-            return None
-        
-        checkpoints = list(checkpoints_dir.glob("model_iter_*.cp"))
-        if not checkpoints:
-            return None
-        
-        def get_iter(p: Path) -> int:
-            return int(p.stem.split("_")[-1])
-        
-        return max(checkpoints, key=get_iter)
+        from checkpoint_utils import get_latest_checkpoint_dir
+        return get_latest_checkpoint_dir(model_dir)
     
-    def load_model(self, model_name: str) -> None:
+    def load_model(self, model_name: str, iteration: Optional[int] = None) -> None:
+        from checkpoint_utils import get_algo_checkpoint_path
+        
         model_dir = MODELS_DIR / f"rllib_{self.config.algorithm.name}_{model_name}"
         if not model_dir.exists():
             raise FileNotFoundError(f"Model not found: {model_dir}")
         
+        algo_checkpoint_path = get_algo_checkpoint_path(model_dir, iteration)
+        if algo_checkpoint_path is None or not algo_checkpoint_path.exists():
+            raise FileNotFoundError(f"No algo checkpoint found in: {model_dir}")
+        
         self.current_model_dir = model_dir
         algo_trainer = self._get_algorithm_trainer()
-        self.algo = algo_trainer.load_from_checkpoint(model_dir / "algo_checkpoint")
-        print(f"✓ Algorithm loaded from: {model_dir}")
+        self.algo = algo_trainer.load_from_checkpoint(algo_checkpoint_path)
+        print(f"✓ Algorithm loaded from: {algo_checkpoint_path}")
     
-    def load_backbone_weights(self, model_name: str) -> Dict[str, Any]:
+    def load_backbone_weights(self, model_name: str, iteration: Optional[int] = None) -> Dict[str, Any]:
+        from checkpoint_utils import get_checkpoint_path, get_latest_checkpoint_path
+        
         model_dir = MODELS_DIR / f"rllib_{self.config.algorithm.name}_{model_name}"
-        checkpoint_path = model_dir / "model.cp"
-        if not checkpoint_path.exists():
-            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+        if iteration is not None:
+            checkpoint_path = get_checkpoint_path(model_dir, iteration)
+        else:
+            checkpoint_path = get_latest_checkpoint_path(model_dir)
+        
+        if checkpoint_path is None or not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found in: {model_dir}")
         
         checkpoint = torch.load(checkpoint_path, weights_only=False)
         print(f"✓ Backbone weights loaded from: {checkpoint_path}")

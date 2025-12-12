@@ -44,9 +44,10 @@ eval_interval: 15
 eval_vs_previous: true
 eval_graph_split: 500
 plot_interval: 35
+info_interval: 100
 
 checkpoint_interval: 50
 continue_training: false
 # continue_from_iteration: 3000
-info_interval: 100
+
 

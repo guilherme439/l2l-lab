@@ -13,52 +13,57 @@ class CheckpointData:
     metrics: Dict[str, List]
 
 
-def get_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
+def get_checkpoint_dir(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
     checkpoints_dir = model_dir / "checkpoints"
     if not checkpoints_dir.exists():
         return None
     
-    checkpoints = list(checkpoints_dir.glob("model_iter_*.cp"))
-    if not checkpoints:
+    checkpoint_dirs = [d for d in checkpoints_dir.iterdir() if d.is_dir() and d.name.isdigit()]
+    if not checkpoint_dirs:
         return None
-    
-    def get_iter(p: Path) -> int:
-        return int(p.stem.split("_")[-1])
     
     if iteration is not None:
-        target = checkpoints_dir / f"model_iter_{iteration}.cp"
+        target = checkpoints_dir / str(iteration)
         if target.exists():
             return target
-        valid = [cp for cp in checkpoints if get_iter(cp) <= iteration]
+        valid = [d for d in checkpoint_dirs if int(d.name) <= iteration]
         if valid:
-            return max(valid, key=get_iter)
+            return max(valid, key=lambda d: int(d.name))
         return None
     
-    return max(checkpoints, key=get_iter)
+    return max(checkpoint_dirs, key=lambda d: int(d.name))
+
+
+def get_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
+    checkpoint_dir = get_checkpoint_dir(model_dir, iteration)
+    if checkpoint_dir:
+        return checkpoint_dir / "model.cp"
+    return None
+
+
+def get_algo_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
+    checkpoint_dir = get_checkpoint_dir(model_dir, iteration)
+    if checkpoint_dir:
+        return checkpoint_dir / "algo_checkpoint"
+    return None
 
 
 def get_latest_checkpoint_path(model_dir: Path) -> Optional[Path]:
     return get_checkpoint_path(model_dir, iteration=None)
 
 
+def get_latest_checkpoint_dir(model_dir: Path) -> Optional[Path]:
+    return get_checkpoint_dir(model_dir, iteration=None)
+
+
 def load_checkpoint_data(model_dir: Path, iteration: Optional[int] = None) -> Optional[CheckpointData]:
     cp_path = get_checkpoint_path(model_dir, iteration)
-    if cp_path:
+    if cp_path and cp_path.exists():
         cp_data = torch.load(cp_path, weights_only=False)
         return CheckpointData(
             iteration=cp_data.get("iteration", 0),
             metrics=cp_data.get("metrics", {}),
         )
-    
-    if iteration is None:
-        model_cp = model_dir / "model.cp"
-        if model_cp.exists():
-            cp_data = torch.load(model_cp, weights_only=False)
-            return CheckpointData(
-                iteration=cp_data.get("iteration", 0),
-                metrics=cp_data.get("metrics", {}),
-            )
-    
     return None
 
 

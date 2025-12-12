@@ -87,3 +87,28 @@ class Dense_ValueHead(nn.Module):
     
 
 ##################################################################################################
+
+
+class ReduceMLP_ValueHead(nn.Module):
+
+    def __init__(self, in_features, num_layers=3):
+        super().__init__()
+
+        layer_list = []
+
+        dims = []
+        for i in range(num_layers + 1):
+            t = i / num_layers
+            size = in_features + (1 - in_features) * t
+            dims.append(max(1, int(size)))
+        dims[0] = in_features
+        dims[-1] = 1
+
+        for in_dim, out_dim in zip(dims[:-1], dims[1:]):
+            layer_list.append(nn.Linear(in_dim, out_dim))
+            layer_list.append(nn.Tanh())
+
+        self.layers = nn.Sequential(*layer_list)
+
+    def forward(self, x):
+        return self.layers(x)

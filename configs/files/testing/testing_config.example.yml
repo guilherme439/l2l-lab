@@ -1,8 +1,17 @@
-model_name: "example"
-checkpoint_1: "model_iter_100.cp"
-checkpoint_2: "model_iter_200.cp"
 num_games: 1
 
+agents:
+  p1:
+    agent_type: "policy"
+    policy:
+      name: "example"
+      checkpoint: 100
+
+  p2:
+    agent_type: "random"
+
+
+      
 env:
   name: "scs"
   kwargs:

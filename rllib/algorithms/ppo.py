@@ -26,9 +26,11 @@ class PPOTrainer(BaseAlgorithmTrainer):
     def extract_metrics(self, result: Dict[str, Any]) -> Dict[str, Any]:
         env_runners = result.get("env_runners", {})
         learner_stats = result.get("learners", {}).get("shared_policy", {})
+        icm_stats = result.get("learners", {}).get("_intrinsic_curiosity_model", {})
         
-        return {
+        metrics = {
             "episode_len_mean": env_runners.get("episode_len_mean", 0) or 0,
+            "episode_reward_mean": env_runners.get("episode_reward_mean"),
             "total_loss": learner_stats.get("total_loss", 0) or 0,
             "policy_loss": learner_stats.get("policy_loss", 0) or 0,
             "vf_loss": learner_stats.get("vf_loss", 0) or 0,
@@ -36,7 +38,15 @@ class PPOTrainer(BaseAlgorithmTrainer):
             "entropy": learner_stats.get("entropy"),
             "kl_divergence": learner_stats.get("mean_kl_loss"),
             "vf_explained_var": learner_stats.get("vf_explained_var"),
+            "learning_rate": learner_stats.get("default_optimizer_learning_rate"),
         }
+        
+        if icm_stats:
+            metrics["intrinsic_reward_mean"] = icm_stats.get("mean_intrinsic_rewards")
+            metrics["icm_forward_loss"] = icm_stats.get("forward_loss")
+            metrics["icm_inverse_loss"] = icm_stats.get("inverse_loss")
+        
+        return metrics
     
     def build_config(self, env_name: str, obs_space_format, obs_space, act_space, ) -> PPOConfig:
         cfg = self.config.algorithm.config

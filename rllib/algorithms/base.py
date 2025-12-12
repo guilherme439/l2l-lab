@@ -7,8 +7,9 @@ from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
-from rllib.DualHeadRLModule import DualHeadRLModule
-from checkpoint_utils import CheckpointData, load_checkpoint_data, trim_metrics_to_iteration
+from rllib.networks.adapters.conv import ConvDualHeadRLModule
+from rllib.networks.adapters.mlp import MLPDualHeadRLModule
+from checkpoint_utils import CheckpointData, load_checkpoint_data, trim_metrics_to_iteration, get_algo_checkpoint_path
 
 if TYPE_CHECKING:
     from Trainer import Trainer
@@ -40,17 +41,24 @@ class BaseAlgorithmTrainer(ABC):
     
     def get_rl_module_spec(self, obs_space, obs_space_format, act_space) -> MultiRLModuleSpec:
         network_class = self.config.network.get_network_class()
+        adapter_class = self.config.network.get_adapter_class()
+        
+        model_config = {
+            "network_class": network_class,
+            "network_kwargs": self.config.network.to_kwargs(),
+            "architecture": self.config.network.architecture,
+        }
+        
+        if adapter_class == ConvDualHeadRLModule:
+            model_config["obs_space_format"] = obs_space_format
+        
         return MultiRLModuleSpec(
             rl_module_specs={
                 "shared_policy": RLModuleSpec(
-                    module_class=DualHeadRLModule,
+                    module_class=adapter_class,
                     observation_space=obs_space,
                     action_space=act_space,
-                    model_config={
-                        "network_class": network_class,
-                        "network_kwargs": self.config.network.to_kwargs(),
-                        "obs_space_format": obs_space_format,
-                    },
+                    model_config=model_config,
                 ),
             },
         )
@@ -61,8 +69,8 @@ class BaseAlgorithmTrainer(ABC):
         model_dir: Path,
         target_iteration: Optional[int] = None,
     ) -> Tuple[int, Optional[CheckpointData]]:
-        algo_checkpoint_path = model_dir / "algo_checkpoint"
-        if not algo_checkpoint_path.exists():
+        algo_checkpoint_path = get_algo_checkpoint_path(model_dir, target_iteration)
+        if algo_checkpoint_path is None or not algo_checkpoint_path.exists():
             print("\nNo existing checkpoint found. Starting fresh training...")
             print(f"\nBuilding {self.algorithm_name.upper()} algorithm...\n")
             self.algo = rllib_config.build_algo()

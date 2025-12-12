@@ -5,8 +5,8 @@ from typing import Optional, Union
 import yaml
 
 from .AlgorithmConfig import AlgorithmConfig
-from .EnvConfig import EnvConfig
 from .NetworkConfig import NetworkConfig
+from configs.definition.common.EnvConfig import EnvConfig
 
 
 @dataclass

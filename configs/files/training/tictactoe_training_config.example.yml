@@ -43,7 +43,8 @@ eval_interval: 65
 eval_vs_previous: true
 eval_graph_split: 500
 plot_interval: 85
+info_interval: 140
 
 checkpoint_interval: 100
 continue_training: false
-info_interval: 140
+
