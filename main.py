@@ -1,18 +1,24 @@
 import argparse
 import cProfile
 import pstats
+import warnings
 from pathlib import Path
 
 import ray
 
-from Trainer import Trainer
 from Tester import Tester
+from Trainer import Trainer
 
-import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings(
+    "ignore",
+    message="Mean of empty slice",
+    category=RuntimeWarning,
+    module=r"ray\.rllib\.utils\.metrics\.stats\.ema",
+)
 
 
-TRAINING_CONFIG_PATH = "configs/files/training/ppo_tictactoe_training_config.yml"
+TRAINING_CONFIG_PATH = "configs/files/training/connect_four_training_config.yml"
 TESTING_CONFIG_PATH = "configs/files/testing/tictactoe_testing_config.yml"
 PROFILE_OUTPUT_PATH = Path("profiling/profile_output.prof")
 

@@ -2,18 +2,21 @@ from typing import Any, Callable, Dict
 
 from pettingzoo import AECEnv
 
-
 EnvFactory = Callable[..., AECEnv]
 
 ENV_REGISTRY: Dict[str, EnvFactory] = {}
 
 
 def _register_builtin_envs() -> None:
+    from .factories.pettingzoo_classic import (create_connect_four_env,
+                                               create_leduc_holdem_env,
+                                               create_tictactoe_env)
     from .factories.scs import create_scs_env
-    from .factories.pettingzoo_classic import create_tictactoe_env
     
     ENV_REGISTRY["scs"] = create_scs_env
     ENV_REGISTRY["tictactoe"] = create_tictactoe_env
+    ENV_REGISTRY["leduc_holdem"] = create_leduc_holdem_env
+    ENV_REGISTRY["connect_four"] = create_connect_four_env
 
 
 def create_env(name: str, **kwargs: Any) -> AECEnv:

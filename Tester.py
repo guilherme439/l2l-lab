@@ -9,11 +9,14 @@ import numpy as np
 import torch
 
 from configs.definition.common.EnvConfig import EnvConfig
-from configs.definition.training.NetworkConfig import CONV_ARCHITECTURES, MLP_ARCHITECTURES
-from configs.definition.testing.TestingConfig import TestingConfig
 from configs.definition.testing.agents.AgentConfig import AgentConfig
-from configs.definition.testing.agents.PolicyAgentConfig import PolicyAgentConfig
-from configs.definition.testing.agents.RandomAgentConfig import RandomAgentConfig
+from configs.definition.testing.agents.PolicyAgentConfig import \
+    PolicyAgentConfig
+from configs.definition.testing.agents.RandomAgentConfig import \
+    RandomAgentConfig
+from configs.definition.testing.TestingConfig import TestingConfig
+from configs.definition.training.NetworkConfig import (CONV_ARCHITECTURES,
+                                                       MLP_ARCHITECTURES)
 from envs.registry import create_env
 
 MODELS_DIR = Path("models")
@@ -320,9 +323,12 @@ class Tester:
     @staticmethod
     def _get_main_module(algo):
         try:
-            return algo.get_module("main_policy")
+            module = algo.get_module("main_policy")
+            if module is not None:
+                return module
         except KeyError:
-            return algo.get_module("shared_policy")
+            pass
+        return algo.get_module("shared_policy")
     
     @staticmethod
     def evaluate_vs_checkpoint(algo, checkpoint_path: Path, env_config: EnvConfig, num_games: int = 10) -> GameResults:

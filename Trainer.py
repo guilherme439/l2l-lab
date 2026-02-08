@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 import torch
 from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from ray.tune.registry import register_env
 
+import graphs
 from configs.definition.training.TrainingConfig import TrainingConfig
 from envs.registry import create_env
 from Tester import Tester
-import graphs
 
 if TYPE_CHECKING:
     from rllib.algorithms.base import BaseAlgorithmTrainer
@@ -96,7 +96,8 @@ class Trainer:
             self.metrics[d_key].append(results.draws if results else None)
         
         if results:
-            return f" | {prefix}: W{results.wins}/L{results.losses}/D{results.draws}"
+            return (f" | {prefix}: {results.wins}W/{results.losses}L/{results.draws}D"
+                    f" - {results.win_rate:.0%}/{results.loss_rate:.0%}/{results.draw_rate:.0%}")
         return ""
     
     def _print_training_info(self, result: Dict[str, Any]) -> None:
@@ -272,7 +273,8 @@ class Trainer:
         print(f"✓ Algorithm loaded from: {algo_checkpoint_path}")
     
     def load_backbone_weights(self, model_name: str, iteration: Optional[int] = None) -> Dict[str, Any]:
-        from checkpoint_utils import get_checkpoint_path, get_latest_checkpoint_path
+        from checkpoint_utils import (get_checkpoint_path,
+                                      get_latest_checkpoint_path)
         
         model_dir = MODELS_DIR / f"rllib_{self.config.algorithm.name}_{model_name}"
         if iteration is not None:

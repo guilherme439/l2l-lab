@@ -32,6 +32,12 @@ algorithm:
     kl_coeff: 0.2
     kl_target: 0.01
 
+    policy:
+      use_multiple_policies: true
+      number_previous_policies: 2
+      main_policy_ratio: 0.5
+      random_policy_ratio: 0.3
+
 network:
   architecture: "ResNet"
   num_filters: 16

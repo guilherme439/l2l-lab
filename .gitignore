@@ -7,9 +7,8 @@ models/*
 
 configs/files/training/*
 !configs/files/training/trained_examples
-!configs/files/training/impala_training_config.example.yml
-!configs/files/training/ppo_training_config.example.yml
-!configs/files/training/tictactoe_training_config.example.yml
+!configs/files/training/*.example.yml
+
 configs/files/testing/*
 !configs/files/testing/testing_config.example.yml
 
