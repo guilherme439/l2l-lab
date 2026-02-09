@@ -325,19 +325,25 @@ def _plot_wld_stacked_split(
         l_vals = [x[2] for x in split_data]
         d_vals = [x[3] for x in split_data]
         
+        totals = [w + l + d for w, l, d in zip(w_vals, l_vals, d_vals)]
+        w_percentage = [100 * w / t if t > 0 else 0 for w, t in zip(w_vals, totals)]
+        l_percentage = [100 * l / t if t > 0 else 0 for l, t in zip(l_vals, totals)]
+        d_percentage = [100 * d / t if t > 0 else 0 for d, t in zip(d_vals, totals)]
+        
         fig, ax = plt.subplots(figsize=(10, 5))
         
         bar_width = 0.8
         x = range(len(iters))
         
-        ax.bar(x, w_vals, bar_width, label="Wins", color="#2ecc71", edgecolor="black", linewidth=0.5)
-        ax.bar(x, d_vals, bar_width, bottom=w_vals, label="Draws", color="#95a5a6", edgecolor="black", linewidth=0.5)
-        ax.bar(x, l_vals, bar_width, bottom=[w + d for w, d in zip(w_vals, d_vals)], label="Losses", color="#e74c3c", edgecolor="black", linewidth=0.5)
+        ax.bar(x, w_percentage, bar_width, label="Wins", color="#2ecc71", edgecolor="black", linewidth=0.5)
+        ax.bar(x, d_percentage, bar_width, bottom=w_percentage, label="Draws", color="#95a5a6", edgecolor="black", linewidth=0.5)
+        ax.bar(x, l_percentage, bar_width, bottom=[w + d for w, d in zip(w_percentage, d_percentage)], label="Losses", color="#e74c3c", edgecolor="black", linewidth=0.5)
         
         ax.set_xticks(x)
         ax.set_xticklabels([f"{i}" for i in iters], rotation=45, ha="right", fontsize=7)
         ax.set_xlabel("Iteration", fontsize=8)
-        ax.set_ylabel("Games", fontsize=8)
+        ax.set_ylabel("Percentage (%)", fontsize=8)
+        ax.set_ylim(0, 100)
         ax.set_title(f"{title_base} ({range_start}-{range_end})", fontsize=9)
         ax.legend(loc="upper right", fontsize=7)
         ax.grid(True, alpha=0.3, axis="y")
