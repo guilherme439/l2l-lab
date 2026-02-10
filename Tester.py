@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import torch
@@ -29,6 +29,9 @@ class GameResults:
     losses: int
     draws: int
     total: int
+    avg_moves: float = 0.0
+    as_p0: Optional['GameResults'] = None
+    as_p1: Optional['GameResults'] = None
     
     @property
     def win_rate(self) -> float:
@@ -130,10 +133,13 @@ class Tester:
     @staticmethod
     def _get_game_result(env) -> int:
         rewards = env.rewards
-        agents = list(rewards.keys())
-        if len(agents) < 2:
-            return 0
-        r0, r1 = rewards.get(agents[0], 0), rewards.get(agents[1], 0)
+        if "player_0" in rewards and "player_1" in rewards:
+            r0, r1 = rewards.get("player_0", 0), rewards.get("player_1", 0)
+        else:
+            agents = list(rewards.keys())
+            if len(agents) < 2:
+                return 0
+            r0, r1 = rewards.get(agents[0], 0), rewards.get(agents[1], 0)
         if r0 > r1:
             return 1
         elif r0 < r1:
@@ -268,12 +274,26 @@ class Tester:
         return backbone, obs_space_format
     
     @staticmethod
-    def _run_games(env_config: EnvConfig, num_games: int, get_action_p0, get_action_p1) -> GameResults:
+    def _run_games(
+        env_config: EnvConfig,
+        num_games: int,
+        get_action_p0,
+        get_action_p1,
+        alternate_positions: bool = False,
+    ) -> GameResults:
         wins, losses, draws = 0, 0, 0
+        total_moves = 0
+        p0_w, p0_l, p0_d, p0_n, p0_m = 0, 0, 0, 0, 0
+        p1_w, p1_l, p1_d, p1_n, p1_m = 0, 0, 0, 0, 0
         env = create_env(env_config.name, **env_config.kwargs)
         
-        for _ in range(num_games):
+        for game_idx in range(num_games):
+            swapped = alternate_positions and (game_idx % 2 == 1)
+            p0_action_fn = get_action_p1 if swapped else get_action_p0
+            p1_action_fn = get_action_p0 if swapped else get_action_p1
+
             env.reset()
+            moves = 0
             
             while not Tester._is_env_done(env):
                 agent = env.agent_selection
@@ -281,25 +301,51 @@ class Tester:
                 valid_actions = np.where(obs["action_mask"] == 1)[0]
                 
                 if len(valid_actions) == 0:
-                    env.step(0)
+                    print("\nno valid actions found")
+                    env.step(None)
                     continue
                 
                 if agent == "player_0":
-                    action = get_action_p0(obs)
+                    action = p0_action_fn(obs)
                 else:
-                    action = get_action_p1(obs)
+                    action = p1_action_fn(obs)
                 
                 env.step(action)
+                if action is not None:
+                    moves += 1
             
             result = Tester._get_game_result(env)
+            if swapped:
+                result = -result
             if result > 0:
                 wins += 1
             elif result < 0:
                 losses += 1
             else:
                 draws += 1
+            
+            total_moves += moves
+
+            if alternate_positions:
+                if swapped:
+                    p1_n += 1; p1_m += moves
+                    if result > 0: p1_w += 1
+                    elif result < 0: p1_l += 1
+                    else: p1_d += 1
+                else:
+                    p0_n += 1; p0_m += moves
+                    if result > 0: p0_w += 1
+                    elif result < 0: p0_l += 1
+                    else: p0_d += 1
         
-        return GameResults(wins=wins, losses=losses, draws=draws, total=num_games)
+        avg_moves = (total_moves / num_games) if num_games > 0 else 0.0
+
+        as_p0, as_p1 = None, None
+        if alternate_positions and p0_n > 0 and p1_n > 0:
+            as_p0 = GameResults(p0_w, p0_l, p0_d, p0_n, p0_m / p0_n)
+            as_p1 = GameResults(p1_w, p1_l, p1_d, p1_n, p1_m / p1_n)
+
+        return GameResults(wins, losses, draws, num_games, avg_moves, as_p0, as_p1)
     
     @staticmethod
     def evaluate_checkpoint_vs_checkpoint(
@@ -318,6 +364,7 @@ class Tester:
             env_config, num_games,
             get_action_p0=lambda obs: Tester._sample_action_from_backbone(backbone_1, obs, obs_format_1),
             get_action_p1=lambda obs: Tester._sample_action_from_backbone(backbone_2, obs, obs_format_2),
+            alternate_positions=True,
         )
     
     @staticmethod
@@ -344,6 +391,7 @@ class Tester:
             env_config, num_games,
             get_action_p0=lambda obs: Tester._sample_action_from_rl_module(rl_module, obs),
             get_action_p1=lambda obs: Tester._sample_action_from_backbone(opponent, obs, obs_format),
+            alternate_positions=True,
         )
         
         rl_module.train()
@@ -362,6 +410,7 @@ class Tester:
             env_config, num_games,
             get_action_p0=lambda obs: Tester._sample_action_from_rl_module(rl_module, obs),
             get_action_p1=lambda obs: random.choice(np.where(obs["action_mask"] == 1)[0]),
+            alternate_positions=True,
         )
         
         rl_module.train()

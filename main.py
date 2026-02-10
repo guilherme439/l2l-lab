@@ -19,7 +19,7 @@ warnings.filterwarnings(
 
 
 TRAINING_CONFIG_PATH = "configs/files/training/connect_four_training_config.yml"
-TESTING_CONFIG_PATH = "configs/files/testing/tictactoe_testing_config.yml"
+TESTING_CONFIG_PATH = "configs/files/testing/testing_config.yml"
 PROFILE_OUTPUT_PATH = Path("profiling/profile_output.prof")
 
 

@@ -96,8 +96,17 @@ class Trainer:
             self.metrics[d_key].append(results.draws if results else None)
         
         if results:
-            return (f" | {prefix}: {results.wins}W/{results.losses}L/{results.draws}D"
-                    f" - {results.win_rate:.0%}/{results.loss_rate:.0%}/{results.draw_rate:.0%}")
+            line = (f" | {prefix}: {results.wins}W/{results.losses}L/{results.draws}D"
+                    f" - {results.win_rate:.0%}/{results.loss_rate:.0%}/{results.draw_rate:.0%}"
+                    f" (avg: {results.avg_moves:.1f})")
+            if results.as_p0 and results.as_p1:
+                p0, p1 = results.as_p0, results.as_p1
+                line += (f"\n{' ' * 32}"
+                         f"P0: {p0.wins}W/{p0.losses}L/{p0.draws}D"
+                         f" ({p0.win_rate:.0%}) avg:{p0.avg_moves:.1f}"
+                         f" | P1: {p1.wins}W/{p1.losses}L/{p1.draws}D"
+                         f" ({p1.win_rate:.0%}) avg:{p1.avg_moves:.1f}")
+            return line
         return ""
     
     def _print_training_info(self, result: Dict[str, Any]) -> None:
