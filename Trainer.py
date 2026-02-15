@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
+import numpy as np
 import torch
 from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from ray.tune.registry import register_env
@@ -81,11 +82,28 @@ class Trainer:
             "wins_vs_random": [],
             "losses_vs_random": [],
             "draws_vs_random": [],
+            "weight_max": [],
+            "weight_min": [],
+            "weight_avg": [],
         }
         if self.config.eval_vs_previous:
             self.metrics["wins_vs_previous"] = []
             self.metrics["losses_vs_previous"] = []
             self.metrics["draws_vs_previous"] = []
+
+    @staticmethod
+    def _collect_weight_stats(rl_module) -> Dict[str, float]:
+        all_params = []
+        for p in rl_module.parameters():
+            all_params.append(p.data.cpu().numpy().ravel())
+        if not all_params:
+            return {"weight_max": 0.0, "weight_min": 0.0, "weight_avg": 0.0}
+        all_weights = np.concatenate(all_params)
+        return {
+            "weight_max": float(np.max(np.abs(all_weights))),
+            "weight_min": float(np.min(np.abs(all_weights))),
+            "weight_avg": float(np.mean(np.abs(all_weights))),
+        }
     
     def _record_eval(self, results, prefix: str) -> str:
         w_key, l_key, d_key = f"wins_{prefix}", f"losses_{prefix}", f"draws_{prefix}"
@@ -185,7 +203,12 @@ class Trainer:
         for i in range(start_iteration, algo_cfg.iterations):
             result = self.algo.train()
             metrics = self.algo_trainer.extract_metrics(result)
-            
+
+            policy_cfg = cfg.algorithm.config.policy
+            policy_name = "main_policy" if policy_cfg and policy_cfg.use_multiple_policies else "shared_policy"
+            weight_stats = Trainer._collect_weight_stats(self.algo.get_module(policy_name))
+            metrics.update(weight_stats)
+
             if not metrics_initialized:
                 for key in metrics.keys():
                     self.metrics[key] = []

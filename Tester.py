@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import random
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, Union
 import numpy as np
 import torch
 
+from agents import Agent, PolicyAgent, RandomAgent, RLModuleAgent
 from configs.definition.common.EnvConfig import EnvConfig
 from configs.definition.testing.agents.AgentConfig import AgentConfig
 from configs.definition.testing.agents.PolicyAgentConfig import \
@@ -30,27 +31,32 @@ class GameResults:
     draws: int
     total: int
     avg_moves: float = 0.0
+    elapsed_time: float = 0.0
     as_p0: Optional['GameResults'] = None
     as_p1: Optional['GameResults'] = None
-    
+
     @property
     def win_rate(self) -> float:
         return self.wins / self.total if self.total > 0 else 0.0
-    
+
     @property
     def loss_rate(self) -> float:
         return self.losses / self.total if self.total > 0 else 0.0
-    
+
     @property
     def draw_rate(self) -> float:
         return self.draws / self.total if self.total > 0 else 0.0
 
+    @property
+    def avg_time_per_game(self) -> float:
+        return self.elapsed_time / self.total if self.total > 0 else 0.0
+
 
 class Tester:
-    
+
     def __init__(self, config_path: Union[str, Path]):
         self.config = TestingConfig.from_yaml(config_path)
-    
+
     @staticmethod
     def _get_checkpoint_path(model_name: str, checkpoint: int) -> Path:
         model_dir = MODELS_DIR / f"{model_name}"
@@ -95,41 +101,27 @@ class Tester:
         network_class = model_config["network_class"]
         network_kwargs = model_config.get("network_kwargs", {})
         architecture = model_config.get("architecture")
-        
+
         obs_space = checkpoint["observation_space"]
         act_space = checkpoint["action_space"]
-        
+
         inner_obs_space = obs_space["observation"]
-        
+
         if architecture in CONV_ARCHITECTURES:
             backbone = Tester._create_conv_backbone(network_class, network_kwargs, inner_obs_space, act_space)
         elif architecture in MLP_ARCHITECTURES:
             backbone = Tester._create_mlp_backbone(network_class, network_kwargs, inner_obs_space, act_space)
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
-        
+
         backbone.load_state_dict(checkpoint["backbone_state_dict"])
         backbone.eval()
         return backbone
-    
-    def _get_action(self, backbone: torch.nn.Module, obs: Dict[str, np.ndarray]) -> int:
-        obs_tensor = torch.tensor(obs["observation"], dtype=torch.float32).unsqueeze(0)
-        action_mask = obs["action_mask"]
-        
-        with torch.no_grad():
-            policy_logits, _ = backbone(obs_tensor)
-            policy_logits = policy_logits.reshape(policy_logits.shape[0], -1).squeeze(0)
-            
-            masked_logits = policy_logits.numpy()
-            masked_logits[action_mask == 0] = -np.inf
-            action = int(np.argmax(masked_logits))
-        
-        return action
-    
+
     @staticmethod
     def _is_env_done(env) -> bool:
         return all(env.terminations.values()) or all(env.truncations.values())
-    
+
     @staticmethod
     def _get_game_result(env) -> int:
         rewards = env.rewards
@@ -145,117 +137,59 @@ class Tester:
         elif r0 < r1:
             return -1
         return 0
-    
-    def play_game(self, backbone_1: torch.nn.Module, backbone_2: torch.nn.Module):
-        env_config = self.config.env
-        env = create_env(env_config.name, **env_config.kwargs)
-        env.reset()
-        
-        backbones = {"player_0": backbone_1, "player_1": backbone_2}
-        
-        while not self._is_env_done(env):
-            agent = env.agent_selection
-            obs = env.observe(agent)
-            action_mask = obs["action_mask"]
-            valid_actions = np.where(action_mask == 1)[0]
-            
-            if len(valid_actions) == 0:
-                env.step(None)
-                continue
-            
-            backbone = backbones[agent]
-            action = self._get_action(backbone, obs)
-            env.step(action)
-        
-        return env
-    
-    def _create_action_fn(self, agent_config: AgentConfig):
+
+    def _create_agent(self, agent_config: AgentConfig) -> Agent:
         if isinstance(agent_config, RandomAgentConfig):
-            return lambda obs: random.choice(np.where(obs["action_mask"] == 1)[0])
-        
+            return RandomAgent()
+
         if isinstance(agent_config, PolicyAgentConfig):
             cp_path = self._get_checkpoint_path(agent_config.model_name, agent_config.checkpoint)
             backbone, obs_format = Tester._load_backbone_from_checkpoint(cp_path)
-            return lambda obs: Tester._sample_action_from_backbone(backbone, obs, obs_format)
-        
+            label = f"{agent_config.model_name}@{agent_config.checkpoint}"
+            return PolicyAgent(backbone, obs_format, label=label)
+
         raise ValueError(f"Unknown agent config type: {type(agent_config)}")
-    
-    def _agent_description(self, agent_config: AgentConfig) -> str:
-        if isinstance(agent_config, RandomAgentConfig):
-            return "random"
-        if isinstance(agent_config, PolicyAgentConfig):
-            return f"{agent_config.model_name}@{agent_config.checkpoint}"
-        return "unknown"
-    
+
     def test(self) -> GameResults:
         print("\n" + "=" * 70)
         print("Testing Mode")
-        print(f"  Player 1: {self._agent_description(self.config.p1)}")
-        print(f"  Player 2: {self._agent_description(self.config.p2)}")
+        print(f"  Player 1: {self.config.p1.agent_type}")
+        print(f"  Player 2: {self.config.p2.agent_type}")
         print(f"  Games: {self.config.num_games}")
         print("=" * 70)
-        
-        get_action_p1 = self._create_action_fn(self.config.p1)
-        get_action_p2 = self._create_action_fn(self.config.p2)
-        
+
+        agent_p1 = self._create_agent(self.config.p1)
+        agent_p2 = self._create_agent(self.config.p2)
+
+        print(f"  P1 agent: {agent_p1.name}")
+        print(f"  P2 agent: {agent_p2.name}")
+
         results = Tester._run_games(
             self.config.env, self.config.num_games,
-            get_action_p0=get_action_p1,
-            get_action_p1=get_action_p2,
+            agent_p0=agent_p1,
+            agent_p1=agent_p2,
         )
-        
+
         print(f"\nResults (P1 perspective):")
         print(f"  Wins:   {results.wins} ({results.win_rate:.1%})")
         print(f"  Losses: {results.losses} ({results.loss_rate:.1%})")
         print(f"  Draws:  {results.draws} ({results.draw_rate:.1%})")
+        print(f"  Time:   {results.elapsed_time:.2f}s ({results.avg_time_per_game:.3f}s/game)")
         print("\n✓ Testing complete!")
-        
+
         return results
 
-    @staticmethod
-    def _sample_action_from_backbone(backbone, obs: Dict[str, np.ndarray], obs_space_format: str = "channels_first") -> int:
-        obs_tensor = torch.tensor(obs["observation"], dtype=torch.float32).unsqueeze(0)
-        action_mask = obs["action_mask"]
-        
-        if obs_space_format == "channels_last":
-            obs_tensor = obs_tensor.permute(0, 3, 1, 2)
-        
-        with torch.no_grad():
-            policy_logits, _ = backbone(obs_tensor)
-            policy_logits = policy_logits.reshape(policy_logits.shape[0], -1).squeeze(0)
-            policy_logits[action_mask == 0] = float("-inf")
-            probs = torch.softmax(policy_logits, dim=-1)
-            action = int(torch.multinomial(probs, 1).item())
-        
-        return action
-    
-    @staticmethod
-    def _sample_action_from_rl_module(rl_module, obs: Dict[str, np.ndarray]) -> int:
-        obs_tensor = torch.tensor(obs["observation"], dtype=torch.float32).unsqueeze(0)
-        action_mask = obs["action_mask"]
-        mask_tensor = torch.tensor(action_mask, dtype=torch.float32).unsqueeze(0)
-        
-        with torch.no_grad():
-            batch = {"obs": {"observation": obs_tensor, "action_mask": mask_tensor}}
-            output = rl_module.forward_inference(batch)
-            logits = output["action_dist_inputs"].squeeze(0)
-            logits[action_mask == 0] = float("-inf")
-            probs = torch.softmax(logits, dim=-1)
-            action = int(torch.multinomial(probs, 1).item())
-        
-        return action
-    
     @staticmethod
     def _load_backbone_from_checkpoint(checkpoint_path: Path):
         checkpoint = torch.load(checkpoint_path, weights_only=False)
         model_config = checkpoint["model_config"]
         architecture = model_config.get("architecture", "ConvNet")
         obs_space_format = model_config.get("obs_space_format", "channels_first")
-        
+
         obs_space = checkpoint["observation_space"]
         act_space = checkpoint["action_space"]
         inner_obs_space = obs_space["observation"]
-        
+
         if architecture in CONV_ARCHITECTURES:
             backbone = Tester._create_conv_backbone(
                 model_config["network_class"], model_config.get("network_kwargs", {}),
@@ -268,52 +202,53 @@ class Tester:
             )
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
-        
+
         backbone.load_state_dict(checkpoint["backbone_state_dict"])
         backbone.eval()
         return backbone, obs_space_format
-    
+
     @staticmethod
     def _run_games(
         env_config: EnvConfig,
         num_games: int,
-        get_action_p0,
-        get_action_p1,
+        agent_p0: Agent,
+        agent_p1: Agent,
         alternate_positions: bool = False,
     ) -> GameResults:
+        start_time = time.time()
         wins, losses, draws = 0, 0, 0
         total_moves = 0
         p0_w, p0_l, p0_d, p0_n, p0_m = 0, 0, 0, 0, 0
         p1_w, p1_l, p1_d, p1_n, p1_m = 0, 0, 0, 0, 0
         env = create_env(env_config.name, **env_config.kwargs)
-        
+
         for game_idx in range(num_games):
             swapped = alternate_positions and (game_idx % 2 == 1)
-            p0_action_fn = get_action_p1 if swapped else get_action_p0
-            p1_action_fn = get_action_p0 if swapped else get_action_p1
+            current_p0 = agent_p1 if swapped else agent_p0
+            current_p1 = agent_p0 if swapped else agent_p1
 
             env.reset()
             moves = 0
-            
+
             while not Tester._is_env_done(env):
-                agent = env.agent_selection
-                obs = env.observe(agent)
+                agent_id = env.agent_selection
+                obs = env.observe(agent_id)
                 valid_actions = np.where(obs["action_mask"] == 1)[0]
-                
+
                 if len(valid_actions) == 0:
                     print("\nno valid actions found")
                     env.step(None)
                     continue
-                
-                if agent == "player_0":
-                    action = p0_action_fn(obs)
+
+                if agent_id == "player_0":
+                    action = current_p0.choose_action(obs)
                 else:
-                    action = p1_action_fn(obs)
-                
+                    action = current_p1.choose_action(obs)
+
                 env.step(action)
                 if action is not None:
                     moves += 1
-            
+
             result = Tester._get_game_result(env)
             if swapped:
                 result = -result
@@ -323,7 +258,7 @@ class Tester:
                 losses += 1
             else:
                 draws += 1
-            
+
             total_moves += moves
 
             if alternate_positions:
@@ -337,7 +272,8 @@ class Tester:
                     if result > 0: p0_w += 1
                     elif result < 0: p0_l += 1
                     else: p0_d += 1
-        
+
+        elapsed = time.time() - start_time
         avg_moves = (total_moves / num_games) if num_games > 0 else 0.0
 
         as_p0, as_p1 = None, None
@@ -345,8 +281,8 @@ class Tester:
             as_p0 = GameResults(p0_w, p0_l, p0_d, p0_n, p0_m / p0_n)
             as_p1 = GameResults(p1_w, p1_l, p1_d, p1_n, p1_m / p1_n)
 
-        return GameResults(wins, losses, draws, num_games, avg_moves, as_p0, as_p1)
-    
+        return GameResults(wins, losses, draws, num_games, avg_moves, elapsed, as_p0, as_p1)
+
     @staticmethod
     def evaluate_checkpoint_vs_checkpoint(
         checkpoint_1_path: Path,
@@ -356,17 +292,20 @@ class Tester:
     ) -> GameResults:
         if not checkpoint_1_path.exists() or not checkpoint_2_path.exists():
             return GameResults(0, 0, 0, 0)
-        
+
         backbone_1, obs_format_1 = Tester._load_backbone_from_checkpoint(checkpoint_1_path)
         backbone_2, obs_format_2 = Tester._load_backbone_from_checkpoint(checkpoint_2_path)
-        
+
+        agent_1 = PolicyAgent(backbone_1, obs_format_1, label="checkpoint_1")
+        agent_2 = PolicyAgent(backbone_2, obs_format_2, label="checkpoint_2")
+
         return Tester._run_games(
             env_config, num_games,
-            get_action_p0=lambda obs: Tester._sample_action_from_backbone(backbone_1, obs, obs_format_1),
-            get_action_p1=lambda obs: Tester._sample_action_from_backbone(backbone_2, obs, obs_format_2),
+            agent_p0=agent_1,
+            agent_p1=agent_2,
             alternate_positions=True,
         )
-    
+
     @staticmethod
     def _get_main_module(algo):
         try:
@@ -376,24 +315,26 @@ class Tester:
         except KeyError:
             pass
         return algo.get_module("shared_policy")
-    
+
     @staticmethod
     def evaluate_vs_checkpoint(algo, checkpoint_path: Path, env_config: EnvConfig, num_games: int = 10) -> GameResults:
         if algo is None or not checkpoint_path.exists():
             return GameResults(0, 0, 0, 0)
-        
-        opponent, obs_format = Tester._load_backbone_from_checkpoint(checkpoint_path)
-        
+
+        opponent_backbone, obs_format = Tester._load_backbone_from_checkpoint(checkpoint_path)
+        opponent = PolicyAgent(opponent_backbone, obs_format, label="checkpoint")
+
         rl_module = Tester._get_main_module(algo)
         rl_module.eval()
-        
+        current = RLModuleAgent(rl_module, label="current")
+
         results = Tester._run_games(
             env_config, num_games,
-            get_action_p0=lambda obs: Tester._sample_action_from_rl_module(rl_module, obs),
-            get_action_p1=lambda obs: Tester._sample_action_from_backbone(opponent, obs, obs_format),
+            agent_p0=current,
+            agent_p1=opponent,
             alternate_positions=True,
         )
-        
+
         rl_module.train()
         return results
 
@@ -402,18 +343,18 @@ class Tester:
         if algo is None:
             print("No algorithm trained yet!")
             return GameResults(0, 0, 0, 0)
-        
+
         rl_module = Tester._get_main_module(algo)
         rl_module.eval()
-        
+        current = RLModuleAgent(rl_module, label="current")
+        opponent = RandomAgent()
+
         results = Tester._run_games(
             env_config, num_games,
-            get_action_p0=lambda obs: Tester._sample_action_from_rl_module(rl_module, obs),
-            get_action_p1=lambda obs: random.choice(np.where(obs["action_mask"] == 1)[0]),
+            agent_p0=current,
+            agent_p1=opponent,
             alternate_positions=True,
         )
-        
+
         rl_module.train()
         return results
-
-

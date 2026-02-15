@@ -292,6 +292,39 @@ def plot_icm_dashboard(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     plt.close(fig)
 
 
+def plot_weight_stats(graphs_dir: Path, metrics: Dict[str, List]) -> None:
+    iterations = metrics.get("iteration", [])
+    weight_max = metrics.get("weight_max", [])
+    weight_min = metrics.get("weight_min", [])
+    weight_avg = metrics.get("weight_avg", [])
+
+    if not _has_valid_data(weight_max):
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    iters_max, vals_max = _filter_none(iterations, weight_max)
+    iters_avg, vals_avg = _filter_none(iterations, weight_avg)
+    iters_min, vals_min = _filter_none(iterations, weight_min)
+
+    if vals_max:
+        ax.plot(iters_max, vals_max, color="#e74c3c", linewidth=1.5, label="Max |w|")
+    if vals_avg:
+        ax.plot(iters_avg, vals_avg, color="#3498db", linewidth=1.5, label="Avg |w|")
+    if vals_min:
+        ax.plot(iters_min, vals_min, color="#2ecc71", linewidth=1.5, label="Min |w|")
+
+    ax.set_xlabel("Iteration", fontsize=10)
+    ax.set_ylabel("Absolute Weight Value", fontsize=10)
+    ax.set_title("Network Weight Statistics", fontsize=12, fontweight="bold")
+    ax.legend(loc="upper right", fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(graphs_dir / "weight_stats.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _plot_wld_stacked_split(
     graphs_dir: Path,
     iterations: List[int],
@@ -437,6 +470,7 @@ def plot_metrics(graphs_dir: Path, metrics: Dict[str, List], eval_graph_split: i
     plot_policy_health(graphs_dir, metrics)
     plot_value_function(graphs_dir, metrics)
     plot_learning_rate(graphs_dir, metrics)
+    plot_weight_stats(graphs_dir, metrics)
     
     has_icm = _has_valid_data(metrics.get("intrinsic_reward_mean", []))
     if has_icm:
