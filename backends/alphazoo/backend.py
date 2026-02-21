@@ -257,6 +257,25 @@ class AlphaZooBackend(AlgorithmBackend):
         self._train_thread = threading.Thread(target=_train_loop, daemon=True)
         self._train_thread.start()
 
+    def create_agent_from_checkpoint(self, checkpoint_path: Path) -> Agent:
+        from backends.alphazoo.agent import AlphaZooPolicyAgent
+        from alphazoo import Network_Manager
+
+        cp_data = torch.load(checkpoint_path, weights_only=False)
+
+        game = self._alphazoo.example_game
+        state_shape = game.get_state_shape()
+        action_space_shape = game.get_action_space_shape()
+        model = self._build_model(self._config, state_shape, action_space_shape)
+        model.load_state_dict(cp_data["model_state_dict"])
+        model.eval()
+        model.cpu()
+
+        nm = Network_Manager.__new__(Network_Manager)
+        nm.model = model
+        nm.device = "cpu"
+        return AlphaZooPolicyAgent(nm, self._obs_to_state, label="checkpoint")
+
     def create_eval_agent(self) -> Agent:
         from backends.alphazoo.agent import AlphaZooPolicyAgent
         from alphazoo import Network_Manager

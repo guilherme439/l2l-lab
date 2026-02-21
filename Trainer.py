@@ -68,7 +68,8 @@ class Trainer:
             self.metrics[d_key].append(results.draws if results else None)
 
         if results:
-            line = (f" | {prefix}: {results.wins}W/{results.losses}L/{results.draws}D"
+            line = (f"\n\n{' ' * 32}"
+                    f" | {prefix}: {results.wins}W/{results.losses}L/{results.draws}D"
                     f" - {results.win_rate:.0%}/{results.loss_rate:.0%}/{results.draw_rate:.0%}"
                     f" (avg: {results.avg_moves:.1f})")
             if results.as_p0 and results.as_p1:
@@ -165,8 +166,9 @@ class Trainer:
             if i % cfg.checkpoint_interval == 0:
                 if cfg.eval_vs_previous and previous_checkpoint is not None:
                     agent = self.backend.create_eval_agent()
-                    results_prev = Tester.evaluate_agent_vs_checkpoint(
-                        agent, previous_checkpoint, cfg.env, num_games=cfg.eval_games
+                    opponent = self.backend.create_agent_from_checkpoint(previous_checkpoint)
+                    results_prev = Tester.evaluate_agent_vs_agent(
+                        agent, opponent, cfg.env, num_games=cfg.eval_games
                     )
                     if hasattr(self.backend, '_set_module_training'):
                         self.backend._set_module_training()

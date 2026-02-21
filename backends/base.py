@@ -49,6 +49,11 @@ class AlgorithmBackend(ABC):
         ...
 
     @abstractmethod
+    def create_agent_from_checkpoint(self, checkpoint_path: Path) -> Agent:
+        """Load a previously saved checkpoint into an Agent for evaluation."""
+        ...
+
+    @abstractmethod
     def get_weight_parameters(self) -> Optional[Iterator]:
         """Return model parameters for weight stats collection (thread-safe read)."""
         ...

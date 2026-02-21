@@ -296,6 +296,20 @@ class Tester:
         )
 
     @staticmethod
+    def evaluate_agent_vs_agent(
+        agent: Agent,
+        opponent: Agent,
+        env_config: EnvConfig,
+        num_games: int = 10,
+    ) -> GameResults:
+        return Tester._run_games(
+            env_config, num_games,
+            agent_p0=agent,
+            agent_p1=opponent,
+            alternate_positions=True,
+        )
+
+    @staticmethod
     def evaluate_agent_vs_checkpoint(
         agent: Agent,
         checkpoint_path: Path,

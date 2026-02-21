@@ -163,6 +163,40 @@ class RLlibBackend(AlgorithmBackend):
         agent = RLModuleAgent(rl_module, label="current")
         return agent
 
+    def create_agent_from_checkpoint(self, checkpoint_path: Path) -> Agent:
+        from agents.policy_agent import PolicyAgent
+        from configs.definition.training.NetworkConfig import CONV_ARCHITECTURES, MLP_ARCHITECTURES
+
+        checkpoint = torch.load(checkpoint_path, weights_only=False)
+        model_config = checkpoint["model_config"]
+        architecture = model_config.get("architecture", "ConvNet")
+        obs_space_format = model_config.get("obs_space_format", "channels_first")
+        network_class = model_config["network_class"]
+        network_kwargs = model_config.get("network_kwargs", {})
+
+        obs_space = checkpoint["observation_space"]
+        act_space = checkpoint["action_space"]
+        inner_obs_space = obs_space["observation"]
+
+        if architecture in CONV_ARCHITECTURES:
+            obs_shape = inner_obs_space.shape
+            backbone = network_class(
+                in_channels=obs_shape[0],
+                policy_channels=act_space.n // (obs_shape[1] * obs_shape[2]),
+                **network_kwargs,
+            )
+        elif architecture in MLP_ARCHITECTURES:
+            backbone = network_class(out_features=act_space.n, **network_kwargs)
+            dummy = torch.zeros((1,) + inner_obs_space.shape, dtype=torch.float32)
+            with torch.no_grad():
+                _ = backbone(dummy)
+        else:
+            raise ValueError(f"Unknown architecture: {architecture}")
+
+        backbone.load_state_dict(checkpoint["backbone_state_dict"])
+        backbone.eval()
+        return PolicyAgent(backbone, obs_space_format, label="checkpoint")
+
     def _set_module_training(self) -> None:
         try:
             self.algo.get_module(self._get_policy_name()).train()
