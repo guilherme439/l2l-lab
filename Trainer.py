@@ -1,81 +1,35 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import numpy as np
-import torch
-from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
-from ray.tune.registry import register_env
 
 import graphs
+from backends import get_backend
 from configs.definition.training.TrainingConfig import TrainingConfig
-from envs.registry import create_env
 from Tester import Tester
-
-if TYPE_CHECKING:
-    from rllib.algorithms.base import BaseAlgorithmTrainer
-
 
 MODELS_DIR = Path("models")
 
 
 class Trainer:
-    
+
     def __init__(self, config_path: Union[str, Path]):
         self.config = TrainingConfig.from_yaml(config_path)
-        self.algo = None
-        self.algo_trainer = None
+        self.backend = get_backend(self.config.backend)()
         self.metrics: Dict[str, List] = {}
         self.current_model_dir: Optional[Path] = None
-        self._register_env()
-    
-    def _register_env(self) -> None:
-        env_config = self.config.env
-        
-        def env_creator(config: Dict):
-            env = create_env(env_config.name, **env_config.kwargs)
-            return PettingZooEnv(env)
-        
-        register_env(env_config.name, env_creator)
-    
-    def _get_spaces(self):
-        env_config = self.config.env
-        env = create_env(env_config.name, **env_config.kwargs)
-        wrapped = PettingZooEnv(env)
-        first_agent = list(wrapped.observation_space.keys())[0]
-        obs_space = wrapped.observation_space[first_agent]
-        act_space = wrapped.action_space[first_agent]
-        return obs_space, act_space
-    
+
     def _setup_model_dir(self) -> Path:
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        model_dir = MODELS_DIR / f"rllib_{self.config.algorithm.name}_{self.config.name}"
+        cfg = self.config
+        model_dir = MODELS_DIR / f"{cfg.name}"
         model_dir.mkdir(parents=True, exist_ok=True)
         (model_dir / "graphs").mkdir(exist_ok=True)
         self.current_model_dir = model_dir
         return model_dir
-    
-    def _get_algorithm_trainer(self) -> BaseAlgorithmTrainer:
-        algo_name = self.config.algorithm.name.lower()
-        
-        if algo_name == "ppo":
-            from rllib.algorithms.ppo import PPOTrainer
-            return PPOTrainer(self)
-        elif algo_name == "impala":
-            from rllib.algorithms.impala import IMPALATrainer
-            return IMPALATrainer(self)
-        else:
-            raise ValueError(f"Unsupported algorithm: {algo_name}. Supported: ppo, impala")
-    
-    def _print_observation_space(self, obs_space) -> None:
-        print("  Observation space:")
-        for key, space in obs_space.spaces.items():
-            if hasattr(space, 'shape'):
-                print(f"    {key}: shape={space.shape}, dtype={space.dtype}")
-            else:
-                print(f"    {key}: {space}")
-    
+
     def _init_metrics(self) -> None:
         self.metrics = {
             "iteration": [],
@@ -92,9 +46,9 @@ class Trainer:
             self.metrics["draws_vs_previous"] = []
 
     @staticmethod
-    def _collect_weight_stats(rl_module) -> Dict[str, float]:
+    def _collect_weight_stats(parameters) -> Dict[str, float]:
         all_params = []
-        for p in rl_module.parameters():
+        for p in parameters:
             all_params.append(p.data.cpu().numpy().ravel())
         if not all_params:
             return {"weight_max": 0.0, "weight_min": 0.0, "weight_avg": 0.0}
@@ -104,15 +58,15 @@ class Trainer:
             "weight_min": float(np.min(np.abs(all_weights))),
             "weight_avg": float(np.mean(np.abs(all_weights))),
         }
-    
+
     def _record_eval(self, results, prefix: str) -> str:
         w_key, l_key, d_key = f"wins_{prefix}", f"losses_{prefix}", f"draws_{prefix}"
-        
+
         if w_key in self.metrics:
             self.metrics[w_key].append(results.wins if results else None)
             self.metrics[l_key].append(results.losses if results else None)
             self.metrics[d_key].append(results.draws if results else None)
-        
+
         if results:
             line = (f" | {prefix}: {results.wins}W/{results.losses}L/{results.draws}D"
                     f" - {results.win_rate:.0%}/{results.loss_rate:.0%}/{results.draw_rate:.0%}"
@@ -126,54 +80,24 @@ class Trainer:
                          f" ({p1.win_rate:.0%}) avg:{p1.avg_moves:.1f}")
             return line
         return ""
-    
-    def _print_training_info(self, result: Dict[str, Any]) -> None:
-        policy_cfg = self.config.algorithm.config.policy
-        policy_name = "main_policy" if policy_cfg and policy_cfg.use_multiple_policies else "shared_policy"
-        learner_info = result.get("learners", {}).get(policy_name, {})
-        env_runners = result.get("env_runners", {})
-        
-        timesteps = env_runners.get("num_env_steps_sampled_lifetime", 0)
-        curr_lr = learner_info.get("default_optimizer_learning_rate", None)
-        
-        print()
-        print("  ┌─ Training Info ─────────────────────────────")
-        print(f"  │ Timesteps: {timesteps:,}")
-        if curr_lr is not None:
-            print(f"  │ Learning Rate: {curr_lr:.2e}")
-        print("  └──────────────────────────────────────────────")
-        print()
-    
+
     def train(self) -> None:
         cfg = self.config
         algo_cfg = cfg.algorithm
-        env_cfg = cfg.env
-        
+
         print("\n" * 3)
         print("=" * 70)
-        print(f"\nTraining {cfg.env.name.upper()} with {algo_cfg.name.upper()}\n")
+        print(f"\nTraining {cfg.env.name.upper()} with {algo_cfg.name.upper()} (backend: {cfg.backend})\n")
         print(f"  Name: {cfg.name}")
         print()
         print("=" * 70)
-        
-        self._setup_model_dir()
-        obs_space, act_space = self._get_spaces()
 
-        
-        print(f"\nEnvironment Info:")
-        self._print_observation_space(obs_space)
-        print(f"  Action space: {act_space}")
-        print()
-        print("=" * 70)
-        
-        self.algo_trainer = self._get_algorithm_trainer()
-        rllib_config = self.algo_trainer.build_config(env_cfg.name, env_cfg.obs_space_format, obs_space, act_space)
-        
+        self._setup_model_dir()
+
         if cfg.continue_training:
-            start_iteration, cp_data = self.algo_trainer.load_checkpoint_for_continue(
-                rllib_config, self.current_model_dir, target_iteration=cfg.continue_from_iteration
+            start_iteration, cp_data = self.backend.restore(
+                cfg, self.current_model_dir, self.current_model_dir
             )
-            self.algo = self.algo_trainer.algo
             if cp_data and cp_data.metrics:
                 self.metrics = cp_data.metrics
                 print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint")
@@ -181,15 +105,12 @@ class Trainer:
                 self._init_metrics()
         else:
             start_iteration = 0
-            print(f"\nBuilding {algo_cfg.name.upper()} algorithm...\n")
-            self.algo = rllib_config.build_algo()
-            self.algo_trainer.algo = self.algo
-            print("\n✓ Algorithm built successfully!")
+            self.backend.setup(cfg, self.current_model_dir)
             self._init_metrics()
-        
+
         previous_checkpoint: Optional[Path] = None
         metrics_initialized = len(self.metrics.get("iteration", [])) > 0
-        
+
         remaining_iterations = algo_cfg.iterations - start_iteration
         if remaining_iterations <= 0:
             print(f"\nAlready completed {start_iteration} iterations (target: {algo_cfg.iterations}). Nothing to do.")
@@ -199,137 +120,104 @@ class Trainer:
         print("=" * 70)
         print(f"\n\nStarting training for {remaining_iterations} iterations (from {start_iteration} to {algo_cfg.iterations})...")
         print("-" * 70)
-        
-        for i in range(start_iteration, algo_cfg.iterations):
-            result = self.algo.train()
-            metrics = self.algo_trainer.extract_metrics(result)
 
-            policy_cfg = cfg.algorithm.config.policy
-            policy_name = "main_policy" if policy_cfg and policy_cfg.use_multiple_policies else "shared_policy"
-            weight_stats = Trainer._collect_weight_stats(self.algo.get_module(policy_name))
-            metrics.update(weight_stats)
+        self.backend.start_training(start_iteration, algo_cfg.iterations)
+
+        while True:
+            step_result = self.backend.metrics_queue.get()
+            if step_result is None:
+                break
+
+            i = step_result.iteration
+            metrics = step_result.metrics
+
+            # Remove internal keys before storing
+            rllib_result = metrics.pop("_rllib_result", None)
+
+            weight_params = self.backend.get_weight_parameters()
+            if weight_params is not None:
+                weight_stats = Trainer._collect_weight_stats(weight_params)
+                metrics.update(weight_stats)
 
             if not metrics_initialized:
                 for key in metrics.keys():
                     self.metrics[key] = []
                 metrics_initialized = True
 
-            self.metrics["iteration"].append(i + 1)
+            self.metrics["iteration"].append(i)
             for key, value in metrics.items():
-                self.metrics[key].append(value)
-            
+                if key in self.metrics:
+                    self.metrics[key].append(value)
+                else:
+                    self.metrics[key] = [None] * (len(self.metrics["iteration"]) - 1) + [value]
+
             eval_str = ""
-            
+
             results_random = None
-            if (i + 1) % cfg.eval_interval == 0:
-                results_random = Tester.evaluate_vs_random(self.algo, cfg.env, num_games=cfg.eval_games)
+            if i % cfg.eval_interval == 0:
+                agent = self.backend.create_eval_agent()
+                results_random = Tester.evaluate_agent_vs_random(agent, cfg.env, num_games=cfg.eval_games)
+                if hasattr(self.backend, '_set_module_training'):
+                    self.backend._set_module_training()
             eval_str += self._record_eval(results_random, "vs_random")
-            
+
             results_prev = None
-            if (i + 1) % cfg.checkpoint_interval == 0:
+            if i % cfg.checkpoint_interval == 0:
                 if cfg.eval_vs_previous and previous_checkpoint is not None:
-                    results_prev = Tester.evaluate_vs_checkpoint(
-                        self.algo, previous_checkpoint, cfg.env, num_games=cfg.eval_games
+                    agent = self.backend.create_eval_agent()
+                    results_prev = Tester.evaluate_agent_vs_checkpoint(
+                        agent, previous_checkpoint, cfg.env, num_games=cfg.eval_games
                     )
-                checkpoint_dir = self.save_checkpoint(i + 1)
-                previous_checkpoint = checkpoint_dir / "model.cp"
-                
-                if hasattr(self.algo_trainer, 'update_opponent_policies'):
-                    self.algo_trainer.update_opponent_policies(self.current_model_dir, i + 1)
+                    if hasattr(self.backend, '_set_module_training'):
+                        self.backend._set_module_training()
+                checkpoint_dir = self.save_checkpoint(i)
+                previous_checkpoint = checkpoint_dir / "checkpoint.pt"
+
+                if hasattr(self.backend, 'update_opponent_policies'):
+                    self.backend.update_opponent_policies(self.current_model_dir, i)
             eval_str += self._record_eval(results_prev, "vs_previous")
-            
-            print(f"{i+1:8d}/{algo_cfg.iterations} | EpLen: {metrics['episode_len_mean']:6.1f}{eval_str}")
-            
-            if (i + 1) % cfg.plot_interval == 0:
+
+            ep_len = metrics.get('episode_len_mean', 0) or 0
+            print(f"{i:8d}/{algo_cfg.iterations} | EpLen: {ep_len:6.1f}{eval_str}")
+
+            if i % cfg.plot_interval == 0:
                 self.plot_progress()
-            
-            if (i + 1) % cfg.info_interval == 0:
-                self._print_training_info(result)
-        else:
-            print("-" * 70)
-            print(f"✓ {algo_cfg.name.upper()} Training completed!")
-            
-            self.save_checkpoint(algo_cfg.iterations)
-            self.algo.stop()
-            self.plot_progress()
-    
+
+            if i % cfg.info_interval == 0 and rllib_result is not None:
+                if hasattr(self.backend, 'print_training_info'):
+                    self.backend.print_training_info(rllib_result)
+
+        print("-" * 70)
+        print(f"✓ {algo_cfg.name.upper()} Training completed!")
+
+        self.save_checkpoint(algo_cfg.iterations)
+        self.backend.shutdown()
+        self.plot_progress()
+
     def save_checkpoint(self, iteration: int) -> Path:
-        if self.algo is None:
-            raise RuntimeError("No algorithm to save. Train first.")
-        
         if self.current_model_dir is None:
             raise RuntimeError("No model directory.")
-        
+
         checkpoint_dir = self.current_model_dir / "checkpoints" / str(iteration)
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        
-        policy_cfg = self.config.algorithm.config.policy
-        policy_name = "main_policy" if policy_cfg and policy_cfg.use_multiple_policies else "shared_policy"
-        rl_module = self.algo.get_module(policy_name)
-        checkpoint = {
-            "backbone_state_dict": rl_module.backbone.state_dict(),
-            "observation_space": rl_module.observation_space,
-            "action_space": rl_module.action_space,
-            "model_config": rl_module.model_config,
-            "iteration": iteration,
-            "metrics": self.metrics,
-        }
-        
-        model_path = checkpoint_dir / "model.cp"
-        torch.save(checkpoint, model_path)
-        
-        algo_path = checkpoint_dir / "algo_checkpoint"
-        self.algo.save_to_path(str(algo_path.absolute()))
-        
+
+        self.backend.save_checkpoint(checkpoint_dir, iteration, self.metrics)
+
         print(f"\n  [Checkpoint saved: iter {iteration}]\n")
         return checkpoint_dir
-    
+
     def get_latest_checkpoint(self, model_dir: Path) -> Optional[Path]:
         from checkpoint_utils import get_latest_checkpoint_dir
         return get_latest_checkpoint_dir(model_dir)
-    
-    def load_model(self, model_name: str, iteration: Optional[int] = None) -> None:
-        from checkpoint_utils import get_algo_checkpoint_path
-        
-        model_dir = MODELS_DIR / f"rllib_{self.config.algorithm.name}_{model_name}"
-        if not model_dir.exists():
-            raise FileNotFoundError(f"Model not found: {model_dir}")
-        
-        algo_checkpoint_path = get_algo_checkpoint_path(model_dir, iteration)
-        if algo_checkpoint_path is None or not algo_checkpoint_path.exists():
-            raise FileNotFoundError(f"No algo checkpoint found in: {model_dir}")
-        
-        self.current_model_dir = model_dir
-        algo_trainer = self._get_algorithm_trainer()
-        self.algo = algo_trainer.load_from_checkpoint(algo_checkpoint_path)
-        print(f"✓ Algorithm loaded from: {algo_checkpoint_path}")
-    
-    def load_backbone_weights(self, model_name: str, iteration: Optional[int] = None) -> Dict[str, Any]:
-        from checkpoint_utils import (get_checkpoint_path,
-                                      get_latest_checkpoint_path)
-        
-        model_dir = MODELS_DIR / f"rllib_{self.config.algorithm.name}_{model_name}"
-        if iteration is not None:
-            checkpoint_path = get_checkpoint_path(model_dir, iteration)
-        else:
-            checkpoint_path = get_latest_checkpoint_path(model_dir)
-        
-        if checkpoint_path is None or not checkpoint_path.exists():
-            raise FileNotFoundError(f"Checkpoint not found in: {model_dir}")
-        
-        checkpoint = torch.load(checkpoint_path, weights_only=False)
-        print(f"✓ Backbone weights loaded from: {checkpoint_path}")
-        return checkpoint
 
-    
     def plot_progress(self) -> None:
         if not self.metrics.get("iteration"):
             print("No metrics to plot!")
             return
-        
+
         if self.current_model_dir is None:
             raise RuntimeError("No model directory.")
-        
+
         graphs_dir = self.current_model_dir / "graphs"
         graphs.plot_metrics(graphs_dir, self.metrics, self.config.eval_graph_split)
         print(f"\n📊 Graphs saved to: {graphs_dir}\n")

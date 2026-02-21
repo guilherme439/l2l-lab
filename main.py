@@ -4,8 +4,6 @@ import pstats
 import warnings
 from pathlib import Path
 
-import ray
-
 from Tester import Tester
 from Trainer import Trainer
 
@@ -24,34 +22,21 @@ PROFILE_OUTPUT_PATH = Path("profiling/profile_output.prof")
 
 
 def train(config_path: str):
-    
-    ray.init(
-        ignore_reinit_error=True,
-        _system_config={
-            "gcs_rpc_server_reconnect_timeout_s": 120,
-            "gcs_server_request_timeout_seconds": 120,
-        },
-        object_store_memory = 2 * 1024 * 1024 * 1024, # 2GB
-    )
-    
     try:
         trainer = Trainer(config_path)
         trainer.train()
-        
+
     except Exception as e:
         print(f"\n✗ Error: {e}")
         import traceback
         traceback.print_exc()
-        
-    finally:
-        ray.shutdown()
 
 
 def test(config_path: str):
     try:
         tester = Tester(config_path)
         tester.test()
-        
+
     except Exception as e:
         print(f"\n✗ Error: {e}")
         import traceback
@@ -61,19 +46,19 @@ def test(config_path: str):
 def run_with_profiling(func, *args):
     profiler = cProfile.Profile()
     profiler.enable()
-    
+
     try:
         func(*args)
     finally:
         profiler.disable()
         profiler.dump_stats(str(PROFILE_OUTPUT_PATH))
-        
+
         print("\n" + "=" * 70)
         print("PROFILING SUMMARY (top 30 by cumulative time)")
         print("=" * 70)
         stats = pstats.Stats(profiler)
         stats.strip_dirs().sort_stats("cumulative").print_stats(30)
-        
+
         print("=" * 70)
         print(f"Full profile saved to: {PROFILE_OUTPUT_PATH.absolute()}")
         print("View interactively with: snakeviz profile_output.prof")
@@ -98,9 +83,9 @@ def main():
         action="store_true",
         help="Enable cProfile profiling and save results to profile_output.prof"
     )
-    
+
     args = parser.parse_args()
-    
+
     if args.mode == "train":
         config_path = args.config or TRAINING_CONFIG_PATH
         if args.profile:
@@ -113,7 +98,7 @@ def main():
             run_with_profiling(test, config_path)
         else:
             test(config_path)
-    
+
     print("\nDone!")
 
 

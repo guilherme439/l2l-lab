@@ -25,6 +25,15 @@ def _has_variation(values: List[Optional[float]], threshold: float = 1e-9) -> bo
     return (max(valid) - min(valid)) > threshold
 
 
+def _get_metric(metrics: Dict[str, List], *keys) -> List:
+    """Get the first available metric from a list of candidate keys."""
+    for key in keys:
+        vals = metrics.get(key, [])
+        if vals:
+            return vals
+    return []
+
+
 def _rolling_mean(values: List[float], window: int = 10) -> List[float]:
     if len(values) < window:
         return values
@@ -81,9 +90,9 @@ def plot_training_overview(graphs_dir: Path, metrics: Dict[str, List]) -> None:
 
 def plot_loss_breakdown(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     iterations = metrics.get("iteration", [])
-    total_loss = metrics.get("total_loss", [])
-    policy_loss = metrics.get("policy_loss", [])
-    vf_loss = metrics.get("vf_loss", [])
+    total_loss = _get_metric(metrics, "total_loss", "combined_loss")
+    policy_loss = _get_metric(metrics, "policy_loss")
+    vf_loss = _get_metric(metrics, "vf_loss", "value_loss")
     
     iters_t, vals_t = _filter_none(iterations, total_loss)
     iters_p, vals_p = _filter_none(iterations, policy_loss)
@@ -178,8 +187,8 @@ def plot_policy_health(graphs_dir: Path, metrics: Dict[str, List]) -> None:
 
 def plot_value_function(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     iterations = metrics.get("iteration", [])
-    vf_loss = metrics.get("vf_loss", [])
-    vf_explained = metrics.get("vf_explained_var", [])
+    vf_loss = _get_metric(metrics, "vf_loss", "value_loss")
+    vf_explained = _get_metric(metrics, "vf_explained_var")
     
     has_loss = _has_valid_data(vf_loss)
     has_explained = _has_valid_data(vf_explained)

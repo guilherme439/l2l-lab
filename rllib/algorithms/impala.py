@@ -8,13 +8,13 @@ from ray.rllib.algorithms.impala import IMPALA, IMPALAConfig
 from .base import BaseAlgorithmTrainer
 
 if TYPE_CHECKING:
-    from Trainer import Trainer
+    from configs.definition.training.TrainingConfig import TrainingConfig
 
 
 class IMPALATrainer(BaseAlgorithmTrainer):
-    
-    def __init__(self, trainer: Trainer):
-        super().__init__(trainer)
+
+    def __init__(self, config: TrainingConfig):
+        super().__init__(config)
     
     @property
     def algorithm_name(self) -> str:

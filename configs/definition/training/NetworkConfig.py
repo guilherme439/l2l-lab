@@ -4,8 +4,6 @@ from typing import Any, Dict, Type
 from neural_networks.architectures.dual_head.ConvNet import ConvNet
 from neural_networks.architectures.dual_head.ResNet import ResNet
 from neural_networks.architectures.dual_head.MLPNet import MLPNet
-from rllib.modules.networks.conv import ConvDualHeadRLModule
-from rllib.modules.networks.mlp import MLPDualHeadRLModule
 
 CONV_ARCHITECTURES = {"ResNet", "ConvNet"}
 MLP_ARCHITECTURES = {"MLPNet"}
@@ -14,10 +12,10 @@ MLP_ARCHITECTURES = {"MLPNet"}
 class NetworkConfig:
     architecture: str
     kwargs: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_kwargs(self) -> Dict[str, Any]:
         return self.kwargs.copy()
-    
+
     def get_network_class(self) -> Type:
         match self.architecture:
             case "ResNet":
@@ -28,11 +26,3 @@ class NetworkConfig:
                 return MLPNet
             case _:
                 raise ValueError(f"Unknown architecture: {self.architecture}")
-    
-    def get_adapter_class(self) -> Type:
-        if self.architecture in CONV_ARCHITECTURES:
-            return ConvDualHeadRLModule
-        elif self.architecture in MLP_ARCHITECTURES:
-            return MLPDualHeadRLModule
-        else:
-            raise ValueError(f"No adapter found for architecture: {self.architecture}")

@@ -15,13 +15,13 @@ from .multi_policy import (
 )
 
 if TYPE_CHECKING:
-    from Trainer import Trainer
+    from configs.definition.training.TrainingConfig import TrainingConfig
 
 
 class PPOTrainer(BaseAlgorithmTrainer):
-    
-    def __init__(self, trainer: Trainer):
-        super().__init__(trainer)
+
+    def __init__(self, config: TrainingConfig):
+        super().__init__(config)
         self.policy_sampler: Optional[PolicySampler] = None
         self.available_checkpoints: List[int] = []
     
@@ -137,9 +137,9 @@ class PPOTrainer(BaseAlgorithmTrainer):
     
     def _get_base_rl_module_spec(self, obs_space, obs_space_format, act_space) -> RLModuleSpec:
         from rllib.modules.networks.conv import ConvDualHeadRLModule
-        
+
         network_class = self.config.network.get_network_class()
-        adapter_class = self.config.network.get_adapter_class()
+        adapter_class = self.get_adapter_class(self.config.network.architecture)
         
         model_config = {
             "network_class": network_class,

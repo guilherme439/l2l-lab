@@ -17,11 +17,11 @@ def get_checkpoint_dir(model_dir: Path, iteration: Optional[int] = None) -> Opti
     checkpoints_dir = model_dir / "checkpoints"
     if not checkpoints_dir.exists():
         return None
-    
+
     checkpoint_dirs = [d for d in checkpoints_dir.iterdir() if d.is_dir() and d.name.isdigit()]
     if not checkpoint_dirs:
         return None
-    
+
     if iteration is not None:
         target = checkpoints_dir / str(iteration)
         if target.exists():
@@ -30,14 +30,25 @@ def get_checkpoint_dir(model_dir: Path, iteration: Optional[int] = None) -> Opti
         if valid:
             return max(valid, key=lambda d: int(d.name))
         return None
-    
+
     return max(checkpoint_dirs, key=lambda d: int(d.name))
+
+
+def _find_checkpoint_file(checkpoint_dir: Path) -> Optional[Path]:
+    """Find checkpoint file, preferring checkpoint.pt, falling back to model.cp."""
+    pt_path = checkpoint_dir / "checkpoint.pt"
+    if pt_path.exists():
+        return pt_path
+    cp_path = checkpoint_dir / "model.cp"
+    if cp_path.exists():
+        return cp_path
+    return None
 
 
 def get_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
     checkpoint_dir = get_checkpoint_dir(model_dir, iteration)
     if checkpoint_dir:
-        return checkpoint_dir / "model.cp"
+        return _find_checkpoint_file(checkpoint_dir)
     return None
 
 
@@ -71,10 +82,10 @@ def trim_metrics_to_iteration(metrics: Dict[str, List], target_iteration: int) -
     iterations = metrics.get("iteration", [])
     if not iterations:
         return metrics
-    
+
     try:
         cutoff_idx = next(i for i, it in enumerate(iterations) if it > target_iteration)
     except StopIteration:
         return metrics
-    
+
     return {k: v[:cutoff_idx] for k, v in metrics.items()}

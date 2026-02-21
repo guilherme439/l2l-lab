@@ -283,6 +283,40 @@ class Tester:
 
         return GameResults(wins, losses, draws, num_games, avg_moves, elapsed, as_p0, as_p1)
 
+    # --- Agent-based evaluation methods (backend-agnostic) ---
+
+    @staticmethod
+    def evaluate_agent_vs_random(agent: Agent, env_config: EnvConfig, num_games: int = 10) -> GameResults:
+        opponent = RandomAgent()
+        return Tester._run_games(
+            env_config, num_games,
+            agent_p0=agent,
+            agent_p1=opponent,
+            alternate_positions=True,
+        )
+
+    @staticmethod
+    def evaluate_agent_vs_checkpoint(
+        agent: Agent,
+        checkpoint_path: Path,
+        env_config: EnvConfig,
+        num_games: int = 10,
+    ) -> GameResults:
+        if not checkpoint_path.exists():
+            return GameResults(0, 0, 0, 0)
+
+        opponent_backbone, obs_format = Tester._load_backbone_from_checkpoint(checkpoint_path)
+        opponent = PolicyAgent(opponent_backbone, obs_format, label="checkpoint")
+
+        return Tester._run_games(
+            env_config, num_games,
+            agent_p0=agent,
+            agent_p1=opponent,
+            alternate_positions=True,
+        )
+
+    # --- Legacy RLlib-specific methods (kept for backward compat) ---
+
     @staticmethod
     def evaluate_checkpoint_vs_checkpoint(
         checkpoint_1_path: Path,
