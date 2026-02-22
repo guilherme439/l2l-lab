@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 import numpy as np
+import shutil
 
 import graphs
 from backends import get_backend
@@ -105,6 +106,10 @@ class Trainer:
             else:
                 self._init_metrics()
         else:
+            if self.current_model_dir.exists():
+                # clear dir if it exists to avoid confusion
+                shutil.rmtree(self.current_model_dir)
+                self._setup_model_dir()
             start_iteration = 0
             self.backend.setup(cfg, self.current_model_dir)
             self._init_metrics()
