@@ -4,4 +4,4 @@ A laboratory for exploring learning-to-learn algorithms and reinforcement learni
 
 ## Installation
 
-Read `install.md`
+- [Installation](docs/install.md)

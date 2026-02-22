@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterator, List, Optional, TYPE_CHECKING
 import torch
 
 from backends.base import AlgorithmBackend, StepResult
-from backends.obs_utils import make_obs_to_state, default_action_mask_fn
+from backends.obs_utils import make_wrapper, make_obs_to_state
 from envs.registry import create_env
 
 if TYPE_CHECKING:
@@ -76,6 +76,26 @@ def _build_alphazoo_config(algo_config_dict: Dict[str, Any]):
     )
 
 
+def _get_shapes(env, obs_to_state):
+    """Compute state shape and action space shape from a PettingZoo env."""
+    import numpy as np
+
+    obs = env.observe(env.agent_selection)
+    state = obs_to_state(obs, None)
+    state_shape = tuple(state.shape[1:])
+
+    action_space = env.action_space(env.agent_selection)
+    if hasattr(action_space, 'n'):
+        num_actions = action_space.n
+    elif hasattr(action_space, 'shape'):
+        num_actions = int(np.prod(action_space.shape))
+    else:
+        raise ValueError(f"Unsupported action space type: {type(action_space)}")
+    action_space_shape = (num_actions,)
+
+    return state_shape, action_space_shape
+
+
 class AlphaZooBackend(AlgorithmBackend):
 
     def __init__(self):
@@ -119,7 +139,6 @@ class AlphaZooBackend(AlgorithmBackend):
     def setup(self, config: TrainingConfig, model_dir: Path) -> None:
         import ray
         from alphazoo import AlphaZoo
-        from alphazoo.wrappers.pettingzoo_wrapper import PettingZooWrapper
 
         if not ray.is_initialized():
             ray.init(ignore_reinit_error=True)
@@ -127,19 +146,13 @@ class AlphaZooBackend(AlgorithmBackend):
         self._config = config
         env_config = config.env
 
-        self._obs_to_state = make_obs_to_state(config.network.architecture, env_config.obs_space_format)
+        env = create_env(env_config.name, **env_config.kwargs)
+        self._obs_to_state = make_obs_to_state(env_config.obs_space_format)
 
-        def env_creator():
-            return create_env(env_config.name, **env_config.kwargs)
-
-        game = PettingZooWrapper(
-            env_creator=env_creator,
-            observation_to_state=self._obs_to_state,
-            action_mask_fn=default_action_mask_fn,
-        )
-
-        state_shape = game.get_state_shape()
-        action_space_shape = game.get_action_space_shape()
+        env.reset()
+        state_shape, action_space_shape = _get_shapes(env, self._obs_to_state)
+        self._state_shape = state_shape
+        self._action_space_shape = action_space_shape
 
         print(f"\nEnvironment Info:")
         print(f"  State shape: {state_shape}")
@@ -149,15 +162,14 @@ class AlphaZooBackend(AlgorithmBackend):
 
         model = self._build_model(config, state_shape, action_space_shape)
 
+        game = make_wrapper(env, config.network.architecture, env_config.obs_space_format)
+
         algo_config_dict = config.algorithm.config if isinstance(config.algorithm.config, dict) else {}
         az_config = _build_alphazoo_config(algo_config_dict)
         az_config.running.training_steps = config.algorithm.iterations
 
-        game_args = (env_creator, self._obs_to_state, default_action_mask_fn)
-
         self._alphazoo = AlphaZoo(
-            game_class=PettingZooWrapper,
-            game_args_list=[game_args],
+            env=game,
             config=az_config,
             model=model,
         )
@@ -168,7 +180,6 @@ class AlphaZooBackend(AlgorithmBackend):
         from checkpoint_utils import get_checkpoint_path, load_checkpoint_data
         import ray
         from alphazoo import AlphaZoo
-        from alphazoo.wrappers.pettingzoo_wrapper import PettingZooWrapper
 
         if not ray.is_initialized():
             ray.init(ignore_reinit_error=True)
@@ -176,21 +187,17 @@ class AlphaZooBackend(AlgorithmBackend):
         self._config = config
         env_config = config.env
 
-        self._obs_to_state = make_obs_to_state(config.network.architecture, env_config.obs_space_format)
+        env = create_env(env_config.name, **env_config.kwargs)
+        self._obs_to_state = make_obs_to_state(env_config.obs_space_format)
 
-        def env_creator():
-            return create_env(env_config.name, **env_config.kwargs)
-
-        game = PettingZooWrapper(
-            env_creator=env_creator,
-            observation_to_state=self._obs_to_state,
-            action_mask_fn=default_action_mask_fn,
-        )
-
-        state_shape = game.get_state_shape()
-        action_space_shape = game.get_action_space_shape()
+        env.reset()
+        state_shape, action_space_shape = _get_shapes(env, self._obs_to_state)
+        self._state_shape = state_shape
+        self._action_space_shape = action_space_shape
 
         model = self._build_model(config, state_shape, action_space_shape)
+
+        game = make_wrapper(env, config.network.architecture, env_config.obs_space_format)
 
         cp_path = get_checkpoint_path(model_dir, config.continue_from_iteration)
         optimizer_state_dict = None
@@ -210,11 +217,8 @@ class AlphaZooBackend(AlgorithmBackend):
         az_config = _build_alphazoo_config(algo_config_dict)
         az_config.running.training_steps = config.algorithm.iterations
 
-        game_args = (env_creator, self._obs_to_state, default_action_mask_fn)
-
         self._alphazoo = AlphaZoo(
-            game_class=PettingZooWrapper,
-            game_args_list=[game_args],
+            env=game,
             config=az_config,
             model=model,
             optimizer_state_dict=optimizer_state_dict,
@@ -263,10 +267,7 @@ class AlphaZooBackend(AlgorithmBackend):
 
         cp_data = torch.load(checkpoint_path, weights_only=False)
 
-        game = self._alphazoo.example_game
-        state_shape = game.get_state_shape()
-        action_space_shape = game.get_action_space_shape()
-        model = self._build_model(self._config, state_shape, action_space_shape)
+        model = self._build_model(self._config, self._state_shape, self._action_space_shape)
         model.load_state_dict(cp_data["model_state_dict"])
         model.eval()
         model.cpu()

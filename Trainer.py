@@ -75,7 +75,7 @@ class Trainer:
             if results.as_p0 and results.as_p1:
                 p0, p1 = results.as_p0, results.as_p1
                 line += (f"\n{' ' * 32}"
-                         f"P0: {p0.wins}W/{p0.losses}L/{p0.draws}D"
+                         f"   P0: {p0.wins}W/{p0.losses}L/{p0.draws}D"
                          f" ({p0.win_rate:.0%}) avg:{p0.avg_moves:.1f}"
                          f" | P1: {p1.wins}W/{p1.losses}L/{p1.draws}D"
                          f" ({p1.win_rate:.0%}) avg:{p1.avg_moves:.1f}")
