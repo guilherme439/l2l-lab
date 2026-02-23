@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, TYPE_CHECKING
+from typing import Dict, Iterator, List, Optional, TYPE_CHECKING
 
 import torch
 
@@ -14,66 +14,6 @@ from envs.registry import create_env
 if TYPE_CHECKING:
     from agents.agent import Agent
     from configs.definition.training.TrainingConfig import TrainingConfig
-
-
-def _build_alphazoo_config(algo_config_dict: Dict[str, Any]):
-    """Build an AlphaZooConfig from a flat dict, mapping nested keys to dataclass fields."""
-    from alphazoo import AlphaZooConfig
-    from alphazoo.configs.alphazoo_config import (
-        RunningConfig, SequentialConfig, AsynchronousConfig,
-        CacheConfig, LearningConfig, SamplesConfig, EpochsConfig,
-        RecurrentConfig, SchedulerConfig, OptimizerConfig, SGDConfig,
-    )
-    from alphazoo.configs.search_config import (
-        SearchConfig, SimulationConfig, UCTConfig, ExplorationConfig,
-    )
-
-    def _build(cls, data: dict):
-        if data is None:
-            return cls()
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
-
-    cfg = algo_config_dict or {}
-
-    running_data = cfg.get("running", {})
-    running = RunningConfig(
-        **{k: v for k, v in running_data.items()
-           if k in RunningConfig.__dataclass_fields__ and k not in ("sequential", "asynchronous")},
-        sequential=_build(SequentialConfig, running_data.get("sequential")),
-        asynchronous=_build(AsynchronousConfig, running_data.get("asynchronous")),
-    )
-
-    learning_data = cfg.get("learning", {})
-    learning = LearningConfig(
-        **{k: v for k, v in learning_data.items()
-           if k in LearningConfig.__dataclass_fields__ and k not in ("samples", "epochs")},
-        samples=_build(SamplesConfig, learning_data.get("samples")),
-        epochs=_build(EpochsConfig, learning_data.get("epochs")),
-    )
-
-    search_data = cfg.get("search", {})
-    search = SearchConfig(
-        simulation=_build(SimulationConfig, search_data.get("simulation")),
-        uct=_build(UCTConfig, search_data.get("uct")),
-        exploration=_build(ExplorationConfig, search_data.get("exploration")),
-    )
-
-    optimizer_data = cfg.get("optimizer", {})
-    optimizer = OptimizerConfig(
-        **{k: v for k, v in optimizer_data.items()
-           if k in OptimizerConfig.__dataclass_fields__ and k != "sgd"},
-        sgd=_build(SGDConfig, optimizer_data.get("sgd")),
-    )
-
-    return AlphaZooConfig(
-        running=running,
-        cache=_build(CacheConfig, cfg.get("cache")),
-        learning=learning,
-        recurrent=_build(RecurrentConfig, cfg.get("recurrent")),
-        scheduler=_build(SchedulerConfig, cfg.get("scheduler")),
-        optimizer=optimizer,
-        search=search,
-    )
 
 
 def _get_shapes(env, obs_to_state):
@@ -167,8 +107,7 @@ class AlphaZooBackend(AlgorithmBackend):
 
         game = make_wrapper(env, config.network.architecture, env_config.obs_space_format)
 
-        algo_config_dict = config.algorithm.config if isinstance(config.algorithm.config, dict) else {}
-        az_config = _build_alphazoo_config(algo_config_dict)
+        az_config = config.algorithm.config
         az_config.running.training_steps = config.algorithm.iterations
 
         self._alphazoo = AlphaZoo(
@@ -219,8 +158,7 @@ class AlphaZooBackend(AlgorithmBackend):
         else:
             print("No checkpoint found. Starting fresh.")
 
-        algo_config_dict = config.algorithm.config if isinstance(config.algorithm.config, dict) else {}
-        az_config = _build_alphazoo_config(algo_config_dict)
+        az_config = config.algorithm.config
         az_config.running.training_steps = config.algorithm.iterations
 
         self._alphazoo = AlphaZoo(

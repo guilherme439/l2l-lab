@@ -36,7 +36,7 @@ class TrainingConfig:
         backend = data.get("backend", "rllib")
 
         algo_data = data.pop("algorithm", {})
-        algo_config = AlgorithmConfig.from_dict(algo_data, backend=backend)
+        algo_config = AlgorithmConfig.from_dict(algo_data)
 
         network_data = data.pop("network", {})
         network_config = NetworkConfig(
