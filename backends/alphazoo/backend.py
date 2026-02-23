@@ -141,7 +141,10 @@ class AlphaZooBackend(AlgorithmBackend):
         from alphazoo import AlphaZoo
 
         if not ray.is_initialized():
-            ray.init(ignore_reinit_error=True)
+            ray.init(
+                ignore_reinit_error=True,
+                _system_config={"local_fs_capacity_threshold": 0.99}
+            )
 
         self._config = config
         env_config = config.env
@@ -182,7 +185,10 @@ class AlphaZooBackend(AlgorithmBackend):
         from alphazoo import AlphaZoo
 
         if not ray.is_initialized():
-            ray.init(ignore_reinit_error=True)
+            ray.init(
+                ignore_reinit_error=True,
+                _system_config={"local_fs_capacity_threshold": 0.99}
+            )
 
         self._config = config
         env_config = config.env

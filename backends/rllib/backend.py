@@ -71,6 +71,7 @@ class RLlibBackend(AlgorithmBackend):
                 _system_config={
                     "gcs_rpc_server_reconnect_timeout_s": 120,
                     "gcs_server_request_timeout_seconds": 120,
+                    "local_fs_capacity_threshold": 0.99
                 },
                 object_store_memory=2 * 1024 * 1024 * 1024,
             )
@@ -108,6 +109,7 @@ class RLlibBackend(AlgorithmBackend):
                 _system_config={
                     "gcs_rpc_server_reconnect_timeout_s": 120,
                     "gcs_server_request_timeout_seconds": 120,
+                    "local_fs_capacity_threshold": 0.99
                 },
                 object_store_memory=2 * 1024 * 1024 * 1024,
             )
