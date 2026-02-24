@@ -16,12 +16,13 @@ if TYPE_CHECKING:
 class StepResult:
     iteration: int
     metrics: Dict[str, Any] = field(default_factory=dict)
+    checkpoint_data: Optional[Dict[str, Any]] = None
 
 
 class AlgorithmBackend(ABC):
 
     def __init__(self):
-        self.metrics_queue: Queue[Optional[StepResult]] = Queue()
+        self.step_queue: Queue[Optional[StepResult]] = Queue()
 
     @property
     @abstractmethod
@@ -39,35 +40,28 @@ class AlgorithmBackend(ABC):
 
     @abstractmethod
     def start_training(self, start_iteration: int, total_iterations: int) -> None:
-        """Launch training in a background thread. Push StepResult to metrics_queue
+        """Launch training in a background thread. Push StepResult to step_queue
         after each step. Push None when done."""
         ...
 
     @abstractmethod
     def create_eval_agent(self) -> Agent:
-        """Snapshot current model into an Agent for evaluation (thread-safe read)."""
         ...
 
     @abstractmethod
-    def create_agent_from_checkpoint(self, checkpoint_path: Path) -> Agent:
-        """Load a previously saved checkpoint into an Agent for evaluation."""
+    def create_agent_from_checkpoint(self, checkpoint_dir: Path) -> Agent:
+        """Load training checkpoint from checkpoint_dir/training/ into an Agent."""
         ...
 
     @abstractmethod
     def get_weight_parameters(self) -> Optional[Iterator]:
-        """Return model parameters for weight stats collection (thread-safe read)."""
         ...
 
     @abstractmethod
-    def save_checkpoint(self, checkpoint_dir: Path, iteration: int, metrics: Dict[str, List]) -> None:
-        ...
-
-    @abstractmethod
-    def wait_for_completion(self) -> None:
-        """Block until the training thread finishes."""
+    def save_checkpoint(self, checkpoint_dir: Path, iteration: int,
+                        metrics: Dict[str, List], checkpoint_data: Dict[str, Any]) -> None:
         ...
 
     @abstractmethod
     def shutdown(self) -> None:
-        """Release resources (stop Ray, free GPU, etc.)."""
         ...

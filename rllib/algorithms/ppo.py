@@ -174,7 +174,7 @@ class PPOTrainer(BaseAlgorithmTrainer):
         
         for slot_idx, cp_iter in enumerate(recent):
             policy_name = f"checkpoint_{slot_idx}"
-            cp_path = model_dir / "checkpoints" / str(cp_iter) / "model.cp"
+            cp_path = model_dir / "checkpoints" / str(cp_iter) / "training" / "data.pt"
             
             try:
                 if self.algo is not None:

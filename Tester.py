@@ -60,7 +60,7 @@ class Tester:
     @staticmethod
     def _get_checkpoint_path(model_name: str, checkpoint: int) -> Path:
         model_dir = MODELS_DIR / f"{model_name}"
-        return model_dir / "checkpoints" / str(checkpoint) / "model.cp"
+        return model_dir / "checkpoints" / str(checkpoint) / "model" / "checkpoint.pt"
 
     @staticmethod
     def _create_conv_backbone(
@@ -97,24 +97,32 @@ class Tester:
         return backbone
 
     def _create_backbone(self, checkpoint: Dict[str, Any]) -> torch.nn.Module:
-        model_config = checkpoint["model_config"]
-        network_class = model_config["network_class"]
-        network_kwargs = model_config.get("network_kwargs", {})
-        architecture = model_config.get("architecture")
+        from configs.definition.training.NetworkConfig import NetworkConfig
 
-        obs_space = checkpoint["observation_space"]
-        act_space = checkpoint["action_space"]
+        architecture = checkpoint["architecture"]
+        network_kwargs = checkpoint.get("network_kwargs", {})
+        input_shape = tuple(checkpoint["input_shape"])
+        num_actions = checkpoint["num_actions"]
 
-        inner_obs_space = obs_space["observation"]
+        network_class = NetworkConfig(architecture=architecture).get_network_class()
 
         if architecture in CONV_ARCHITECTURES:
-            backbone = Tester._create_conv_backbone(network_class, network_kwargs, inner_obs_space, act_space)
+            in_channels = input_shape[0]
+            rows, cols = input_shape[1], input_shape[2]
+            backbone = network_class(
+                in_channels=in_channels,
+                policy_channels=num_actions // (rows * cols),
+                **network_kwargs,
+            )
         elif architecture in MLP_ARCHITECTURES:
-            backbone = Tester._create_mlp_backbone(network_class, network_kwargs, inner_obs_space, act_space)
+            backbone = network_class(out_features=num_actions, **network_kwargs)
+            dummy = torch.zeros((1,) + input_shape, dtype=torch.float32)
+            with torch.no_grad():
+                _ = backbone(dummy)
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
 
-        backbone.load_state_dict(checkpoint["backbone_state_dict"])
+        backbone.load_state_dict(checkpoint["state_dict"])
         backbone.eval()
         return backbone
 
@@ -144,7 +152,9 @@ class Tester:
 
         if isinstance(agent_config, PolicyAgentConfig):
             cp_path = self._get_checkpoint_path(agent_config.model_name, agent_config.checkpoint)
-            backbone, obs_format = Tester._load_backbone_from_checkpoint(cp_path)
+            checkpoint = torch.load(cp_path, weights_only=False)
+            backbone = self._create_backbone(checkpoint)
+            obs_format = checkpoint.get("obs_space_format", "channels_first")
             label = f"{agent_config.model_name}@{agent_config.checkpoint}"
             return PolicyAgent(backbone, obs_format, label=label)
 
@@ -181,29 +191,34 @@ class Tester:
 
     @staticmethod
     def _load_backbone_from_checkpoint(checkpoint_path: Path):
-        checkpoint = torch.load(checkpoint_path, weights_only=False)
-        model_config = checkpoint["model_config"]
-        architecture = model_config.get("architecture", "ConvNet")
-        obs_space_format = model_config.get("obs_space_format", "channels_first")
+        from configs.definition.training.NetworkConfig import NetworkConfig
 
-        obs_space = checkpoint["observation_space"]
-        act_space = checkpoint["action_space"]
-        inner_obs_space = obs_space["observation"]
+        checkpoint = torch.load(checkpoint_path, weights_only=False)
+        architecture = checkpoint["architecture"]
+        network_kwargs = checkpoint.get("network_kwargs", {})
+        obs_space_format = checkpoint.get("obs_space_format", "channels_first")
+        input_shape = tuple(checkpoint["input_shape"])
+        num_actions = checkpoint["num_actions"]
+
+        network_class = NetworkConfig(architecture=architecture).get_network_class()
 
         if architecture in CONV_ARCHITECTURES:
-            backbone = Tester._create_conv_backbone(
-                model_config["network_class"], model_config.get("network_kwargs", {}),
-                inner_obs_space, act_space
+            in_channels = input_shape[0]
+            rows, cols = input_shape[1], input_shape[2]
+            backbone = network_class(
+                in_channels=in_channels,
+                policy_channels=num_actions // (rows * cols),
+                **network_kwargs,
             )
         elif architecture in MLP_ARCHITECTURES:
-            backbone = Tester._create_mlp_backbone(
-                model_config["network_class"], model_config.get("network_kwargs", {}),
-                inner_obs_space, act_space
-            )
+            backbone = network_class(out_features=num_actions, **network_kwargs)
+            dummy = torch.zeros((1,) + input_shape, dtype=torch.float32)
+            with torch.no_grad():
+                _ = backbone(dummy)
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
 
-        backbone.load_state_dict(checkpoint["backbone_state_dict"])
+        backbone.load_state_dict(checkpoint["state_dict"])
         backbone.eval()
         return backbone, obs_space_format
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from copy import deepcopy
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, Iterator, List, Optional, TYPE_CHECKING
 
 import torch
 
@@ -42,7 +42,6 @@ class AlphaZooBackend(AlgorithmBackend):
         super().__init__()
         self._alphazoo = None
         self._config: Optional[TrainingConfig] = None
-        self._train_thread: Optional[threading.Thread] = None
         self._obs_to_state = None
 
     @property
@@ -176,43 +175,50 @@ class AlphaZooBackend(AlgorithmBackend):
         return start_iteration, cp_data
 
     def start_training(self, start_iteration: int, total_iterations: int) -> None:
-        az = self._alphazoo
-        az.config.running.training_steps = total_iterations
-        az.starting_step = start_iteration
-
-        def _on_step_end(alphazoo_instance, step, raw_metrics):
-            metrics = {
-                "episode_len_mean": raw_metrics.get("episode_len_mean", 0),
-                "policy_loss": raw_metrics.get("policy_loss"),
-                "value_loss": raw_metrics.get("value_loss"),
-                "combined_loss": raw_metrics.get("combined_loss"),
-                "learning_rate": raw_metrics.get("learning_rate"),
-                "replay_buffer_size": raw_metrics.get("replay_buffer_size"),
-                "step_time": raw_metrics.get("step_time"),
-            }
-            self.metrics_queue.put(StepResult(iteration=step, metrics=metrics))
-
-        def _train_loop():
+        def _train():
             try:
+                az = self._alphazoo
+                az.config.running.training_steps = total_iterations
+                az.starting_step = start_iteration
+
+                def _on_step_end(alphazoo_instance, step, raw_metrics):
+                    checkpoint_data = {
+                        "model_state_dict": deepcopy(az.latest_network.get_model().state_dict()),
+                        "optimizer_state_dict": deepcopy(az.get_optimizer_state_dict()),
+                        "scheduler_state_dict": deepcopy(az.get_scheduler_state_dict()),
+                        "replay_buffer_state": az.get_replay_buffer_state(),
+                    }
+
+                    metrics = {
+                        "episode_len_mean": raw_metrics.get("episode_len_mean", 0),
+                        "policy_loss": raw_metrics.get("policy_loss"),
+                        "value_loss": raw_metrics.get("value_loss"),
+                        "combined_loss": raw_metrics.get("combined_loss"),
+                        "learning_rate": raw_metrics.get("learning_rate"),
+                        "replay_buffer_size": raw_metrics.get("replay_buffer_size"),
+                        "step_time": raw_metrics.get("step_time"),
+                    }
+                    self.step_queue.put(StepResult(
+                        iteration=step,
+                        metrics=metrics,
+                        checkpoint_data=checkpoint_data,
+                    ))
+
                 az.train(on_step_end=_on_step_end)
-            except Exception as e:
-                print(f"\n✗ AlphaZoo training error: {e}")
-                import traceback
-                traceback.print_exc()
             finally:
-                self.metrics_queue.put(None)
+                self.step_queue.put(None)
 
-        self._train_thread = threading.Thread(target=_train_loop, daemon=True)
-        self._train_thread.start()
+        thread = threading.Thread(target=_train, daemon=True)
+        thread.start()
 
-    def create_agent_from_checkpoint(self, checkpoint_path: Path) -> Agent:
+    def create_agent_from_checkpoint(self, checkpoint_dir: Path) -> Agent:
         from backends.alphazoo.agent import AlphaZooPolicyAgent
         from alphazoo import Network_Manager
 
-        cp_data = torch.load(checkpoint_path, weights_only=False)
+        cp = torch.load(checkpoint_dir / "training" / "checkpoint.pt", weights_only=False)
 
         model = self._build_model(self._config, self._state_shape, self._action_space_shape)
-        model.load_state_dict(cp_data["model_state_dict"])
+        model.load_state_dict(cp["model_state_dict"])
         model.eval()
         model.cpu()
 
@@ -237,24 +243,29 @@ class AlphaZooBackend(AlgorithmBackend):
     def get_weight_parameters(self) -> Optional[Iterator]:
         return self._alphazoo.latest_network.get_model().parameters()
 
-    def save_checkpoint(self, checkpoint_dir: Path, iteration: int, metrics: Dict[str, List]) -> None:
-        az = self._alphazoo
+    def save_checkpoint(self, checkpoint_dir: Path, iteration: int,
+                        metrics: Dict[str, List], checkpoint_data: Dict[str, Any]) -> None:
+        cfg = self._config
 
-        checkpoint = {
-            "model_state_dict": az.latest_network.get_model().state_dict(),
-            "optimizer_state_dict": az.get_optimizer_state_dict(),
-            "scheduler_state_dict": az.get_scheduler_state_dict(),
-            "replay_buffer_state": az.get_replay_buffer_state(),
+        model_dir = checkpoint_dir / "model"
+        model_dir.mkdir()
+        torch.save({
+            "state_dict": checkpoint_data["model_state_dict"],
+            "architecture": cfg.network.architecture,
+            "network_kwargs": cfg.network.to_kwargs(),
+            "obs_space_format": cfg.env.obs_space_format,
+            "input_shape": self._state_shape,
+            "num_actions": self._action_space_shape[0],
+        }, model_dir / "checkpoint.pt")
+
+        training_dir = checkpoint_dir / "training"
+        training_dir.mkdir()
+        torch.save({
+            **checkpoint_data,
             "iteration": iteration,
             "metrics": metrics,
             "backend": self.name,
-        }
-
-        torch.save(checkpoint, checkpoint_dir / "checkpoint.pt")
-
-    def wait_for_completion(self) -> None:
-        if self._train_thread is not None:
-            self._train_thread.join()
+        }, training_dir / "checkpoint.pt")
 
     def shutdown(self) -> None:
         import ray

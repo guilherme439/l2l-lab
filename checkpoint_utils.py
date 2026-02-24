@@ -35,13 +35,11 @@ def get_checkpoint_dir(model_dir: Path, iteration: Optional[int] = None) -> Opti
 
 
 def _find_checkpoint_file(checkpoint_dir: Path) -> Optional[Path]:
-    """Find checkpoint file, preferring checkpoint.pt, falling back to model.cp."""
-    pt_path = checkpoint_dir / "checkpoint.pt"
-    if pt_path.exists():
-        return pt_path
-    cp_path = checkpoint_dir / "model.cp"
-    if cp_path.exists():
-        return cp_path
+    training_dir = checkpoint_dir / "training"
+    for name in ("checkpoint.pt", "data.pt"):
+        p = training_dir / name
+        if p.exists():
+            return p
     return None
 
 
@@ -54,9 +52,9 @@ def get_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Opt
 
 def get_algo_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
     checkpoint_dir = get_checkpoint_dir(model_dir, iteration)
-    if checkpoint_dir:
-        return checkpoint_dir / "algo_checkpoint"
-    return None
+    if checkpoint_dir is None:
+        return None
+    return checkpoint_dir / "training" / "algo_checkpoint"
 
 
 def get_latest_checkpoint_path(model_dir: Path) -> Optional[Path]:

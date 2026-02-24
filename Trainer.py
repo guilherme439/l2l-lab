@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import shutil
@@ -129,13 +129,18 @@ class Trainer:
 
         self.backend.start_training(start_iteration, algo_cfg.iterations)
 
+        latest_checkpoint_data = None
+        i = start_iteration
+
         while True:
-            step_result = self.backend.metrics_queue.get()
+            step_result = self.backend.step_queue.get()
             if step_result is None:
                 break
 
             i = step_result.iteration
             metrics = step_result.metrics
+            if step_result.checkpoint_data is not None:
+                latest_checkpoint_data = step_result.checkpoint_data
 
             # Remove internal keys before storing
             rllib_result = metrics.pop("_rllib_result", None)
@@ -177,8 +182,8 @@ class Trainer:
                     )
                     if hasattr(self.backend, '_set_module_training'):
                         self.backend._set_module_training()
-                checkpoint_dir = self.save_checkpoint(i)
-                previous_checkpoint = checkpoint_dir / "checkpoint.pt"
+                checkpoint_dir = self.save_checkpoint(i, latest_checkpoint_data)
+                previous_checkpoint = checkpoint_dir
 
                 if hasattr(self.backend, 'update_opponent_policies'):
                     self.backend.update_opponent_policies(self.current_model_dir, i)
@@ -194,21 +199,27 @@ class Trainer:
                 if hasattr(self.backend, 'print_training_info'):
                     self.backend.print_training_info(rllib_result)
 
+        if i < algo_cfg.iterations:
+            print("-" * 70)
+            print(f"✗ Training stopped early at iteration {i}/{algo_cfg.iterations}.")
+            self.backend.shutdown()
+            return
+
         print("-" * 70)
         print(f"✓ {algo_cfg.name.upper()} Training completed!")
 
-        self.save_checkpoint(algo_cfg.iterations)
+        self.save_checkpoint(algo_cfg.iterations, latest_checkpoint_data)
         self.backend.shutdown()
         self.plot_progress()
 
-    def save_checkpoint(self, iteration: int) -> Path:
+    def save_checkpoint(self, iteration: int, checkpoint_data: Dict[str, Any]) -> Path:
         if self.current_model_dir is None:
             raise RuntimeError("No model directory.")
 
         checkpoint_dir = self.current_model_dir / "checkpoints" / str(iteration)
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-        self.backend.save_checkpoint(checkpoint_dir, iteration, self.metrics)
+        self.backend.save_checkpoint(checkpoint_dir, iteration, self.metrics, checkpoint_data)
 
         print(f"\n  [Checkpoint saved: iter {iteration}]\n")
         return checkpoint_dir
