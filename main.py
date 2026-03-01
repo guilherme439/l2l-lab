@@ -61,7 +61,7 @@ def run_with_profiling(func, *args):
 
         print("=" * 70)
         print(f"Full profile saved to: {PROFILE_OUTPUT_PATH.absolute()}")
-        print("View interactively with: snakeviz profile_output.prof")
+        print("View interactively with: snakeviz profiling/profile_output.prof")
         print("=" * 70)
 
 
