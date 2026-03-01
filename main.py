@@ -56,11 +56,12 @@ def run_with_profiling(func, *args):
         stats.save(str(PROFILE_OUTPUT_PATH), type="pstat")
 
         print("\n" + "=" * 70)
-        print("PROFILING SUMMARY (top 30 by total time, all threads)")
+        print("PROFILING SUMMARY (top 20 by total time, all threads)")
         print("=" * 70)
         stats.sort("ttot", "desc").print_all(
             out=sys.stdout,
             columns={0: ("name", 50), 1: ("ncall", 8), 2: ("ttot", 8), 3: ("tsub", 8), 4: ("tavg", 8)},
+            limit=20,
         )
 
         print("=" * 70)
