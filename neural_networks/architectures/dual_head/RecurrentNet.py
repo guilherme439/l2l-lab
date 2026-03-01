@@ -4,20 +4,19 @@ Adapted from the Deepthinking repository.
 
 import hexagdly
 import torch
-from torch import nn
+from alphazoo import AlphaZooRecurrentNet
 
 from .modules.blocks import *
-from .modules.value_heads import *
 from .modules.policy_heads import *
+from .modules.value_heads import *
 
-# Ignore statemenst for pylint:
+# Ignore statements for pylint:
 #     Too many branches (R0912), Too many statements (R0915), No member (E1101),
 #     Not callable (E1102), Invalid name (C0103), No exception (W0702)
 # pylint: disable=R0912, R0915, E1101, E1102, C0103, W0702, R0914
 
 
-# FIXME: Have all the networks implement an interface with a ".recurrent()" method.
-class RecurrentNet(nn.Module):
+class RecurrentNet(AlphaZooRecurrentNet):
 
     def __init__(self, in_channels, policy_channels, num_filters=256, num_blocks=2, recall=True, policy_head="conv", value_head="reduce", value_activation="tanh", hex=True):
         super().__init__()

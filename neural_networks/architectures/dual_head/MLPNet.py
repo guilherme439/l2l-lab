@@ -1,15 +1,14 @@
-from torch import nn
+from alphazoo import AlphaZooNet
 
 from .modules.blocks import *
 from .modules.value_heads import *
 from .modules.policy_heads import *
 
-class MLPNet(nn.Module):
+class MLPNet(AlphaZooNet):
 
     def __init__(self, out_features, hidden_layers=4, neurons_per_layer=64, head_layers=3):
 
-        super(MLPNet, self).__init__()
-        self.recurrent=False
+        super().__init__()
 
         # General Module
         general_module_layers = [nn.Flatten(), nn.LazyLinear(neurons_per_layer), nn.SiLU()] # First layer and activation

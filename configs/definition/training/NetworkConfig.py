@@ -4,8 +4,9 @@ from typing import Any, Dict, Type
 from neural_networks.architectures.dual_head.ConvNet import ConvNet
 from neural_networks.architectures.dual_head.ResNet import ResNet
 from neural_networks.architectures.dual_head.MLPNet import MLPNet
+from neural_networks.architectures.dual_head.RecurrentNet import RecurrentNet
 
-CONV_ARCHITECTURES = {"ResNet", "ConvNet"}
+CONV_ARCHITECTURES = {"ResNet", "ConvNet", "RecurrentNet"}
 MLP_ARCHITECTURES = {"MLPNet"}
 
 @dataclass
@@ -24,5 +25,7 @@ class NetworkConfig:
                 return ConvNet
             case "MLPNet":
                 return MLPNet
+            case "RecurrentNet":
+                return RecurrentNet
             case _:
                 raise ValueError(f"Unknown architecture: {self.architecture}")

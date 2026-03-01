@@ -28,12 +28,13 @@ class AlphaZooPolicyAgent(Agent):
         state = self._obs_to_state(obs, None)
         action_mask = torch.tensor(obs["action_mask"], dtype=torch.float32)
 
-        self._network_manager.get_model().eval()
-        with torch.no_grad():
-            policy_logits, _ = self._network_manager.inference(state, training=False, iters_to_do=1)
-            policy_logits = policy_logits.reshape(policy_logits.shape[0], -1).squeeze(0)
-            policy_logits[action_mask == 0] = float("-inf")
-            probs = torch.softmax(policy_logits, dim=-1)
-            action = int(torch.multinomial(probs, 1).item())
+        nm = self._network_manager
+        if nm.is_recurrent():
+            (policy_logits, _), _ = nm.recurrent_inference(state, training=False, iters_to_do=1)
+        else:
+            policy_logits, _ = nm.inference(state, training=False)
 
-        return action
+        policy_logits = policy_logits.reshape(policy_logits.shape[0], -1).squeeze(0)
+        policy_logits[action_mask == 0] = float("-inf")
+        probs = torch.softmax(policy_logits, dim=-1)
+        return int(torch.multinomial(probs, 1).item())

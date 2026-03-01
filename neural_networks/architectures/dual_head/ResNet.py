@@ -1,13 +1,13 @@
 
 import hexagdly
-from torch import nn
+from alphazoo import AlphaZooNet
 
 from .modules.blocks import *
 from .modules.value_heads import *
 from .modules.policy_heads import *
 
 
-class ResNet(nn.Module):
+class ResNet(AlphaZooNet):
 
     def __init__(self, in_channels, policy_channels, num_filters=256, num_blocks=4, batch_norm=False, policy_head="conv", value_head="reduce", value_activation="tanh", hex=True):
 

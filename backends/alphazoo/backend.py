@@ -53,7 +53,7 @@ class AlphaZooBackend(AlgorithmBackend):
         kwargs = config.network.to_kwargs()
         architecture = config.network.architecture
 
-        if architecture in ("ResNet", "ConvNet"):
+        if architecture in ("ResNet", "ConvNet", "RecurrentNet"):
             in_channels = state_shape[0]
             rows, cols = state_shape[1], state_shape[2]
             num_actions = action_space_shape[0]
@@ -72,7 +72,6 @@ class AlphaZooBackend(AlgorithmBackend):
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
 
-        model.recurrent = False
         return model
 
     def setup(self, config: TrainingConfig, model_dir: Path) -> None:
@@ -213,31 +212,27 @@ class AlphaZooBackend(AlgorithmBackend):
 
     def create_agent_from_checkpoint(self, checkpoint_dir: Path) -> Agent:
         from backends.alphazoo.agent import AlphaZooPolicyAgent
-        from alphazoo import Network_Manager
+        from alphazoo import NetworkManager
 
         cp = torch.load(checkpoint_dir / "training" / "checkpoint.pt", weights_only=False)
 
         model = self._build_model(self._config, self._state_shape, self._action_space_shape)
         model.load_state_dict(cp["model_state_dict"])
-        model.eval()
         model.cpu()
 
-        nm = Network_Manager.__new__(Network_Manager)
-        nm.model = model
+        nm = NetworkManager(model)
         nm.device = "cpu"
         return AlphaZooPolicyAgent(nm, self._obs_to_state, label="checkpoint")
 
     def create_eval_agent(self) -> Agent:
         from backends.alphazoo.agent import AlphaZooPolicyAgent
-        from alphazoo import Network_Manager
+        from alphazoo import NetworkManager
 
         model_copy = deepcopy(self._alphazoo.latest_network.get_model())
-        model_copy.eval()
         model_copy.cpu()
-        nm = Network_Manager.__new__(Network_Manager)
-        nm.model = model_copy
-        nm.device = "cpu"
 
+        nm = NetworkManager(model_copy)
+        nm.device = "cpu"
         return AlphaZooPolicyAgent(nm, self._obs_to_state, label="current")
 
     def get_weight_parameters(self) -> Optional[Iterator]:

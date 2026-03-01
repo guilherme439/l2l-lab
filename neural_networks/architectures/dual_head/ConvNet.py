@@ -1,17 +1,16 @@
 import hexagdly
-from torch import nn
+from alphazoo import AlphaZooNet
 
 from .modules.blocks import *
 from .modules.value_heads import *
 from .modules.policy_heads import *
 
 
-class ConvNet(nn.Module):
+class ConvNet(AlphaZooNet):
 
     def __init__(self, in_channels, policy_channels, num_filters=256, num_layers=6, hex=True):
 
         super().__init__()
-        self.recurrent = False
         self.num_filters = num_filters
 
         # General Module
