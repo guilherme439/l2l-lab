@@ -243,7 +243,7 @@ class AlphaZooBackend(AlgorithmBackend):
         cfg = self._config
 
         model_dir = checkpoint_dir / "model"
-        model_dir.mkdir()
+        model_dir.mkdir(exist_ok=True)
         torch.save({
             "state_dict": checkpoint_data["model_state_dict"],
             "architecture": cfg.network.architecture,
@@ -254,7 +254,7 @@ class AlphaZooBackend(AlgorithmBackend):
         }, model_dir / "checkpoint.pt")
 
         training_dir = checkpoint_dir / "training"
-        training_dir.mkdir()
+        training_dir.mkdir(exist_ok=True)
         torch.save({
             **checkpoint_data,
             "iteration": iteration,
