@@ -1,8 +1,9 @@
 import argparse
-import cProfile
-import pstats
+import sys
 import warnings
 from pathlib import Path
+
+import yappi
 
 from Tester import Tester
 from Trainer import Trainer
@@ -44,20 +45,23 @@ def test(config_path: str):
 
 
 def run_with_profiling(func, *args):
-    profiler = cProfile.Profile()
-    profiler.enable()
+    yappi.set_clock_type("wall")
+    yappi.start()
 
     try:
         func(*args)
     finally:
-        profiler.disable()
-        profiler.dump_stats(str(PROFILE_OUTPUT_PATH))
+        yappi.stop()
+        stats = yappi.get_func_stats()
+        stats.save(str(PROFILE_OUTPUT_PATH), type="pstat")
 
         print("\n" + "=" * 70)
-        print("PROFILING SUMMARY (top 30 by cumulative time)")
+        print("PROFILING SUMMARY (top 30 by total time, all threads)")
         print("=" * 70)
-        stats = pstats.Stats(profiler)
-        stats.strip_dirs().sort_stats("cumulative").print_stats(30)
+        stats.sort("ttot", "desc").print_all(
+            out=sys.stdout,
+            columns={0: ("name", 50), 1: ("ncall", 8), 2: ("ttot", 8), 3: ("tsub", 8), 4: ("tavg", 8)},
+        )
 
         print("=" * 70)
         print(f"Full profile saved to: {PROFILE_OUTPUT_PATH.absolute()}")
@@ -81,7 +85,7 @@ def main():
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="Enable cProfile profiling and save results to profile_output.prof"
+        help="Enable profiling (all threads) and save results to profile_output.prof"
     )
 
     args = parser.parse_args()

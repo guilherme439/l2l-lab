@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import queue
+import signal
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -21,6 +24,14 @@ class Trainer:
         self.backend = get_backend(self.config.backend)()
         self.metrics: Dict[str, List] = {}
         self.current_model_dir: Optional[Path] = None
+        self._early_stop_requested = False
+
+    def _handle_sigint(self, signum, frame):
+        if self._early_stop_requested:
+            print("\nForce stopping...")
+            sys.exit(1)
+        self._early_stop_requested = True
+        print("\n\nStopping after current step completes... (Ctrl+C again to force quit)\n")
 
     def _setup_model_dir(self) -> Path:
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -125,6 +136,7 @@ class Trainer:
         print()
         print("=" * 70)
         print(f"\n\nStarting training for {remaining_iterations} iterations (from {start_iteration} to {algo_cfg.iterations})...")
+        print("Press Ctrl+C to stop early.")
         print("-" * 70)
 
         self.backend.start_training(start_iteration, algo_cfg.iterations)
@@ -132,76 +144,94 @@ class Trainer:
         latest_checkpoint_data = None
         i = start_iteration
 
-        while True:
-            step_result = self.backend.step_queue.get()
-            if step_result is None:
-                break
+        self._early_stop_requested = False
+        original_sigint = signal.signal(signal.SIGINT, self._handle_sigint)
 
-            i = step_result.iteration
-            metrics = step_result.metrics
-            if step_result.checkpoint_data is not None:
-                latest_checkpoint_data = step_result.checkpoint_data
+        try:
+            while True:
+                try:
+                    step_result = self.backend.step_queue.get(timeout=1)
+                except queue.Empty:
+                    if self._early_stop_requested:
+                        break
+                    continue
 
-            # Remove internal keys before storing
-            rllib_result = metrics.pop("_rllib_result", None)
+                if step_result is None:
+                    break
 
-            weight_params = self.backend.get_weight_parameters()
-            if weight_params is not None:
-                weight_stats = Trainer._collect_weight_stats(weight_params)
-                metrics.update(weight_stats)
+                i = step_result.iteration
+                metrics = step_result.metrics
+                if step_result.checkpoint_data is not None:
+                    latest_checkpoint_data = step_result.checkpoint_data
 
-            if not metrics_initialized:
-                for key in metrics.keys():
-                    self.metrics[key] = []
-                metrics_initialized = True
+                # Remove internal keys before storing
+                rllib_result = metrics.pop("_rllib_result", None)
 
-            self.metrics["iteration"].append(i)
-            for key, value in metrics.items():
-                if key in self.metrics:
-                    self.metrics[key].append(value)
-                else:
-                    self.metrics[key] = [None] * (len(self.metrics["iteration"]) - 1) + [value]
+                weight_params = self.backend.get_weight_parameters()
+                if weight_params is not None:
+                    weight_stats = Trainer._collect_weight_stats(weight_params)
+                    metrics.update(weight_stats)
 
-            eval_str = ""
+                if not metrics_initialized:
+                    for key in metrics.keys():
+                        self.metrics[key] = []
+                    metrics_initialized = True
 
-            results_random = None
-            if i % cfg.eval_interval == 0:
-                agent = self.backend.create_eval_agent()
-                results_random = Tester.evaluate_agent_vs_random(agent, cfg.env, num_games=cfg.eval_games)
-                if hasattr(self.backend, '_set_module_training'):
-                    self.backend._set_module_training()
-            eval_str += self._record_eval(results_random, "vs_random")
+                self.metrics["iteration"].append(i)
+                for key, value in metrics.items():
+                    if key in self.metrics:
+                        self.metrics[key].append(value)
+                    else:
+                        self.metrics[key] = [None] * (len(self.metrics["iteration"]) - 1) + [value]
 
-            results_prev = None
-            if i % cfg.checkpoint_interval == 0:
-                if cfg.eval_vs_previous and previous_checkpoint is not None:
+                eval_str = ""
+
+                results_random = None
+                if i % cfg.eval_interval == 0:
                     agent = self.backend.create_eval_agent()
-                    opponent = self.backend.create_agent_from_checkpoint(previous_checkpoint)
-                    results_prev = Tester.evaluate_agent_vs_agent(
-                        agent, opponent, cfg.env, num_games=cfg.eval_games
-                    )
+                    results_random = Tester.evaluate_agent_vs_random(agent, cfg.env, num_games=cfg.eval_games)
                     if hasattr(self.backend, '_set_module_training'):
                         self.backend._set_module_training()
-                checkpoint_dir = self.save_checkpoint(i, latest_checkpoint_data)
-                previous_checkpoint = checkpoint_dir
+                eval_str += self._record_eval(results_random, "vs_random")
 
-                if hasattr(self.backend, 'update_opponent_policies'):
-                    self.backend.update_opponent_policies(self.current_model_dir, i)
-            eval_str += self._record_eval(results_prev, "vs_previous")
+                results_prev = None
+                if i % cfg.checkpoint_interval == 0:
+                    if cfg.eval_vs_previous and previous_checkpoint is not None:
+                        agent = self.backend.create_eval_agent()
+                        opponent = self.backend.create_agent_from_checkpoint(previous_checkpoint)
+                        results_prev = Tester.evaluate_agent_vs_agent(
+                            agent, opponent, cfg.env, num_games=cfg.eval_games
+                        )
+                        if hasattr(self.backend, '_set_module_training'):
+                            self.backend._set_module_training()
+                    checkpoint_dir = self.save_checkpoint(i, latest_checkpoint_data)
+                    previous_checkpoint = checkpoint_dir
 
-            ep_len = metrics.get('episode_len_mean', 0) or 0
-            print(f"{i:8d}/{algo_cfg.iterations} | EpLen: {ep_len:6.1f}{eval_str}")
+                    if hasattr(self.backend, 'update_opponent_policies'):
+                        self.backend.update_opponent_policies(self.current_model_dir, i)
+                eval_str += self._record_eval(results_prev, "vs_previous")
 
-            if i % cfg.plot_interval == 0:
-                self.plot_progress()
+                ep_len = metrics.get('episode_len_mean', 0) or 0
+                print(f"{i:8d}/{algo_cfg.iterations} | EpLen: {ep_len:6.1f}{eval_str}")
 
-            if i % cfg.info_interval == 0 and rllib_result is not None:
-                if hasattr(self.backend, 'print_training_info'):
-                    self.backend.print_training_info(rllib_result)
+                if i % cfg.plot_interval == 0:
+                    self.plot_progress()
 
-        if i < algo_cfg.iterations:
+                if i % cfg.info_interval == 0 and rllib_result is not None:
+                    if hasattr(self.backend, 'print_training_info'):
+                        self.backend.print_training_info(rllib_result)
+
+                if self._early_stop_requested:
+                    break
+        finally:
+            signal.signal(signal.SIGINT, original_sigint)
+
+        if i < algo_cfg.iterations or self._early_stop_requested:
             print("-" * 70)
-            print(f"✗ Training stopped early at iteration {i}/{algo_cfg.iterations}.")
+            print(f"Training stopped early at iteration {i}/{algo_cfg.iterations}.")
+            if latest_checkpoint_data is not None:
+                self.save_checkpoint(i, latest_checkpoint_data)
+            self.plot_progress()
             self.backend.shutdown()
             return
 
