@@ -12,7 +12,8 @@ algorithm:
   config:
     running:
       running_mode: "sequential"
-      num_actors: 4
+      num_groups: 2
+      workers_per_group: 3
       training_steps: 500
       early_fill_per_type: 100
       sequential:
@@ -20,7 +21,6 @@ algorithm:
     cache:
       enabled: true
       max_size: 8000
-      keep_updated: true
     learning:
       learning_method: "samples"
       replay_window_size: 10000

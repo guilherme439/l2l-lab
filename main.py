@@ -17,8 +17,8 @@ warnings.filterwarnings(
 )
 
 
-TRAINING_CONFIG_PATH = "configs/files/training/connect_four_training_config.yml"
-TESTING_CONFIG_PATH = "configs/files/testing/testing_config.yml"
+DEFAULT_TRAINING_CONFIG_PATH = "configs/files/training/connect_four_training_config.yml"
+DEFAULT_TESTING_CONFIG_PATH = "configs/files/testing/testing_config.yml"
 PROFILE_OUTPUT_PATH = Path("profiling/profile_output.prof")
 
 
@@ -58,11 +58,11 @@ def run_with_profiling(func, *args):
         print("\n" + "=" * 70)
         print("PROFILING SUMMARY (top 20 by total time, all threads)")
         print("=" * 70)
-        top = stats.sort("ttot", "desc")[:20]
-        top.print_all(
-            out=sys.stdout,
-            columns={0: ("name", 50), 1: ("ncall", 8), 2: ("ttot", 8), 3: ("tsub", 8), 4: ("tavg", 8)},
-        )
+        stats.sort("ttot", "desc")
+        header = f"{'name':<50} {'ncall':>8} {'ttot':>8} {'tsub':>8} {'tavg':>8}"
+        print(header)
+        for stat in stats[:20]:
+            print(f"{stat.full_name[:50]:<50} {stat.ncall:>8} {stat.ttot:>8.4f} {stat.tsub:>8.4f} {stat.tavg:>8.4f}")
 
         print("=" * 70)
         print(f"Full profile saved to: {PROFILE_OUTPUT_PATH.absolute()}")
@@ -86,19 +86,19 @@ def main():
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="Enable profiling (all threads) and save results to profile_output.prof"
+        help="Enable yappi profiling (main process, all threads) and save results to profile_output.prof"
     )
 
     args = parser.parse_args()
 
     if args.mode == "train":
-        config_path = args.config or TRAINING_CONFIG_PATH
+        config_path = args.config or DEFAULT_TRAINING_CONFIG_PATH
         if args.profile:
             run_with_profiling(train, config_path)
         else:
             train(config_path)
     elif args.mode == "test":
-        config_path = args.config or TESTING_CONFIG_PATH
+        config_path = args.config or DEFAULT_TESTING_CONFIG_PATH
         if args.profile:
             run_with_profiling(test, config_path)
         else:

@@ -79,9 +79,9 @@ def plot_training_overview(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     lines1, labels1 = ax1.get_legend_handles_labels()
     if has_reward:
         lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper right", fontsize=8)
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc="lower center", bbox_to_anchor=(0.5, -0.2), ncol=4, fontsize=8)
     else:
-        ax1.legend(loc="upper right", fontsize=8)
+        ax1.legend(loc="lower center", bbox_to_anchor=(0.5, -0.2), ncol=4, fontsize=8)
     
     plt.tight_layout()
     plt.savefig(graphs_dir / "training_overview.png", dpi=150, bbox_inches="tight")
@@ -326,7 +326,7 @@ def plot_weight_stats(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     ax.set_xlabel("Iteration", fontsize=10)
     ax.set_ylabel("Absolute Weight Value", fontsize=10)
     ax.set_title("Network Weight Statistics", fontsize=12, fontweight="bold")
-    ax.legend(loc="upper right", fontsize=9)
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, -0.2), ncol=3, fontsize=9)
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
