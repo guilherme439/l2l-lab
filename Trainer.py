@@ -27,74 +27,6 @@ class Trainer:
         self.current_model_dir: Optional[Path] = None
         self._early_stop_requested = False
 
-    def _handle_sigint(self, signum, frame):
-        if self._early_stop_requested:
-            print("\nForce stopping...")
-            sys.exit(1)
-        self._early_stop_requested = True
-        print("\n\nStopping after current step completes... (Ctrl+C again to force quit)\n")
-
-    def _setup_model_dir(self) -> Path:
-        MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        cfg = self.config
-        model_dir = MODELS_DIR / f"{cfg.name}"
-        model_dir.mkdir(parents=True, exist_ok=True)
-        (model_dir / "graphs").mkdir(exist_ok=True)
-        self.current_model_dir = model_dir
-        return model_dir
-
-    def _init_metrics(self) -> None:
-        self.metrics = {
-            "iteration": [],
-            "wins_vs_random": [],
-            "losses_vs_random": [],
-            "draws_vs_random": [],
-            "weight_max": [],
-            "weight_min": [],
-            "weight_avg": [],
-        }
-        if self.config.eval_vs_previous:
-            self.metrics["wins_vs_previous"] = []
-            self.metrics["losses_vs_previous"] = []
-            self.metrics["draws_vs_previous"] = []
-
-    @staticmethod
-    def _collect_weight_stats(parameters) -> Dict[str, float]:
-        all_params = []
-        for p in parameters:
-            all_params.append(p.data.cpu().numpy().ravel())
-        if not all_params:
-            return {"weight_max": 0.0, "weight_min": 0.0, "weight_avg": 0.0}
-        all_weights = np.concatenate(all_params)
-        return {
-            "weight_max": float(np.max(np.abs(all_weights))),
-            "weight_min": float(np.min(np.abs(all_weights))),
-            "weight_avg": float(np.mean(np.abs(all_weights))),
-        }
-
-    def _record_eval(self, results, prefix: str) -> str:
-        w_key, l_key, d_key = f"wins_{prefix}", f"losses_{prefix}", f"draws_{prefix}"
-
-        if w_key in self.metrics:
-            self.metrics[w_key].append(results.wins if results else None)
-            self.metrics[l_key].append(results.losses if results else None)
-            self.metrics[d_key].append(results.draws if results else None)
-
-        if results:
-            line = (f"\n\n{' ' * 32}"
-                    f" | {prefix}: {results.wins}W/{results.losses}L/{results.draws}D"
-                    f" - {results.win_rate:.0%}/{results.loss_rate:.0%}/{results.draw_rate:.0%}"
-                    f" (avg: {results.avg_moves:.1f})")
-            if results.as_p0 and results.as_p1:
-                p0, p1 = results.as_p0, results.as_p1
-                line += (f"\n{' ' * 32}"
-                         f"   P0: {p0.wins}W/{p0.losses}L/{p0.draws}D"
-                         f" ({p0.win_rate:.0%}) avg:{p0.avg_moves:.1f}"
-                         f" | P1: {p1.wins}W/{p1.losses}L/{p1.draws}D"
-                         f" ({p1.win_rate:.0%}) avg:{p1.avg_moves:.1f}")
-            return line
-        return ""
-
     def train(self) -> None:
         cfg = self.config
         algo_cfg = cfg.algorithm
@@ -108,15 +40,15 @@ class Trainer:
 
         self._setup_model_dir()
 
+        self._init_metrics()
+
         if cfg.continue_training:
             start_iteration, cp_data = self.backend.restore(
                 cfg, self.current_model_dir, self.current_model_dir
             )
             if cp_data and cp_data.metrics:
-                self.metrics = cp_data.metrics
+                self._load_metrics(cp_data.metrics)
                 print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint")
-            else:
-                self._init_metrics()
         else:
             if self.current_model_dir.exists():
                 # clear dir if it exists to avoid confusion
@@ -124,7 +56,6 @@ class Trainer:
                 self._setup_model_dir()
             start_iteration = 0
             self.backend.setup(cfg, self.current_model_dir)
-            self._init_metrics()
 
         previous_checkpoint: Optional[Path] = None
         metrics_initialized = len(self.metrics.get("iteration", [])) > 0
@@ -221,23 +152,26 @@ class Trainer:
 
                 if self._early_stop_requested:
                     break
+
+            self.backend.request_stop()
+            self.backend.wait_for_training()
+
+            if i < algo_cfg.iterations or self._early_stop_requested:
+                print("-" * 70)
+                print(f"Training stopped early at iteration {i}/{algo_cfg.iterations}.")
+                self.save_checkpoint(i, self.backend.get_checkpoint_data())
+                self.plot_progress()
+                self.backend.shutdown()
+                return
+
+            print("-" * 70)
+            print(f"✓ {algo_cfg.name.upper()} Training completed!")
+
+            self.save_checkpoint(algo_cfg.iterations, self.backend.get_checkpoint_data())
+            self.backend.shutdown()
+            self.plot_progress()
         finally:
             signal.signal(signal.SIGINT, original_sigint)
-
-        if i < algo_cfg.iterations or self._early_stop_requested:
-            print("-" * 70)
-            print(f"Training stopped early at iteration {i}/{algo_cfg.iterations}.")
-            self.save_checkpoint(i, self.backend.get_checkpoint_data())
-            self.plot_progress()
-            self.backend.shutdown()
-            return
-
-        print("-" * 70)
-        print(f"✓ {algo_cfg.name.upper()} Training completed!")
-
-        self.save_checkpoint(algo_cfg.iterations, self.backend.get_checkpoint_data())
-        self.backend.shutdown()
-        self.plot_progress()
 
     def save_checkpoint(self, iteration: int, checkpoint_data: Dict[str, Any]) -> Path:
         if self.current_model_dir is None:
@@ -265,3 +199,75 @@ class Trainer:
         graphs_dir = self.current_model_dir / "graphs"
         graphs.plot_metrics(graphs_dir, self.metrics, self.config.eval_graph_split)
         print(f"\n📊 Graphs saved to: {graphs_dir}\n")
+
+    @staticmethod
+    def _collect_weight_stats(parameters) -> Dict[str, float]:
+        all_params = []
+        for p in parameters:
+            all_params.append(p.data.cpu().numpy().ravel())
+        if not all_params:
+            return {"weight_max": 0.0, "weight_min": 0.0, "weight_avg": 0.0}
+        all_weights = np.concatenate(all_params)
+        return {
+            "weight_max": float(np.max(np.abs(all_weights))),
+            "weight_min": float(np.min(np.abs(all_weights))),
+            "weight_avg": float(np.mean(np.abs(all_weights))),
+        }
+
+    def _handle_sigint(self, signum, frame):
+        if self._early_stop_requested:
+            print("\nForce stopping...")
+            sys.exit(1)
+        self._early_stop_requested = True
+        print("\n\nStopping after current step completes... (Ctrl+C again to force quit)\n")
+
+    def _setup_model_dir(self) -> Path:
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        cfg = self.config
+        model_dir = MODELS_DIR / f"{cfg.name}"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        (model_dir / "graphs").mkdir(exist_ok=True)
+        self.current_model_dir = model_dir
+        return model_dir
+
+    def _init_metrics(self) -> None:
+        self.metrics = {
+            "iteration": [],
+            "wins_vs_random": [],
+            "losses_vs_random": [],
+            "draws_vs_random": [],
+            "weight_max": [],
+            "weight_min": [],
+            "weight_avg": [],
+        }
+        if self.config.eval_vs_previous:
+            self.metrics["wins_vs_previous"] = []
+            self.metrics["losses_vs_previous"] = []
+            self.metrics["draws_vs_previous"] = []
+
+    def _load_metrics(self, checkpoint_metrics: Dict[str, List]) -> None:
+        for key, values in checkpoint_metrics.items():
+            self.metrics[key] = values
+
+    def _record_eval(self, results, prefix: str) -> str:
+        w_key, l_key, d_key = f"wins_{prefix}", f"losses_{prefix}", f"draws_{prefix}"
+
+        if w_key in self.metrics:
+            self.metrics[w_key].append(results.wins if results else None)
+            self.metrics[l_key].append(results.losses if results else None)
+            self.metrics[d_key].append(results.draws if results else None)
+
+        if results:
+            line = (f"\n\n{' ' * 32}"
+                    f" | {prefix}: {results.wins}W/{results.losses}L/{results.draws}D"
+                    f" - {results.win_rate:.0%}/{results.loss_rate:.0%}/{results.draw_rate:.0%}"
+                    f" (avg: {results.avg_moves:.1f})")
+            if results.as_p0 and results.as_p1:
+                p0, p1 = results.as_p0, results.as_p1
+                line += (f"\n{' ' * 32}"
+                         f"   P0: {p0.wins}W/{p0.losses}L/{p0.draws}D"
+                         f" ({p0.win_rate:.0%}) avg:{p0.avg_moves:.1f}"
+                         f" | P1: {p1.wins}W/{p1.losses}L/{p1.draws}D"
+                         f" ({p1.win_rate:.0%}) avg:{p1.avg_moves:.1f}")
+            return line
+        return ""

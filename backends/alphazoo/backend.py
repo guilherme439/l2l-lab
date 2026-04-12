@@ -17,6 +17,12 @@ if TYPE_CHECKING:
     from agents.agent import Agent
     from configs.definition.training.TrainingConfig import TrainingConfig
 
+
+class _EarlyStopTrainingException(Exception):
+    """Raised inside the AlphaZoo callback to break out of az.train()."""
+    pass
+
+
 class AlphaZooBackend(AlgorithmBackend):
 
     def __init__(self):
@@ -160,6 +166,8 @@ class AlphaZooBackend(AlgorithmBackend):
         return start_iteration, cp_data
 
     def start_training(self, start_iteration: int, total_iterations: int) -> None:
+        self._stop_event.clear()
+
         def _train():
             try:
                 az = self._alphazoo
@@ -178,13 +186,17 @@ class AlphaZooBackend(AlgorithmBackend):
                             "replay_buffer_size": metrics.get("train/replay_buffer_size"),
                         },
                     ))
+                    if self._stop_event.is_set():
+                        raise _EarlyStopTrainingException()
 
                 az.train(on_step_end=_on_step_end)
+            except _EarlyStopTrainingException:
+                pass
             finally:
                 self.step_queue.put(None)
 
-        thread = threading.Thread(target=_train, daemon=True)
-        thread.start()
+        self._training_thread = threading.Thread(target=_train, daemon=True)
+        self._training_thread.start()
 
     def create_agent_from_checkpoint(self, checkpoint_dir: Path) -> Agent:
         cp = torch.load(checkpoint_dir / "training" / "checkpoint.pt", weights_only=False)

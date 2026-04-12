@@ -18,7 +18,7 @@ class TrainingConfig:
     backend: str = "rllib"
     eval_interval: int = 20
     eval_games: int = 50
-    eval_vs_previous: bool = False
+    eval_vs_previous: bool = True
     eval_graph_split: int = 500
     plot_interval: int = 50
     info_interval: int = 100

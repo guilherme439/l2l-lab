@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +23,17 @@ class AlgorithmBackend(ABC):
 
     def __init__(self):
         self.step_queue: Queue[Optional[StepResult]] = Queue()
+        self._stop_event = threading.Event()
+        self._training_thread: Optional[threading.Thread] = None
+
+    def request_stop(self) -> None:
+        """Signal the training thread to stop after the current step."""
+        self._stop_event.set()
+
+    def wait_for_training(self, timeout: Optional[float] = 30) -> None:
+        """Wait for the training thread to finish."""
+        if self._training_thread is not None:
+            self._training_thread.join(timeout=timeout)
 
     @property
     @abstractmethod

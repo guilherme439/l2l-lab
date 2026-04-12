@@ -118,9 +118,13 @@ class RLlibBackend(AlgorithmBackend):
         return start_iteration, cp_data
 
     def start_training(self, start_iteration: int, total_iterations: int) -> None:
+        self._stop_event.clear()
+
         def _train():
             try:
                 for i in range(start_iteration, total_iterations):
+                    if self._stop_event.is_set():
+                        break
                     result = self.algo.train()
                     metrics = self.algo_trainer.extract_metrics(result)
                     metrics["_rllib_result"] = result
@@ -132,8 +136,8 @@ class RLlibBackend(AlgorithmBackend):
             finally:
                 self.step_queue.put(None)
 
-        thread = threading.Thread(target=_train, daemon=True)
-        thread.start()
+        self._training_thread = threading.Thread(target=_train, daemon=True)
+        self._training_thread.start()
 
     def create_eval_agent(self) -> Agent:
         rl_module = self.algo.get_module(self._get_policy_name())
