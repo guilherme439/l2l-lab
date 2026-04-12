@@ -6,35 +6,16 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, TYPE_CHECKING
 
 import torch
+from gymnasium.spaces.utils import flatdim
 
+from agents import PolicyAgent
 from backends.base import AlgorithmBackend, StepResult
-from backends.obs_utils import make_wrapper, make_obs_to_state
+from backends.obs_utils import make_wrapper, obs_to_state_provider
 from envs.registry import create_env
 
 if TYPE_CHECKING:
     from agents.agent import Agent
     from configs.definition.training.TrainingConfig import TrainingConfig
-
-
-def _get_shapes(env, obs_to_state):
-    """Compute state shape and action space shape from a PettingZoo env."""
-    import numpy as np
-
-    obs = env.observe(env.agent_selection)
-    state = obs_to_state(obs, None)
-    state_shape = tuple(state.shape[1:])
-
-    action_space = env.action_space(env.agent_selection)
-    if hasattr(action_space, 'n'):
-        num_actions = action_space.n
-    elif hasattr(action_space, 'shape'):
-        num_actions = int(np.prod(action_space.shape))
-    else:
-        raise ValueError(f"Unsupported action space type: {type(action_space)}")
-    action_space_shape = (num_actions,)
-
-    return state_shape, action_space_shape
-
 
 class AlphaZooBackend(AlgorithmBackend):
 
@@ -42,6 +23,7 @@ class AlphaZooBackend(AlgorithmBackend):
         super().__init__()
         self._alphazoo = None
         self._config: Optional[TrainingConfig] = None
+        self._model = None
         self._obs_to_state = None
 
     @property
@@ -88,10 +70,10 @@ class AlphaZooBackend(AlgorithmBackend):
         env_config = config.env
 
         env = create_env(env_config.name, **env_config.kwargs)
-        self._obs_to_state = make_obs_to_state(env_config.obs_space_format)
+        self._obs_to_state = obs_to_state_provider(env_config.obs_space_format)
 
         env.reset()
-        state_shape, action_space_shape = _get_shapes(env, self._obs_to_state)
+        state_shape, action_space_shape = self._get_shapes(env, self._obs_to_state)
         self._state_shape = state_shape
         self._action_space_shape = action_space_shape
 
@@ -101,17 +83,19 @@ class AlphaZooBackend(AlgorithmBackend):
         print()
         print("=" * 70)
 
-        model = self._build_model(config, state_shape, action_space_shape)
+        self._model = self._build_model(config, state_shape, action_space_shape)
 
-        game = make_wrapper(env, config.network.architecture, env_config.obs_space_format)
+        game = make_wrapper(env, env_config.obs_space_format)
 
         az_config = config.algorithm.config
         az_config.running.training_steps = config.algorithm.iterations
+        az_config.data.observation_format = env_config.obs_space_format
+        az_config.data.network_input_format = "channels_first"
 
         self._alphazoo = AlphaZoo(
             env=game,
             config=az_config,
-            model=model,
+            model=self._model,
         )
 
         print(f"\n✓ AlphaZoo instance created successfully!")
@@ -131,16 +115,16 @@ class AlphaZooBackend(AlgorithmBackend):
         env_config = config.env
 
         env = create_env(env_config.name, **env_config.kwargs)
-        self._obs_to_state = make_obs_to_state(env_config.obs_space_format)
+        self._obs_to_state = obs_to_state_provider(env_config.obs_space_format)
 
         env.reset()
-        state_shape, action_space_shape = _get_shapes(env, self._obs_to_state)
+        state_shape, action_space_shape = self._get_shapes(env, self._obs_to_state)
         self._state_shape = state_shape
         self._action_space_shape = action_space_shape
 
-        model = self._build_model(config, state_shape, action_space_shape)
+        self._model = self._build_model(config, state_shape, action_space_shape)
 
-        game = make_wrapper(env, config.network.architecture, env_config.obs_space_format)
+        game = make_wrapper(env, env_config.obs_space_format)
 
         cp_path = get_checkpoint_path(model_dir, config.continue_from_iteration)
         optimizer_state_dict = None
@@ -148,7 +132,7 @@ class AlphaZooBackend(AlgorithmBackend):
         replay_buffer_state = None
         if cp_path and cp_path.exists():
             cp_data_raw = torch.load(cp_path, weights_only=False)
-            model.load_state_dict(cp_data_raw["model_state_dict"])
+            self._model.load_state_dict(cp_data_raw["model_state_dict"])
             optimizer_state_dict = cp_data_raw.get("optimizer_state_dict")
             scheduler_state_dict = cp_data_raw.get("scheduler_state_dict")
             replay_buffer_state = cp_data_raw.get("replay_buffer_state")
@@ -158,11 +142,13 @@ class AlphaZooBackend(AlgorithmBackend):
 
         az_config = config.algorithm.config
         az_config.running.training_steps = config.algorithm.iterations
+        az_config.data.observation_format = env_config.obs_space_format
+        az_config.data.network_input_format = "channels_first"
 
         self._alphazoo = AlphaZoo(
             env=game,
             config=az_config,
-            model=model,
+            model=self._model,
             optimizer_state_dict=optimizer_state_dict,
             scheduler_state_dict=scheduler_state_dict,
             replay_buffer_state=replay_buffer_state,
@@ -180,27 +166,17 @@ class AlphaZooBackend(AlgorithmBackend):
                 az.config.running.training_steps = total_iterations
                 az.starting_step = start_iteration
 
-                def _on_step_end(alphazoo_instance, step, raw_metrics):
-                    checkpoint_data = {
-                        "model_state_dict": deepcopy(az.latest_network.get_model().state_dict()),
-                        "optimizer_state_dict": deepcopy(az.get_optimizer_state_dict()),
-                        "scheduler_state_dict": deepcopy(az.get_scheduler_state_dict()),
-                        "replay_buffer_state": az.get_replay_buffer_state(),
-                    }
-
-                    metrics = {
-                        "episode_len_mean": raw_metrics.get("episode_len_mean", 0),
-                        "policy_loss": raw_metrics.get("policy_loss"),
-                        "value_loss": raw_metrics.get("value_loss"),
-                        "combined_loss": raw_metrics.get("combined_loss"),
-                        "learning_rate": raw_metrics.get("learning_rate"),
-                        "replay_buffer_size": raw_metrics.get("replay_buffer_size"),
-                        "step_time": raw_metrics.get("step_time"),
-                    }
+                def _on_step_end(alphazoo_instance, step, metrics):
                     self.step_queue.put(StepResult(
                         iteration=step,
-                        metrics=metrics,
-                        checkpoint_data=checkpoint_data,
+                        metrics={
+                            "episode_len_mean": metrics.get("rollout/episode_len_mean", 0),
+                            "policy_loss": metrics.get("train/policy_loss"),
+                            "value_loss": metrics.get("train/value_loss"),
+                            "combined_loss": metrics.get("train/combined_loss"),
+                            "learning_rate": metrics.get("train/learning_rate"),
+                            "replay_buffer_size": metrics.get("train/replay_buffer_size"),
+                        },
                     ))
 
                 az.train(on_step_end=_on_step_end)
@@ -211,32 +187,31 @@ class AlphaZooBackend(AlgorithmBackend):
         thread.start()
 
     def create_agent_from_checkpoint(self, checkpoint_dir: Path) -> Agent:
-        from backends.alphazoo.agent import AlphaZooPolicyAgent
-        from alphazoo import NetworkManager
-
         cp = torch.load(checkpoint_dir / "training" / "checkpoint.pt", weights_only=False)
 
         model = self._build_model(self._config, self._state_shape, self._action_space_shape)
         model.load_state_dict(cp["model_state_dict"])
-        model.cpu()
+        model.eval()
 
-        nm = NetworkManager(model)
-        nm.device = "cpu"
-        return AlphaZooPolicyAgent(nm, self._obs_to_state, label="checkpoint")
+        return PolicyAgent(model, name="checkpoint")
 
     def create_eval_agent(self) -> Agent:
-        from backends.alphazoo.agent import AlphaZooPolicyAgent
-        from alphazoo import NetworkManager
+        model_copy = deepcopy(self._model)
+        model_copy.eval()
 
-        model_copy = deepcopy(self._alphazoo.latest_network.get_model())
-        model_copy.cpu()
+        return PolicyAgent(model_copy, name="current")
 
-        nm = NetworkManager(model_copy)
-        nm.device = "cpu"
-        return AlphaZooPolicyAgent(nm, self._obs_to_state, label="current")
+    def get_checkpoint_data(self) -> Dict[str, Any]:
+        az = self._alphazoo
+        return {
+            "model_state_dict": deepcopy(self._model.state_dict()),
+            "optimizer_state_dict": deepcopy(az.get_optimizer_state_dict()),
+            "scheduler_state_dict": deepcopy(az.get_scheduler_state_dict()),
+            "replay_buffer_state": az.get_replay_buffer_state(),
+        }
 
     def get_weight_parameters(self) -> Optional[Iterator]:
-        return self._alphazoo.latest_network.get_model().parameters()
+        return self._model.parameters()
 
     def save_checkpoint(self, checkpoint_dir: Path, iteration: int,
                         metrics: Dict[str, List], checkpoint_data: Dict[str, Any]) -> None:
@@ -266,3 +241,15 @@ class AlphaZooBackend(AlgorithmBackend):
         import ray
         if ray.is_initialized():
             ray.shutdown()
+
+    def _get_shapes(self, env, obs_to_state):
+        """Compute state shape and action space shape from a PettingZoo env."""
+        obs = env.observe(env.agent_selection)
+        state = obs_to_state(obs, None)
+        state_shape = tuple(state.shape[1:])
+
+        action_space = env.action_space(env.agent_selection)
+        num_actions = flatdim(action_space)
+        action_space_shape = (num_actions,)
+
+        return state_shape, action_space_shape

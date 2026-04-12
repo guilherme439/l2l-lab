@@ -2,15 +2,22 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+import numpy as np
 import torch
 
 
-def make_obs_to_state(obs_space_format: str) -> Callable[[Any, Any], torch.Tensor]:
+def _hwc_to_chw(observation: np.ndarray) -> torch.Tensor:
+    """Convert a HWC numpy observation to a contiguous CHW float32 tensor with batch dim."""
+    return torch.from_numpy(
+        np.ascontiguousarray(observation.transpose(2, 0, 1), dtype=np.float32)
+    ).unsqueeze(0)
+
+
+def obs_to_state_provider(obs_space_format: str) -> Callable[[Any, Any], torch.Tensor]:
     """Return an obs-to-tensor conversion function for the given format."""
     if obs_space_format == "channels_last":
         def obs_to_state(obs: Any, agent_id: Any) -> torch.Tensor:
-            t = torch.tensor(obs["observation"], dtype=torch.float32).unsqueeze(0)
-            return t.permute(0, 3, 1, 2)
+            return _hwc_to_chw(obs["observation"])
         return obs_to_state
 
     def obs_to_state(obs: Any, agent_id: Any) -> torch.Tensor:
@@ -18,21 +25,17 @@ def make_obs_to_state(obs_space_format: str) -> Callable[[Any, Any], torch.Tenso
     return obs_to_state
 
 
-def make_wrapper(env: Any, architecture: str, obs_space_format: str):
+def make_wrapper(env: Any, obs_space_format: str = "channels_last"):
     """
-    Create a PettingZooWrapper appropriate for the given architecture and obs format.
+    Create a PettingZooWrapper configured for the given obs format.
 
-    For channels-first (default) environments returns a plain PettingZooWrapper.
-    For channels-last environments returns a subclass that permutes the axes.
+    The wrapper's transpose behavior is controlled by ``observation_format``
+    and ``network_input_format``. l2l-lab networks always expect channels_first.
     """
     from alphazoo import PettingZooWrapper
 
-    if obs_space_format == "channels_last":
-        class ChannelsLastWrapper(PettingZooWrapper):
-            def obs_to_state(self, obs: Any, agent_id: Any) -> torch.Tensor:
-                t = torch.tensor(obs["observation"], dtype=torch.float32).unsqueeze(0)
-                return t.permute(0, 3, 1, 2)
-
-        return ChannelsLastWrapper(env)
-
-    return PettingZooWrapper(env)
+    return PettingZooWrapper(
+        env,
+        observation_format=obs_space_format,
+        network_input_format="channels_first",
+    )

@@ -1,5 +1,6 @@
 import argparse
 import sys
+import traceback
 import warnings
 from pathlib import Path
 
@@ -20,54 +21,6 @@ warnings.filterwarnings(
 DEFAULT_TRAINING_CONFIG_PATH = "configs/files/training/connect_four_training_config.yml"
 DEFAULT_TESTING_CONFIG_PATH = "configs/files/testing/testing_config.yml"
 PROFILE_OUTPUT_PATH = Path("profiling/profile_output.prof")
-
-
-def train(config_path: str):
-    try:
-        trainer = Trainer(config_path)
-        trainer.train()
-
-    except Exception as e:
-        print(f"\n✗ Error: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-def test(config_path: str):
-    try:
-        tester = Tester(config_path)
-        tester.test()
-
-    except Exception as e:
-        print(f"\n✗ Error: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-def run_with_profiling(func, *args):
-    yappi.set_clock_type("wall")
-    yappi.start()
-
-    try:
-        func(*args)
-    finally:
-        yappi.stop()
-        stats = yappi.get_func_stats()
-        stats.save(str(PROFILE_OUTPUT_PATH), type="pstat")
-
-        print("\n" + "=" * 70)
-        print("PROFILING SUMMARY (top 20 by total time, all threads)")
-        print("=" * 70)
-        stats.sort("ttot", "desc")
-        header = f"{'name':<50} {'ncall':>8} {'ttot':>8} {'tsub':>8} {'tavg':>8}"
-        print(header)
-        for stat in stats[:20]:
-            print(f"{stat.full_name[:50]:<50} {stat.ncall:>8} {stat.ttot:>8.4f} {stat.tsub:>8.4f} {stat.tavg:>8.4f}")
-
-        print("=" * 70)
-        print(f"Full profile saved to: {PROFILE_OUTPUT_PATH.absolute()}")
-        print("View interactively with: snakeviz profiling/profile_output.prof")
-        print("=" * 70)
 
 
 def main():
@@ -105,6 +58,53 @@ def main():
             test(config_path)
 
     print("\nDone!")
+
+
+def train(config_path: str):
+    try:
+        trainer = Trainer(config_path)
+        trainer.train()
+
+    except Exception as e:
+        print(f"\n✗ Error: {e}")
+        traceback.print_exc()
+
+
+def test(config_path: str):
+    try:
+        tester = Tester(config_path)
+        tester.test()
+
+    except Exception as e:
+        print(f"\n✗ Error: {e}")
+        traceback.print_exc()
+
+
+def run_with_profiling(func, *args):
+    yappi.set_clock_type("wall")
+    yappi.start()
+
+    try:
+        func(*args)
+    finally:
+        yappi.stop()
+        stats = yappi.get_func_stats()
+        stats.save(str(PROFILE_OUTPUT_PATH), type="pstat")
+
+        print("\n" + "=" * 70)
+        print("PROFILING SUMMARY (top 20 by total time, all threads)")
+        print("=" * 70)
+        stats.sort("ttot", "desc")
+        header = f"{'name':<50} {'ncall':>8} {'ttot':>8} {'tsub':>8} {'tavg':>8}"
+        print(header)
+        for stat in stats[:20]:
+            print(f"{stat.full_name[:50]:<50} {stat.ncall:>8} {stat.ttot:>8.4f} {stat.tsub:>8.4f} {stat.tavg:>8.4f}")
+
+        print("=" * 70)
+        print(f"Full profile saved to: {PROFILE_OUTPUT_PATH.absolute()}")
+        print("View interactively with: snakeviz profiling/profile_output.prof")
+        print("=" * 70)
+
 
 
 if __name__ == "__main__":

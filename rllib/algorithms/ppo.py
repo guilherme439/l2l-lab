@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from ray.rllib.algorithms.ppo import PPO, PPOConfig
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
+from rllib.modules.networks.conv import ConvDualHeadRLModule
+
 from .base import BaseAlgorithmTrainer
 from .multi_policy import (
     PolicySampler,
@@ -136,8 +138,6 @@ class PPOTrainer(BaseAlgorithmTrainer):
         config.rl_module(rl_module_spec=multi_spec)
     
     def _get_base_rl_module_spec(self, obs_space, obs_space_format, act_space) -> RLModuleSpec:
-        from rllib.modules.networks.conv import ConvDualHeadRLModule
-
         network_class = self.config.network.get_network_class()
         adapter_class = self.get_adapter_class(self.config.network.architecture)
         

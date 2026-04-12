@@ -9,7 +9,9 @@ import torch
 from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from ray.tune.registry import register_env
 
+from agents import PolicyAgent
 from backends.base import AlgorithmBackend, StepResult
+from configs.definition.training.NetworkConfig import CONV_ARCHITECTURES, MLP_ARCHITECTURES
 from envs.registry import create_env
 
 if TYPE_CHECKING:
@@ -33,37 +35,6 @@ class RLlibBackend(AlgorithmBackend):
         if self._config:
             return f"rllib_{self._config.algorithm.name}"
         return "rllib"
-
-    def _register_env(self, env_config) -> None:
-        def env_creator(config: Dict):
-            env = create_env(env_config.name, **env_config.kwargs)
-            return PettingZooEnv(env)
-        register_env(env_config.name, env_creator)
-
-    def _get_spaces(self, env_config):
-        env = create_env(env_config.name, **env_config.kwargs)
-        wrapped = PettingZooEnv(env)
-        first_agent = list(wrapped.observation_space.keys())[0]
-        obs_space = wrapped.observation_space[first_agent]
-        act_space = wrapped.action_space[first_agent]
-        return obs_space, act_space
-
-    def _get_algorithm_trainer(self) -> BaseAlgorithmTrainer:
-        algo_name = self._config.algorithm.name.lower()
-        if algo_name == "ppo":
-            from rllib.algorithms.ppo import PPOTrainer
-            return PPOTrainer(self._config)
-        elif algo_name == "impala":
-            from rllib.algorithms.impala import IMPALATrainer
-            return IMPALATrainer(self._config)
-        else:
-            raise ValueError(f"Unsupported algorithm: {algo_name}. Supported: ppo, impala")
-
-    def _get_policy_name(self) -> str:
-        policy_cfg = self._config.algorithm.config.policy
-        if policy_cfg and policy_cfg.use_multiple_policies:
-            return "main_policy"
-        return "shared_policy"
 
     def setup(self, config: TrainingConfig, model_dir: Path) -> None:
         import ray
@@ -154,15 +125,9 @@ class RLlibBackend(AlgorithmBackend):
                     metrics = self.algo_trainer.extract_metrics(result)
                     metrics["_rllib_result"] = result
 
-                    rl_module = self.algo.get_module(self._get_policy_name())
-                    checkpoint_data = {
-                        "backbone_state_dict": deepcopy(rl_module.backbone.state_dict()),
-                    }
-
                     self.step_queue.put(StepResult(
                         iteration=i + 1,
                         metrics=metrics,
-                        checkpoint_data=checkpoint_data,
                     ))
             finally:
                 self.step_queue.put(None)
@@ -171,23 +136,18 @@ class RLlibBackend(AlgorithmBackend):
         thread.start()
 
     def create_eval_agent(self) -> Agent:
-        from agents.rl_module_agent import RLModuleAgent
         rl_module = self.algo.get_module(self._get_policy_name())
-        rl_module.eval()
-        agent = RLModuleAgent(rl_module, label="current")
-        return agent
+        backbone = rl_module.backbone
+        backbone.eval()
+        return PolicyAgent(backbone, name="current")
 
     def create_agent_from_checkpoint(self, checkpoint_dir: Path) -> Agent:
-        from agents.policy_agent import PolicyAgent
-        from configs.definition.training.NetworkConfig import NetworkConfig, CONV_ARCHITECTURES, MLP_ARCHITECTURES
-
         cp = torch.load(checkpoint_dir / "training" / "data.pt", weights_only=False)
         cfg = self._config
 
         architecture = cfg.network.architecture
         network_class = cfg.network.get_network_class()
         network_kwargs = cfg.network.to_kwargs()
-        obs_space_format = cfg.env.obs_space_format
 
         if architecture in CONV_ARCHITECTURES:
             in_channels = self._input_shape[0]
@@ -207,13 +167,13 @@ class RLlibBackend(AlgorithmBackend):
 
         backbone.load_state_dict(cp["backbone_state_dict"])
         backbone.eval()
-        return PolicyAgent(backbone, obs_space_format, label="checkpoint")
+        return PolicyAgent(backbone, name="checkpoint")
 
-    def _set_module_training(self) -> None:
-        try:
-            self.algo.get_module(self._get_policy_name()).train()
-        except Exception:
-            pass
+    def get_checkpoint_data(self) -> Dict[str, Any]:
+        rl_module = self.algo.get_module(self._get_policy_name())
+        return {
+            "backbone_state_dict": deepcopy(rl_module.backbone.state_dict()),
+        }
 
     def get_weight_parameters(self) -> Optional[Iterator]:
         rl_module = self.algo.get_module(self._get_policy_name())
@@ -270,3 +230,40 @@ class RLlibBackend(AlgorithmBackend):
             print(f"  │ Learning Rate: {curr_lr:.2e}")
         print("  └──────────────────────────────────────────────")
         print()
+
+    def _register_env(self, env_config) -> None:
+        def env_creator(config: Dict):
+            env = create_env(env_config.name, **env_config.kwargs)
+            return PettingZooEnv(env)
+        register_env(env_config.name, env_creator)
+
+    def _get_spaces(self, env_config):
+        env = create_env(env_config.name, **env_config.kwargs)
+        wrapped = PettingZooEnv(env)
+        first_agent = list(wrapped.observation_space.keys())[0]
+        obs_space = wrapped.observation_space[first_agent]
+        act_space = wrapped.action_space[first_agent]
+        return obs_space, act_space
+
+    def _get_algorithm_trainer(self) -> BaseAlgorithmTrainer:
+        algo_name = self._config.algorithm.name.lower()
+        if algo_name == "ppo":
+            from rllib.algorithms.ppo import PPOTrainer
+            return PPOTrainer(self._config)
+        elif algo_name == "impala":
+            from rllib.algorithms.impala import IMPALATrainer
+            return IMPALATrainer(self._config)
+        else:
+            raise ValueError(f"Unsupported algorithm: {algo_name}. Supported: ppo, impala")
+
+    def _get_policy_name(self) -> str:
+        policy_cfg = self._config.algorithm.config.policy
+        if policy_cfg and policy_cfg.use_multiple_policies:
+            return "main_policy"
+        return "shared_policy"
+    
+    def _set_module_training(self) -> None:
+        try:
+            self.algo.get_module(self._get_policy_name()).train()
+        except Exception:
+            pass

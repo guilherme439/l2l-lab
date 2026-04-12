@@ -51,10 +51,9 @@ RLlib adapters in `rllib/modules/networks/` wrap these as `RLModule` instances.
 
 ### Agents (`agents/`)
 
-`Agent` ABC with `choose_action(obs) → action`:
+`Agent` ABC with `choose_action(state, action_mask) → action`:
 - `RandomAgent` — random valid action
-- `PolicyAgent` — loads checkpoint weights, runs inference
-- `RLModuleAgent` — wraps current RLlib RLModule
+- `PolicyAgent` — wraps a `torch.nn.Module`, runs inference with action masking
 
 ### Environments (`envs/`)
 

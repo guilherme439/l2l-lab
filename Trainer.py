@@ -11,6 +11,7 @@ import shutil
 
 import graphs
 from backends import get_backend
+from checkpoint_utils import get_latest_checkpoint_dir
 from configs.definition.training.TrainingConfig import TrainingConfig
 from Tester import Tester
 
@@ -141,7 +142,6 @@ class Trainer:
 
         self.backend.start_training(start_iteration, algo_cfg.iterations)
 
-        latest_checkpoint_data = None
         i = start_iteration
 
         self._early_stop_requested = False
@@ -161,8 +161,6 @@ class Trainer:
 
                 i = step_result.iteration
                 metrics = step_result.metrics
-                if step_result.checkpoint_data is not None:
-                    latest_checkpoint_data = step_result.checkpoint_data
 
                 # Remove internal keys before storing
                 rllib_result = metrics.pop("_rllib_result", None)
@@ -204,7 +202,7 @@ class Trainer:
                         )
                         if hasattr(self.backend, '_set_module_training'):
                             self.backend._set_module_training()
-                    checkpoint_dir = self.save_checkpoint(i, latest_checkpoint_data)
+                    checkpoint_dir = self.save_checkpoint(i, self.backend.get_checkpoint_data())
                     previous_checkpoint = checkpoint_dir
 
                     if hasattr(self.backend, 'update_opponent_policies'):
@@ -229,8 +227,7 @@ class Trainer:
         if i < algo_cfg.iterations or self._early_stop_requested:
             print("-" * 70)
             print(f"Training stopped early at iteration {i}/{algo_cfg.iterations}.")
-            if latest_checkpoint_data is not None:
-                self.save_checkpoint(i, latest_checkpoint_data)
+            self.save_checkpoint(i, self.backend.get_checkpoint_data())
             self.plot_progress()
             self.backend.shutdown()
             return
@@ -238,7 +235,7 @@ class Trainer:
         print("-" * 70)
         print(f"✓ {algo_cfg.name.upper()} Training completed!")
 
-        self.save_checkpoint(algo_cfg.iterations, latest_checkpoint_data)
+        self.save_checkpoint(algo_cfg.iterations, self.backend.get_checkpoint_data())
         self.backend.shutdown()
         self.plot_progress()
 
@@ -255,7 +252,6 @@ class Trainer:
         return checkpoint_dir
 
     def get_latest_checkpoint(self, model_dir: Path) -> Optional[Path]:
-        from checkpoint_utils import get_latest_checkpoint_dir
         return get_latest_checkpoint_dir(model_dir)
 
     def plot_progress(self) -> None:

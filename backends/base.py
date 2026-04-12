@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 class StepResult:
     iteration: int
     metrics: Dict[str, Any] = field(default_factory=dict)
-    checkpoint_data: Optional[Dict[str, Any]] = None
 
 
 class AlgorithmBackend(ABC):
@@ -51,6 +50,11 @@ class AlgorithmBackend(ABC):
     @abstractmethod
     def create_agent_from_checkpoint(self, checkpoint_dir: Path) -> Agent:
         """Load training checkpoint from checkpoint_dir/training/ into an Agent."""
+        ...
+
+    @abstractmethod
+    def get_checkpoint_data(self) -> Dict[str, Any]:
+        """Return current training state for checkpointing."""
         ...
 
     @abstractmethod
