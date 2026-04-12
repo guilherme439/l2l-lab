@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import queue
+import shutil
 import signal
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
-import shutil
 
 import graphs
 from backends import get_backend
@@ -141,7 +141,7 @@ class Trainer:
                 eval_str += self._record_eval(results_prev, "vs_previous")
 
                 ep_len = metrics.get('episode_len_mean', 0) or 0
-                print(f"{i:8d}/{algo_cfg.iterations} | EpLen: {ep_len:6.1f}{eval_str}")
+                print(f"{i+1:8d}/{algo_cfg.iterations} | EpLen: {ep_len:6.1f}{eval_str}")
 
                 if i % cfg.plot_interval == 0:
                     self.plot_progress()
