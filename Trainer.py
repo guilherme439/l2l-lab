@@ -114,9 +114,8 @@ class Trainer:
                         self.metrics[key] = [None] * (len(self.metrics["iteration"]) - 1) + [value]
 
                 eval_str = ""
-
                 results_random = None
-                if i % cfg.eval_interval == 0:
+                if self._check_interval(i, cfg.eval_interval):
                     agent = self.backend.create_eval_agent()
                     results_random = Tester.evaluate_agent_vs_random(agent, cfg.env, num_games=cfg.eval_games)
                     if hasattr(self.backend, '_set_module_training'):
@@ -124,8 +123,8 @@ class Trainer:
                 eval_str += self._record_eval(results_random, "vs_random")
 
                 results_prev = None
-                if i % cfg.checkpoint_interval == 0:
-                    if cfg.eval_vs_previous and previous_checkpoint is not None:
+                if self._check_interval(i, cfg.checkpoint_interval):
+                    if self._should_evaluate_vs_previous(previous_checkpoint):
                         agent = self.backend.create_eval_agent()
                         opponent = self.backend.create_agent_from_checkpoint(previous_checkpoint)
                         results_prev = Tester.evaluate_agent_vs_agent(
@@ -133,20 +132,23 @@ class Trainer:
                         )
                         if hasattr(self.backend, '_set_module_training'):
                             self.backend._set_module_training()
+
+                    eval_str += self._record_eval(results_prev, "vs_previous") # must happen before saving the checkpoint
                     checkpoint_dir = self.save_checkpoint(i, self.backend.get_checkpoint_data())
                     previous_checkpoint = checkpoint_dir
 
                     if hasattr(self.backend, 'update_opponent_policies'):
                         self.backend.update_opponent_policies(self.current_model_dir, i)
-                eval_str += self._record_eval(results_prev, "vs_previous")
+                else:        
+                    eval_str += self._record_eval(results_prev, "vs_previous")
 
                 ep_len = metrics.get('episode_len_mean', 0) or 0
                 print(f"{i+1:8d}/{algo_cfg.iterations} | EpLen: {ep_len:6.1f}{eval_str}")
 
-                if i % cfg.plot_interval == 0:
+                if self._check_interval(i, cfg.plot_interval):
                     self.plot_progress()
 
-                if i % cfg.info_interval == 0 and rllib_result is not None:
+                if self._check_interval(i, cfg.info_interval) and rllib_result is not None:
                     if hasattr(self.backend, 'print_training_info'):
                         self.backend.print_training_info(rllib_result)
 
@@ -248,6 +250,12 @@ class Trainer:
     def _load_metrics(self, checkpoint_metrics: Dict[str, List]) -> None:
         for key, values in checkpoint_metrics.items():
             self.metrics[key] = values
+
+    def _check_interval(self, iteration: int, interval: int) -> bool:
+        return iteration % interval == 0
+
+    def _should_evaluate_vs_previous(self, previous_checkpoint: Optional[Path]) -> bool:
+        return (self.config.eval_vs_previous and previous_checkpoint is not None)
 
     def _record_eval(self, results, prefix: str) -> str:
         w_key, l_key, d_key = f"wins_{prefix}", f"losses_{prefix}", f"draws_{prefix}"
