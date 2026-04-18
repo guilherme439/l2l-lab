@@ -1,0 +1,18 @@
+num_games: 1
+
+agents:
+  p1:
+    agent_type: "policy"
+    policy:
+      model_name: "trained"
+      checkpoint: 100
+
+  p2:
+    agent_type: "random"
+
+
+      
+env:
+  name: "connect_four"
+  obs_space_format: "channels_last"
+  kwargs: {}

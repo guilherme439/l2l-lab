@@ -1,0 +1,5 @@
+simulation:
+  mcts_simulations: 100
+
+exploration:
+  number_of_softmax_moves: 0

@@ -1,34 +1,43 @@
-## Installation
+# Installation
 
-It is recommended to create a virtual environment before installing the dependencies:
+## Setup
 
-**1. Create a virtual environment:**
 ```bash
-python3 -m venv venv
+# Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate          # Linux/macOS
+# venv\Scripts\activate           # Windows
+
+# (Optional, if you want the AlphaZoo backend) install alphazoo editable first
+pip install -e /path/to/alphazoo
+
+# (Optional, if you want the SCS env) install RL-SCS editable first
+pip install -e /path/to/RL-SCS
+
+# Install l2l-lab itself
+pip install -e .
+
+# To also pull in the optional groups:
+pip install -e . --group test      # pytest, yappi, snakeviz
+pip install -e . --group alphazoo  # marks alphazoo as a declared dep
+pip install -e . --group scs       # marks RL-SCS as a declared dep
 ```
 
-**2. Activate the virtual environment:**
+## Running tests
 
-On Linux/macOS:
 ```bash
-source venv/bin/activate
-```
-
-**3. Set up your requirements file:**
-
-Copy the example requirements file:
-```bash
-cp requirements.example.txt requirements.txt
-```
-
-Then edit `requirements.txt` and update the local dependencies section.
-
-**4. Install the required dependencies:**
-```bash
-pip install -r requirements.txt
+pytest -v
 ```
 
 ## Dependencies
 
-This project depends on:
-- **RL-SCS** - A reinforcement learning implementation for Standard Combat Series (SCS) game
+l2l-lab hard-depends on:
+
+- **PyTorch**, **NumPy**, **PettingZoo**, **Gymnasium** — core ML / env stack
+- **Ray (rllib)** — one of the training backends
+- **matplotlib**, **hexagdly**, **rlcard**, **pyyaml** — various utilities
+
+Optional:
+
+- **alphazoo** — required for the AlphaZoo training backend and the `MCTSAgent`
+- **RL-SCS** — required if you want to use the SCS environment

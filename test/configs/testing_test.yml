@@ -1,0 +1,12 @@
+num_games: 2
+
+agents:
+  p1:
+    agent_type: "random"
+  p2:
+    agent_type: "random"
+
+env:
+  name: "tictactoe"
+  obs_space_format: "channels_last"
+  kwargs: {}

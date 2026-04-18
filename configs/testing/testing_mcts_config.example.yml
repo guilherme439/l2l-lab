@@ -1,0 +1,20 @@
+num_games: 100
+
+agents:
+  p1:
+    agent_type: "mcts"
+    mcts:
+      model_name: "trained_mcts"
+      checkpoint: 100
+      is_recurrent: false
+      search_config_path: "configs/search/complete_search_config.example.yml"
+
+  p2:
+    agent_type: "random"
+
+env:
+  name: "scs"
+  kwargs:
+    config: "/path/to/game_config.yml"
+    action_mask_location: "obs"
+    obs_space_format: "channels_first"

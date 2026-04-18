@@ -1,0 +1,47 @@
+[build-system]
+requires = ["flit_core>=3.11,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "l2l_lab"
+version = "0.1.0"
+description = "A laboratory for exploring learning-to-learn algorithms and reinforcement learning techniques"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "Guilherme Palma"}]
+dependencies = [
+    "numpy~=1.24",
+    "torch~=2.0",
+    "pettingzoo[classic]~=1.24",
+    "gymnasium~=1.1",
+    "ray[default,rllib]~=2.50",
+    "matplotlib~=3.9",
+    "hexagdly~=2.0",
+    "rlcard~=1.0",
+    "pyyaml~=6.0",
+]
+
+[project.scripts]
+l2l-lab = "l2l_lab.cli:main"
+
+[tool.flit.module]
+name = "l2l_lab"
+
+[dependency-groups]
+test = [
+    "pytest~=7.4",
+    "yappi~=1.7",
+    "snakeviz~=2.2",
+]
+
+alphazoo = [
+    "alphazoo",
+]
+
+scs = [
+    "RL-SCS",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+python_classes = ["DoNotSearchClasses"] # We do not use class-based tests.

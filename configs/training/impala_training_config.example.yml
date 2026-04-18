@@ -1,0 +1,51 @@
+name: "impala_example"
+
+env:
+  name: "scs"
+  kwargs:
+    config: "/path/to/game_config.yml"
+    action_mask_location: "obs"
+    obs_space_format: "channels_first"
+
+algorithm:
+  name: "impala"
+  iterations: 1000
+  config:
+    num_env_runners: 0
+    rollout_fragment_length: 64
+    lr: 0.00002
+    gamma: 0.995
+    entropy_coeff: 0.05
+    vf_loss_coeff: 0.5
+    grad_clip: 40.0
+    vtrace: true
+    vtrace_clip_rho_threshold: 1.0
+    vtrace_clip_pg_rho_threshold: 1.0
+    num_learners: 1
+
+network:
+  architecture: "ResNet"
+  num_filters: 16
+  num_blocks: 4
+  hex: true
+
+
+eval_graph_split: 500
+plot_interval: 35
+info_interval: 50
+
+checkpoint_interval: 50
+continue_training: false
+# continue_from_iteration: 100
+
+evaluation:
+  training_eval:
+    - player: policy
+      games_per_player: 50
+      interval: 15
+  checkpoint_eval:
+    - player: policy
+      opponent: policy
+      games_per_player: 50
+
+

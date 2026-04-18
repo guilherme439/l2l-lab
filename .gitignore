@@ -1,16 +1,19 @@
 
 
-requirements.txt
-
 models/*
 !models/__init__.py
 
-configs/files/training/*
-!configs/files/training/trained_examples
-!configs/files/training/*.example.yml
+configs/training/*
+!configs/training/trained_examples
+!configs/training/*.example.yml
 
-configs/files/testing/*
-!configs/files/testing/testing_config.example.yml
+configs/testing/*
+!configs/testing/testing_config.example.yml
+!configs/testing/testing_mcts_config.example.yml
+
+configs/search/*
+!configs/search/complete_search_config.example.yml
+!configs/search/partial_search_config.example.yml
 
 profiling/*
 

@@ -1,0 +1,51 @@
+name: "_test_rllib_resnet_tictactoe"
+backend: "rllib"
+
+env:
+  name: "tictactoe"
+  obs_space_format: "channels_last"
+  kwargs: {}
+
+algorithm:
+  name: "ppo"
+  iterations: 3
+  config:
+    use_curiosity: false
+    num_env_runners: 0
+    rollout_fragment_length: 32
+    train_batch_size_per_learner: 128
+    minibatch_size: 32
+    num_epochs: 2
+    lr: 0.0005
+    gamma: 0.995
+    entropy_coeff: 0.005
+    vf_loss_coeff: 0.8
+    clip_param: 0.15
+    use_kl_loss: true
+    kl_coeff: 0.1
+    kl_target: 0.02
+    policy:
+      use_multiple_policies: false
+
+network:
+  architecture: "ResNet"
+  num_filters: 8
+  num_blocks: 2
+  hex: false
+
+plot_interval: 1000
+info_interval: 1000
+eval_graph_split: 100
+checkpoint_interval: 2
+
+evaluation:
+  training_eval:
+    - player: policy
+      games_per_player: 2
+      interval: 1
+  checkpoint_eval:
+    - player: policy
+      opponent: policy
+      games_per_player: 2
+
+continue_training: false
