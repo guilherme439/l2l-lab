@@ -1,22 +1,31 @@
 from __future__ import annotations
 
-import numpy as np
+from typing import Any, Callable
+
 import torch
 
 from agents.agent import Agent
+from backends.obs_utils import obs_to_state_provider
 
 
 class PolicyAgent(Agent):
 
-    def __init__(self, model: torch.nn.Module, name: str = "policy"):
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        obs_space_format: str,
+        name: str = "policy",
+    ) -> None:
         self._model = model
-        self._name = name
+        self._obs_to_state: Callable[[Any, Any], torch.Tensor] = obs_to_state_provider(obs_space_format)
+        self.name = name
 
-    @property
-    def name(self) -> str:
-        return self._name
+    def choose_action(self, env: Any) -> int:
+        agent_id = env.agent_selection
+        obs = env.observe(agent_id)
+        action_mask = obs["action_mask"]
+        state = self._obs_to_state(obs, agent_id)
 
-    def choose_action(self, state: torch.Tensor, action_mask: np.ndarray) -> int:
         with torch.no_grad():
             policy_logits, _ = self._model(state)
             policy_logits = policy_logits.reshape(policy_logits.shape[0], -1).squeeze(0)

@@ -143,7 +143,7 @@ class RLlibBackend(AlgorithmBackend):
         rl_module = self.algo.get_module(self._get_policy_name())
         backbone = rl_module.backbone
         backbone.eval()
-        return PolicyAgent(backbone, name="current")
+        return PolicyAgent(backbone, self._config.env.obs_space_format, name="current")
 
     def create_agent_from_checkpoint(self, checkpoint_dir: Path) -> Agent:
         cp = torch.load(checkpoint_dir / "training" / "data.pt", weights_only=False)
@@ -171,7 +171,7 @@ class RLlibBackend(AlgorithmBackend):
 
         backbone.load_state_dict(cp["backbone_state_dict"])
         backbone.eval()
-        return PolicyAgent(backbone, name="checkpoint")
+        return PolicyAgent(backbone, self._config.env.obs_space_format, name="checkpoint")
 
     def get_checkpoint_data(self) -> Dict[str, Any]:
         rl_module = self.algo.get_module(self._get_policy_name())

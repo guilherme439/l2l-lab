@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import random
+from typing import Any
 
 import numpy as np
-import torch
 
 from agents.agent import Agent
 
 
 class RandomAgent(Agent):
 
-    @property
-    def name(self) -> str:
-        return "random"
+    def __init__(self, name: str = "random") -> None:
+        self.name = name
 
-    def choose_action(self, state: torch.Tensor, action_mask: np.ndarray) -> int:
+    def choose_action(self, env: Any) -> int:
+        obs = env.observe(env.agent_selection)
+        action_mask = obs["action_mask"]
         valid_actions = np.where(action_mask == 1)[0]
-        return random.choice(valid_actions)
+        return int(random.choice(valid_actions))

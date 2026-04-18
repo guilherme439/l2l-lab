@@ -1,18 +1,14 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-
-import numpy as np
-import torch
+from typing import Any
 
 
 class Agent(ABC):
 
-    @property
-    @abstractmethod
-    def name(self) -> str: ...
+    name: str
 
     @abstractmethod
-    def choose_action(self, state: torch.Tensor, action_mask: np.ndarray) -> int:
-        """Given a state tensor and action mask, return an action index."""
+    def choose_action(self, env: Any) -> int:
+        """Given a PettingZoo env, return an action index."""
         ...

@@ -6,6 +6,7 @@ import yaml
 
 from configs.definition.common.EnvConfig import EnvConfig
 from configs.definition.testing.agents.AgentConfig import AgentConfig
+from configs.definition.testing.agents.MCTSAgentConfig import MCTSAgentConfig
 from configs.definition.testing.agents.PolicyAgentConfig import PolicyAgentConfig
 from configs.definition.testing.agents.RandomAgentConfig import RandomAgentConfig
 
@@ -16,6 +17,8 @@ def parse_agent_config(data: Dict[str, Any]) -> AgentConfig:
         return PolicyAgentConfig.from_dict(data.get("policy", {}))
     elif agent_type == "random":
         return RandomAgentConfig.from_dict()
+    elif agent_type == "mcts":
+        return MCTSAgentConfig.from_dict(data.get("mcts", {}))
     else:
         raise ValueError(f"Unknown agent type: {agent_type}")
 

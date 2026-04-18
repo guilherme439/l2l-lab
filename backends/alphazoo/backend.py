@@ -205,13 +205,13 @@ class AlphaZooBackend(AlgorithmBackend):
         model.load_state_dict(cp["model_state_dict"])
         model.eval()
 
-        return PolicyAgent(model, name="checkpoint")
+        return PolicyAgent(model, self._config.env.obs_space_format, name="checkpoint")
 
     def create_eval_agent(self) -> Agent:
         model_copy = deepcopy(self._model)
         model_copy.eval()
 
-        return PolicyAgent(model_copy, name="current")
+        return PolicyAgent(model_copy, self._config.env.obs_space_format, name="current")
 
     def get_checkpoint_data(self) -> Dict[str, Any]:
         az = self._alphazoo

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-AgentType = Literal["policy", "random", "rl_module"]
+AgentType = Literal["policy", "random", "rl_module", "mcts"]
 
 
 @dataclass

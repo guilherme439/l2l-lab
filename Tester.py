@@ -9,9 +9,9 @@ import numpy as np
 import torch
 
 from agents import Agent, PolicyAgent, RandomAgent
-from backends.obs_utils import obs_to_state_provider
 from configs.definition.common.EnvConfig import EnvConfig
 from configs.definition.testing.agents.AgentConfig import AgentConfig
+from configs.definition.testing.agents.MCTSAgentConfig import MCTSAgentConfig
 from configs.definition.testing.agents.PolicyAgentConfig import \
     PolicyAgentConfig
 from configs.definition.testing.agents.RandomAgentConfig import \
@@ -94,7 +94,7 @@ class Tester:
             return GameResults(0, 0, 0, 0)
 
         opponent_backbone = Tester._load_backbone_from_checkpoint(checkpoint_path)
-        opponent = PolicyAgent(opponent_backbone, name="checkpoint")
+        opponent = PolicyAgent(opponent_backbone, env_config.obs_space_format, name="checkpoint")
 
         return Tester._run_games(
             env_config, num_games,
@@ -235,7 +235,6 @@ class Tester:
         p0_w, p0_l, p0_d, p0_n, p0_m = 0, 0, 0, 0, 0
         p1_w, p1_l, p1_d, p1_n, p1_m = 0, 0, 0, 0, 0
         env = create_env(env_config.name, **env_config.kwargs)
-        obs_to_state = obs_to_state_provider(env_config.obs_space_format)
 
         for game_idx in range(num_games):
             swapped = alternate_positions and (game_idx % 2 == 1)
@@ -247,21 +246,17 @@ class Tester:
 
             while not Tester._is_env_done(env):
                 agent_id = env.agent_selection
-                obs = env.observe(agent_id)
-                action_mask = obs["action_mask"]
-                valid_actions = np.where(action_mask == 1)[0]
+                action_mask = env.observe(agent_id)["action_mask"]
 
-                if len(valid_actions) == 0:
+                if np.sum(action_mask) == 0:
                     print("\nno valid actions found")
                     env.step(None)
                     continue
 
-                state = obs_to_state(obs, agent_id)
-
                 if agent_id == "player_0":
-                    action = current_p0.choose_action(state, action_mask)
+                    action = current_p0.choose_action(env)
                 else:
-                    action = current_p1.choose_action(state, action_mask)
+                    action = current_p1.choose_action(env)
 
                 env.step(action)
                 if action is not None:
@@ -310,7 +305,24 @@ class Tester:
             checkpoint = torch.load(cp_path, weights_only=False)
             backbone = self._create_backbone(checkpoint)
             label = f"{agent_config.model_name}@{agent_config.checkpoint}"
-            return PolicyAgent(backbone, name=label)
+            return PolicyAgent(backbone, self.config.env.obs_space_format, name=label)
+
+        if isinstance(agent_config, MCTSAgentConfig):
+            from agents import MCTSAgent
+            from alphazoo import SearchConfig
+
+            cp_path = self._get_checkpoint_path(agent_config.model_name, agent_config.checkpoint)
+            checkpoint = torch.load(cp_path, weights_only=False)
+            backbone = self._create_backbone(checkpoint)
+            search_config = SearchConfig.from_yaml(agent_config.search_config_path)
+            label = f"mcts[{agent_config.model_name}@{agent_config.checkpoint}]"
+            return MCTSAgent(
+                model=backbone,
+                is_recurrent=agent_config.is_recurrent,
+                search_config=search_config,
+                obs_space_format=self.config.env.obs_space_format,
+                name=label,
+            )
 
         raise ValueError(f"Unknown agent config type: {type(agent_config)}")
 
