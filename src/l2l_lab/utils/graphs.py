@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
 
 
 def _filter_none(iterations: List[int], values: List[Optional[float]]) -> Tuple[List[int], List[float]]:
@@ -386,10 +387,14 @@ def _plot_wld_stacked_split(
         ax.set_xlabel("Iteration", fontsize=8)
         ax.set_ylabel("Percentage (%)", fontsize=8)
         ax.set_ylim(0, 100)
+        ax.yaxis.set_major_locator(MultipleLocator(10))
+        ax.yaxis.set_minor_locator(MultipleLocator(5))
         ax.set_title(f"{title_base} ({range_start}-{range_end})", fontsize=9)
         ax.legend(loc="upper right", fontsize=7)
-        ax.grid(True, alpha=0.3, axis="y")
+        ax.grid(True, which="major", alpha=0.3, axis="y")
+        ax.grid(True, which="minor", alpha=0.15, axis="y", linestyle=":")
         ax.tick_params(axis='both', which='major', labelsize=7, pad=2)
+        ax.tick_params(axis='y', which='minor', length=3)
         
         plt.tight_layout(pad=0.5)
         
@@ -402,19 +407,27 @@ def _plot_wld_stacked_split(
 def plot_evaluations(graphs_dir: Path, metrics: Dict[str, Any], split_interval: int) -> None:
     iterations = metrics.get("iteration", [])
     evaluations = metrics.get("evaluations", {})
+    titles_by_type = {
+        "training_eval": "Training Eval",
+        "checkpoint_eval": "Checkpoint Eval",
+    }
+    positions = (("as_p0", "as P0"), ("as_p1", "as P1"))
     for label, bucket in evaluations.items():
-        wins = bucket.get("wins", [])
-        losses = bucket.get("losses", [])
-        draws = bucket.get("draws", [])
-        if not _has_valid_data(wins):
-            continue
-        _plot_wld_stacked_split(
-            graphs_dir, iterations,
-            wins, losses, draws,
-            title_base=f"Results: {label}",
-            filename_base=f"eval_{label}.png",
-            split_interval=split_interval,
-        )
+        prefix = titles_by_type.get(bucket.get("type"), "Results")
+        for position_key, position_label in positions:
+            sub = bucket.get(position_key, {})
+            wins = sub.get("wins", [])
+            losses = sub.get("losses", [])
+            draws = sub.get("draws", [])
+            if not _has_valid_data(wins):
+                continue
+            _plot_wld_stacked_split(
+                graphs_dir, iterations,
+                wins, losses, draws,
+                title_base=f"{prefix}: {label} ({position_label})",
+                filename_base=f"eval_{label}_{position_key}.png",
+                split_interval=split_interval,
+            )
 
 
 def plot_metrics(graphs_dir: Path, metrics: Dict[str, Any], eval_graph_split: int = 500) -> None:

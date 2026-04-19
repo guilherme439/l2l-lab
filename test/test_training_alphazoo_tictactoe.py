@@ -22,12 +22,15 @@ def test_alphazoo_tictactoe_training_completes() -> None:
         assert "mcts_vs_random" in evaluations
         assert "policy_vs_mcts" in evaluations
         for bucket in evaluations.values():
-            assert len(bucket["wins"]) == len(iterations)
+            for position in ("as_p0", "as_p1"):
+                assert len(bucket[position]["wins"]) == len(iterations)
 
         # training_eval fires at iter 5 and 10
-        assert any(w is not None for w in evaluations["mcts_vs_random"]["wins"])
+        assert any(w is not None for w in evaluations["mcts_vs_random"]["as_p0"]["wins"])
+        assert any(w is not None for w in evaluations["mcts_vs_random"]["as_p1"]["wins"])
         # checkpoint_eval with mcts opponent needs a previous checkpoint → fires at iter 10
-        assert any(w is not None for w in evaluations["policy_vs_mcts"]["wins"])
+        assert any(w is not None for w in evaluations["policy_vs_mcts"]["as_p0"]["wins"])
+        assert any(w is not None for w in evaluations["policy_vs_mcts"]["as_p1"]["wins"])
 
         cp_root = Path("models") / trainer.config.name / "checkpoints"
         assert cp_root.exists() and any(cp_root.iterdir())

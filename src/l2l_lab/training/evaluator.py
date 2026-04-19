@@ -32,6 +32,15 @@ class Evaluator:
     def labels(self) -> list[str]:
         return self.eval_config.all_labels()
 
+    def label_types(self) -> Dict[str, str]:
+        """{label -> 'training_eval' | 'checkpoint_eval'} for every configured entry."""
+        mapping: Dict[str, str] = {}
+        for entry in self.eval_config.training_eval:
+            mapping[entry.label] = "training_eval"
+        for entry in self.eval_config.checkpoint_eval:
+            mapping[entry.label] = "checkpoint_eval"
+        return mapping
+
     def run_training_evals(self, iteration: int) -> Dict[str, Optional[GameResults]]:
         results: Dict[str, Optional[GameResults]] = {}
         for entry in self.eval_config.training_eval:

@@ -19,7 +19,8 @@ def test_rllib_resnet_training_completes() -> None:
         evaluations = trainer.metrics.get("evaluations", {})
         assert "policy_vs_random" in evaluations
         assert "policy_vs_policy" in evaluations
-        assert any(w is not None for w in evaluations["policy_vs_random"]["wins"])
+        assert any(w is not None for w in evaluations["policy_vs_random"]["as_p0"]["wins"])
+        assert any(w is not None for w in evaluations["policy_vs_random"]["as_p1"]["wins"])
     finally:
         model_dir = Path("models") / trainer.config.name
         if model_dir.exists():

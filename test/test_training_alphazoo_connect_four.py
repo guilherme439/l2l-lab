@@ -22,12 +22,15 @@ def test_alphazoo_connect_four_training_completes() -> None:
         assert "policy_vs_random" in evaluations
         assert "mcts_vs_policy" in evaluations
         for bucket in evaluations.values():
-            assert len(bucket["wins"]) == len(iterations)
+            for position in ("as_p0", "as_p1"):
+                assert len(bucket[position]["wins"]) == len(iterations)
 
         # training_eval fires at iter 4 and 8
-        assert any(w is not None for w in evaluations["policy_vs_random"]["wins"])
+        assert any(w is not None for w in evaluations["policy_vs_random"]["as_p0"]["wins"])
+        assert any(w is not None for w in evaluations["policy_vs_random"]["as_p1"]["wins"])
         # checkpoint_eval fires at iter 8 (with previous checkpoint from iter 4)
-        assert any(w is not None for w in evaluations["mcts_vs_policy"]["wins"])
+        assert any(w is not None for w in evaluations["mcts_vs_policy"]["as_p0"]["wins"])
+        assert any(w is not None for w in evaluations["mcts_vs_policy"]["as_p1"]["wins"])
 
         cp_root = Path("models") / trainer.config.name / "checkpoints"
         assert cp_root.exists() and any(cp_root.iterdir())

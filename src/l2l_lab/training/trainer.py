@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 import queue
 import shutil
 import signal
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -17,6 +19,8 @@ from l2l_lab.utils import graphs
 from l2l_lab.utils.checkpoint import get_latest_checkpoint_dir
 
 MODELS_DIR = Path("models")
+
+logger = logging.getLogger("alphazoo")
 
 
 class Trainer:
@@ -53,7 +57,12 @@ class Trainer:
                 print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint")
         else:
             if self.current_model_dir.exists():
-                # clear dir if it exists to avoid confusion
+                logger.info(
+                    f"Model directory {self.current_model_dir} already exists.\n"
+                    "It will be cleared before starting a fresh training run.\n"
+                    "Press Ctrl+C within 10s to abort."
+                )
+                time.sleep(10)
                 shutil.rmtree(self.current_model_dir)
                 self._setup_model_dir()
             start_iteration = 0
@@ -222,8 +231,13 @@ class Trainer:
         return model_dir
 
     def _init_metrics(self) -> None:
-        evaluations: Dict[str, Dict[str, List]] = {
-            label: {"wins": [], "losses": [], "draws": []}
+        label_types = self.evaluator.label_types()
+        evaluations: Dict[str, Dict[str, Any]] = {
+            label: {
+                "type": label_types[label],
+                "as_p0": {"wins": [], "losses": [], "draws": []},
+                "as_p1": {"wins": [], "losses": [], "draws": []},
+            }
             for label in self.evaluator.labels()
         }
         self.metrics = {
@@ -241,11 +255,16 @@ class Trainer:
         # so lengths stay aligned with "iteration".
         evaluations = self.metrics.setdefault("evaluations", {})
         pad_len = len(self.metrics.get("iteration", []))
+        label_types = self.evaluator.label_types()
         for label in self.evaluator.labels():
-            bucket = evaluations.setdefault(label, {"wins": [], "losses": [], "draws": []})
-            for series in ("wins", "losses", "draws"):
-                if len(bucket[series]) < pad_len:
-                    bucket[series] = bucket[series] + [None] * (pad_len - len(bucket[series]))
+            bucket = evaluations.setdefault(label, {})
+            bucket["type"] = label_types[label]
+            for position in ("as_p0", "as_p1"):
+                sub = bucket.setdefault(position, {"wins": [], "losses": [], "draws": []})
+                for series in ("wins", "losses", "draws"):
+                    sub.setdefault(series, [])
+                    if len(sub[series]) < pad_len:
+                        sub[series] = sub[series] + [None] * (pad_len - len(sub[series]))
 
     def _check_interval(self, iteration: int, interval: int) -> bool:
         return iteration % interval == 0
@@ -256,9 +275,12 @@ class Trainer:
         for label in self.evaluator.labels():
             result = results.get(label)
             bucket = evaluations[label]
-            bucket["wins"].append(result.wins if result else None)
-            bucket["losses"].append(result.losses if result else None)
-            bucket["draws"].append(result.draws if result else None)
+            p0 = result.as_p0 if result is not None else None
+            p1 = result.as_p1 if result is not None else None
+            for position, half in (("as_p0", p0), ("as_p1", p1)):
+                bucket[position]["wins"].append(half.wins if half else None)
+                bucket[position]["losses"].append(half.losses if half else None)
+                bucket[position]["draws"].append(half.draws if half else None)
             if result is not None:
                 lines += self._format_eval_line(label, result)
         return lines

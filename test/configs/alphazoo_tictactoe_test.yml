@@ -31,8 +31,6 @@ algorithm:
       samples:
         batch_size: 16
         num_samples: 48
-    optimizer:
-      optimizer_choice: "Adam"
     search:
       simulation:
         mcts_simulations: 8
@@ -49,6 +47,8 @@ algorithm:
         root_exploration_fraction: 0.25
         root_dist_alpha: 0.3
         root_dist_beta: 1.0
+    optimizer:
+      optimizer_choice: "Adam"
     scheduler:
       starting_lr: 0.001
       boundaries: [1000]
