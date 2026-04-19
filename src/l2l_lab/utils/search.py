@@ -8,13 +8,17 @@ if TYPE_CHECKING:
 
 def load_search_config(path: str) -> "SearchConfig":
     """
-    Load an alphazoo SearchConfig from YAML.
+    Load an alphazoo SearchConfig from YAML for inference-time MCTS.
 
-    Subtree reuse across consecutive calls is not currently supported on the l2l-lab side — so
-    the YAML value is overridden to keep behaviour consistent regardless of what the config says.
+    Training-only knobs — subtree reuse and root exploration noise — are zeroed out regardless
+    of what the YAML specifies, so the returned config is always safe to feed into a
+    non-training ``Explorer``.
     """
     from alphazoo import SearchConfig
 
     config = SearchConfig.from_yaml(path)
     config.simulation.keep_subtree = False
+    config.exploration.root_exploration_fraction = 0.0
+    config.exploration.root_dist_alpha = 0.0
+    config.exploration.root_dist_beta = 0.0
     return config

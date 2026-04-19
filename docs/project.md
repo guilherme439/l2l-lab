@@ -76,7 +76,7 @@ RLlib adapters in `rllib/modules/networks/` wrap these as `RLModule` instances.
 
 - `RandomAgent` — random valid action
 - `PolicyAgent` — wraps a `torch.nn.Module`, runs inference with action masking. Constructor takes `obs_space_format` so it can build the right obs-to-state conversion.
-- `MCTSAgent` (optional — only available when `alphazoo` is installed) — runs alphazoo's MCTS on top of a trained model. Each `choose_action` call runs a fresh search tree via `alphazoo.Explorer.select_action_with_mcts_for`. Configured via `MCTSAgentConfig` with:
+- `MCTSAgent` (optional — only available when `alphazoo` is installed) — runs alphazoo's MCTS on top of a trained model. Each `choose_action` call runs a fresh search tree via `alphazoo.utils.select_action_with_mcts_for`. Configured via `MCTSAgentConfig` with:
   - `model_name`, `checkpoint` — same shape as `PolicyAgentConfig`
   - `is_recurrent` — whether the backbone is an `AlphaZooRecurrentNet`
   - `search_config_path` — path to a YAML understood by `alphazoo.SearchConfig.from_yaml`

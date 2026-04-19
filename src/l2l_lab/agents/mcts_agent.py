@@ -5,7 +5,8 @@ from typing import Any
 import torch
 
 from l2l_lab.agents.agent import Agent
-from alphazoo import Explorer, SearchConfig
+from alphazoo import SearchConfig
+from alphazoo.utils import select_action_with_mcts_for
 
 
 class MCTSAgent(Agent):
@@ -25,7 +26,7 @@ class MCTSAgent(Agent):
         self.name = name
 
     def choose_action(self, env: Any) -> int:
-        return Explorer.select_action_with_mcts_for(
+        return select_action_with_mcts_for(
             env=env,
             model=self._model,
             search_config=self._search_config,
