@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-import threading
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 
 import torch
 from gymnasium.spaces.utils import flatdim
 
-from l2l_lab.backends.base import AlgorithmBackend, StepResult
+from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
 from l2l_lab.backends.obs_utils import make_wrapper, obs_to_state_provider
 from l2l_lab.envs.registry import create_env
+from l2l_lab.utils.common import check_interval
 
 if TYPE_CHECKING:
     from l2l_lab.configs.training.TrainingConfig import TrainingConfig
@@ -69,6 +69,7 @@ class AlphaZooBackend(AlgorithmBackend):
                 ignore_reinit_error=True,
                 _system_config={"local_fs_capacity_threshold": 0.99}
             )
+            print()
 
         self._config = config
         env_config = config.env
@@ -105,9 +106,11 @@ class AlphaZooBackend(AlgorithmBackend):
         print(f"\n✓ AlphaZoo instance created successfully!")
 
     def restore(self, config: TrainingConfig, model_dir: Path, checkpoint_dir: Path):
-        from l2l_lab.utils.checkpoint import get_checkpoint_path, load_checkpoint_data
         import ray
         from alphazoo import AlphaZoo
+
+        from l2l_lab.utils.checkpoint import (get_checkpoint_path,
+                                              load_checkpoint_data)
 
         if not ray.is_initialized():
             ray.init(
@@ -163,38 +166,40 @@ class AlphaZooBackend(AlgorithmBackend):
 
         return start_iteration, cp_data
 
-    def start_training(self, start_iteration: int, total_iterations: int) -> None:
-        self._stop_event.clear()
+    def _train(self, start_iteration: int, total_iterations: int) -> None:
+        try:
+            az = self._alphazoo
+            az.config.running.training_steps = total_iterations
+            az.starting_step = start_iteration
 
-        def _train():
-            try:
-                az = self._alphazoo
-                az.config.running.training_steps = total_iterations
-                az.starting_step = start_iteration
+            info_interval = self._config.info_interval
 
-                def _on_step_end(alphazoo_instance, step, metrics):
-                    self.step_queue.put(StepResult(
-                        iteration=step,
-                        metrics={
-                            "episode_len_mean": metrics.get("rollout/episode_len_mean", 0),
-                            "policy_loss": metrics.get("train/policy_loss"),
-                            "value_loss": metrics.get("train/value_loss"),
-                            "combined_loss": metrics.get("train/combined_loss"),
-                            "learning_rate": metrics.get("train/learning_rate"),
-                            "replay_buffer_size": metrics.get("train/replay_buffer_size"),
-                        },
-                    ))
-                    if self._stop_event.is_set():
-                        raise _EarlyStopTrainingException()
+            def _on_step_end(alphazoo_instance, step, metrics):
+                public_metrics = {
+                    "episode_len_mean": metrics.get("rollout/episode_len_mean", 0),
+                    "policy_loss": metrics.get("train/policy_loss"),
+                    "value_loss": metrics.get("train/value_loss"),
+                    "combined_loss": metrics.get("train/combined_loss"),
+                    "learning_rate": metrics.get("train/learning_rate"),
+                    "replay_buffer_size": metrics.get("train/replay_buffer_size"),
+                }
+                self._print_step_info(step, public_metrics)
+                if check_interval(step, info_interval):
+                    self._print_training_info(step, public_metrics)
+                self.step_queue.put(StepResult(iteration=step, metrics=public_metrics))
+                if self._stop_event.is_set():
+                    raise _EarlyStopTrainingException()
 
-                az.train(on_step_end=_on_step_end)
-            except _EarlyStopTrainingException:
-                pass
-            finally:
-                self.step_queue.put(None)
+            az.train(on_step_end=_on_step_end)
+        except _EarlyStopTrainingException:
+            pass
+        finally:
+            self.step_queue.put(None)
 
-        self._training_thread = threading.Thread(target=_train, daemon=True)
-        self._training_thread.start()
+    def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
+        ep_len = metrics.get("episode_len_mean", 0) or 0
+        total = self._config.algorithm.iterations
+        print(f"{iteration:8d}/{total} | EpLen: {ep_len:6.1f}")
 
     def get_eval_model(self) -> torch.nn.Module:
         model_copy = deepcopy(self._model)

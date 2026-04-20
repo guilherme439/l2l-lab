@@ -5,12 +5,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Queue
-from typing import Any, Dict, Iterator, List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
 
 if TYPE_CHECKING:
     import torch
-    from l2l_lab.utils.checkpoint import CheckpointData
+
     from l2l_lab.configs.training.TrainingConfig import TrainingConfig
+    from l2l_lab.utils.checkpoint import CheckpointData
 
 
 @dataclass
@@ -49,11 +50,36 @@ class AlgorithmBackend(ABC):
         """Restore from checkpoint. Return (start_iteration, checkpoint_data)."""
         ...
 
-    @abstractmethod
     def start_training(self, start_iteration: int, total_iterations: int) -> None:
-        """Launch training in a background thread. Push StepResult to step_queue
-        after each step. Push None when done."""
+        """Launch `_train` in a background thread."""
+        self._stop_event.clear()
+        self._training_thread = threading.Thread(
+            target=self._train,
+            args=(start_iteration, total_iterations),
+            daemon=True,
+        )
+        self._training_thread.start()
+
+    @abstractmethod
+    def _train(self, start_iteration: int, total_iterations: int) -> None:
+        """Run the training loop on the training thread. Push StepResult to
+        `step_queue` after each step; push None when done."""
         ...
+
+    def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
+        """Per-step log. Called on the training thread at the end of each step.
+        Default is a no-op; override in backends that want a step summary."""
+        pass
+
+    def _print_training_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
+        """Periodic backend-specific log. Called on the training thread every
+        `info_interval` steps. Default is a no-op."""
+        pass
+
+    def on_checkpoint_saved(self, model_dir: Path, iteration: int) -> None:
+        """Post-save hook. Called by `Trainer` right after a checkpoint lands
+        on disk. Default is a no-op."""
+        pass
 
     @abstractmethod
     def get_eval_model(self) -> "torch.nn.Module":

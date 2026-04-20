@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-import threading
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 
 import torch
 from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from ray.tune.registry import register_env
 
-from l2l_lab.backends.base import AlgorithmBackend, StepResult
-from l2l_lab.configs.training.NetworkConfig import CONV_ARCHITECTURES, MLP_ARCHITECTURES
+from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
+from l2l_lab.configs.training.NetworkConfig import (CONV_ARCHITECTURES,
+                                                    MLP_ARCHITECTURES)
 from l2l_lab.envs.registry import create_env
+from l2l_lab.utils.common import check_interval
 
 if TYPE_CHECKING:
     from l2l_lab.configs.training.TrainingConfig import TrainingConfig
@@ -46,7 +47,8 @@ class RLlibBackend(AlgorithmBackend):
                 },
                 object_store_memory=2 * 1024 * 1024 * 1024,
             )
-
+            print()
+            
         self._config = config
         self._register_env(config.env)
         obs_space, act_space = self._get_spaces(config.env)
@@ -115,27 +117,22 @@ class RLlibBackend(AlgorithmBackend):
         self.algo = self.algo_trainer.algo
         return start_iteration, cp_data
 
-    def start_training(self, start_iteration: int, total_iterations: int) -> None:
-        self._stop_event.clear()
+    def _train(self, start_iteration: int, total_iterations: int) -> None:
+        info_interval = self._config.info_interval
+        try:
+            for i in range(start_iteration, total_iterations):
+                if self._stop_event.is_set():
+                    break
+                result = self.algo.train()
+                metrics = self.algo_trainer.extract_metrics(result)
 
-        def _train():
-            try:
-                for i in range(start_iteration, total_iterations):
-                    if self._stop_event.is_set():
-                        break
-                    result = self.algo.train()
-                    metrics = self.algo_trainer.extract_metrics(result)
-                    metrics["_rllib_result"] = result
-
-                    self.step_queue.put(StepResult(
-                        iteration=i + 1,
-                        metrics=metrics,
-                    ))
-            finally:
-                self.step_queue.put(None)
-
-        self._training_thread = threading.Thread(target=_train, daemon=True)
-        self._training_thread.start()
+                step = i + 1
+                self._print_step_info(step, metrics)
+                if check_interval(step, info_interval):
+                    self._print_training_info(step, metrics)
+                self.step_queue.put(StepResult(iteration=step, metrics=metrics))
+        finally:
+            self.step_queue.put(None)
 
     def get_eval_model(self) -> torch.nn.Module:
         rl_module = self.algo.get_module(self._get_policy_name())
@@ -213,17 +210,17 @@ class RLlibBackend(AlgorithmBackend):
         if ray.is_initialized():
             ray.shutdown()
 
-    def update_opponent_policies(self, model_dir: Path, checkpoint_iteration: int) -> None:
-        if hasattr(self.algo_trainer, 'update_opponent_policies'):
-            self.algo_trainer.update_opponent_policies(model_dir, checkpoint_iteration)
+    def on_checkpoint_saved(self, model_dir: Path, iteration: int) -> None:
+        self.algo_trainer.update_opponent_policies(model_dir, iteration)
 
-    def print_training_info(self, result: Dict[str, Any]) -> None:
-        policy_name = self._get_policy_name()
-        learner_info = result.get("learners", {}).get(policy_name, {})
-        env_runners = result.get("env_runners", {})
+    def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
+        ep_len = metrics.get("episode_len_mean", 0) or 0
+        total = self._config.algorithm.iterations
+        print(f"{iteration:8d}/{total} | EpLen: {ep_len:6.1f}")
 
-        timesteps = env_runners.get("num_env_steps_sampled_lifetime", 0)
-        curr_lr = learner_info.get("default_optimizer_learning_rate", None)
+    def _print_training_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
+        timesteps = metrics.get("timesteps_lifetime", 0)
+        curr_lr = metrics.get("learning_rate")
 
         print()
         print("  ┌─ Training Info ─────────────────────────────")

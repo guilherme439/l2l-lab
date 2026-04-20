@@ -4,13 +4,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional, Union
 
 from l2l_lab.agents import PolicyAgent, RandomAgent
-from l2l_lab.configs.training.EvaluationConfig import (
-    CheckpointEvalEntry, EvaluationConfig, TrainingEvalEntry)
+from l2l_lab.configs.training.EvaluationConfig import (CheckpointEvalEntry,
+                                                       EvaluationConfig,
+                                                       TrainingEvalEntry)
 from l2l_lab.testing.tester import GameResults, Tester
 
 if TYPE_CHECKING:
     from l2l_lab.agents.agent import Agent
-    from l2l_lab.backends.base import AlgorithmBackend
+    from l2l_lab.backends.backend_base import AlgorithmBackend
     from l2l_lab.configs.common.EnvConfig import EnvConfig
 
 

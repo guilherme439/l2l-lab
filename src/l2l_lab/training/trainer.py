@@ -17,6 +17,7 @@ from l2l_lab.testing.tester import GameResults
 from l2l_lab.training.evaluator import Evaluator
 from l2l_lab.utils import graphs
 from l2l_lab.utils.checkpoint import get_latest_checkpoint_dir
+from l2l_lab.utils.common import check_interval
 
 MODELS_DIR = Path("models")
 
@@ -57,12 +58,14 @@ class Trainer:
                 print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint")
         else:
             if self.current_model_dir.exists():
+                red_color_tags = "\033[31m", "\033[0m"
+                start, end = red_color_tags
                 logger.info(
-                    f"Model directory {self.current_model_dir} already exists.\n"
-                    "It will be cleared before starting a fresh training run.\n"
-                    "Press Ctrl+C within 10s to abort."
+                    f"{start}\nModel directory {self.current_model_dir} already exists.\n"
+                    "!! Directory will be cleared before starting a fresh training run !!\n"
+                    f" - Press Ctrl+C within 20s to abort.\n\n{end}"
                 )
-                time.sleep(10)
+                time.sleep(20)
                 shutil.rmtree(self.current_model_dir)
                 self._setup_model_dir()
             start_iteration = 0
@@ -104,9 +107,6 @@ class Trainer:
                 i = step_result.iteration
                 metrics = step_result.metrics
 
-                # Remove internal keys before storing
-                rllib_result = metrics.pop("_rllib_result", None)
-
                 weight_params = self.backend.get_weight_parameters()
                 if weight_params is not None:
                     weight_stats = Trainer._collect_weight_stats(weight_params)
@@ -128,27 +128,21 @@ class Trainer:
                 training_results = self.evaluator.run_training_evals(i)
 
                 checkpoint_results: Dict[str, Optional[GameResults]] = {}
-                if self._check_interval(i, cfg.checkpoint_interval):
+                if check_interval(i, cfg.checkpoint_interval):
                     checkpoint_results = self.evaluator.run_checkpoint_evals(previous_checkpoint)
 
                 eval_str += self._record_evals({**training_results, **checkpoint_results})
 
-                if self._check_interval(i, cfg.checkpoint_interval):
+                if check_interval(i, cfg.checkpoint_interval):
                     checkpoint_dir = self.save_checkpoint(i, self.backend.get_checkpoint_data())
                     previous_checkpoint = checkpoint_dir
+                    self.backend.on_checkpoint_saved(self.current_model_dir, i)
 
-                    if hasattr(self.backend, 'update_opponent_policies'):
-                        self.backend.update_opponent_policies(self.current_model_dir, i)
+                if eval_str:
+                    print(eval_str)
 
-                ep_len = metrics.get('episode_len_mean', 0) or 0
-                print(f"{i+1:8d}/{algo_cfg.iterations} | EpLen: {ep_len:6.1f}{eval_str}")
-
-                if self._check_interval(i, cfg.plot_interval):
+                if check_interval(i, cfg.plot_interval):
                     self.plot_progress()
-
-                if self._check_interval(i, cfg.info_interval) and rllib_result is not None:
-                    if hasattr(self.backend, 'print_training_info'):
-                        self.backend.print_training_info(rllib_result)
 
                 if self._early_stop_requested:
                     break
@@ -265,9 +259,6 @@ class Trainer:
                     sub.setdefault(series, [])
                     if len(sub[series]) < pad_len:
                         sub[series] = sub[series] + [None] * (pad_len - len(sub[series]))
-
-    def _check_interval(self, iteration: int, interval: int) -> bool:
-        return iteration % interval == 0
 
     def _record_evals(self, results: Dict[str, Optional[GameResults]]) -> str:
         evaluations = self.metrics["evaluations"]

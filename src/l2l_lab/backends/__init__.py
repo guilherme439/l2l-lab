@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, Type
 
-from l2l_lab.backends.base import AlgorithmBackend
+from l2l_lab.backends.backend_base import AlgorithmBackend
 
 BACKEND_REGISTRY: Dict[str, Type[AlgorithmBackend]] = {}
 
@@ -20,6 +20,7 @@ def _register_builtins() -> None:
 
     try:
         import alphazoo  # noqa: F401
+
         from l2l_lab.backends.alphazoo.backend import AlphaZooBackend
         register_backend("alphazoo", AlphaZooBackend)
     except ImportError:

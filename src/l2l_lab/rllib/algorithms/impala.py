@@ -34,6 +34,7 @@ class IMPALATrainer(BaseAlgorithmTrainer):
             "vf_loss": learner_stats.get("mean_vf_loss", 0) or 0,
             "entropy": learner_stats.get("entropy"),
             "learning_rate": learner_stats.get("default_optimizer_learning_rate"),
+            "timesteps_lifetime": env_runners.get("num_env_steps_sampled_lifetime", 0),
         }
     
     def build_config(self, env_name: str, obs_space_format, obs_space, act_space) -> IMPALAConfig:

@@ -39,6 +39,12 @@ class BaseAlgorithmTrainer(ABC):
     def extract_metrics(self, result: Dict[str, Any]) -> Dict[str, Any]:
         pass
 
+    def update_opponent_policies(self, model_dir: Path, new_checkpoint: int) -> None:
+        """Refresh frozen-opponent policy slots after a new checkpoint lands.
+        Default is a no-op; algorithms that run multi-policy self-play
+        (e.g. PPO with `use_multiple_policies: true`) override this."""
+        pass
+
     @staticmethod
     def get_adapter_class(architecture: str):
         if architecture in CONV_ARCHITECTURES:

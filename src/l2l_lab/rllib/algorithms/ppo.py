@@ -52,6 +52,7 @@ class PPOTrainer(BaseAlgorithmTrainer):
             "kl_divergence": learner_stats.get("mean_kl_loss"),
             "vf_explained_var": learner_stats.get("vf_explained_var"),
             "learning_rate": learner_stats.get("default_optimizer_learning_rate"),
+            "timesteps_lifetime": env_runners.get("num_env_steps_sampled_lifetime", 0),
         }
         
         if icm_stats:
