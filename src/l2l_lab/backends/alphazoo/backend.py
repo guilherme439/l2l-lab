@@ -199,7 +199,7 @@ class AlphaZooBackend(AlgorithmBackend):
     def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
         total = self._config.algorithm.iterations
-        print(f"{iteration:8d}/{total} | EpLen: {ep_len:6.1f}")
+        print(f"\n{iteration}/{total} | EpLen: {ep_len:6.1f}\n")
 
     def get_eval_model(self) -> torch.nn.Module:
         model_copy = deepcopy(self._model)

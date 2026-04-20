@@ -45,11 +45,12 @@ class Trainer:
         print()
         print("=" * 70)
 
-        self._setup_model_dir()
-
         self._init_metrics()
 
+        model_dir = MODELS_DIR / cfg.name
+
         if cfg.continue_training:
+            self._setup_model_dir(model_dir)
             start_iteration, cp_data = self.backend.restore(
                 cfg, self.current_model_dir, self.current_model_dir
             )
@@ -57,17 +58,18 @@ class Trainer:
                 self._load_metrics(cp_data.metrics)
                 print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint")
         else:
-            if self.current_model_dir.exists():
+            if model_dir.exists():
                 red_color_tags = "\033[31m", "\033[0m"
                 start, end = red_color_tags
                 logger.info(
-                    f"{start}\nModel directory {self.current_model_dir} already exists.\n"
+                    f"{start}\nModel directory {model_dir} already exists.\n"
                     "!! Directory will be cleared before starting a fresh training run !!\n"
                     f" - Press Ctrl+C within 20s to abort.\n\n{end}"
                 )
                 time.sleep(20)
-                shutil.rmtree(self.current_model_dir)
-                self._setup_model_dir()
+                shutil.rmtree(model_dir)
+
+            self._setup_model_dir(model_dir)
             start_iteration = 0
             self.backend.setup(cfg, self.current_model_dir)
 
@@ -139,7 +141,11 @@ class Trainer:
                     self.backend.on_checkpoint_saved(self.current_model_dir, i)
 
                 if eval_str:
+                    print("\n")
+                    print("  ┌─ Eval Results ──────────────────────────────")
                     print(eval_str)
+                    print("  └──────────────────────────────────────────────")
+                    print()
 
                 if check_interval(i, cfg.plot_interval):
                     self.plot_progress()
@@ -192,7 +198,7 @@ class Trainer:
 
         graphs_dir = self.current_model_dir / "graphs"
         graphs.plot_metrics(graphs_dir, self.metrics, self.config.eval_graph_split)
-        print(f"\n📊 Graphs saved to: {graphs_dir}\n")
+        print(f"\n\n📊 Graphs saved to: {graphs_dir}\n\n")
 
     @staticmethod
     def _collect_weight_stats(parameters) -> Dict[str, float]:
@@ -215,14 +221,10 @@ class Trainer:
         self._early_stop_requested = True
         print("\n\nStopping after current step completes... (Ctrl+C again to force quit)\n")
 
-    def _setup_model_dir(self) -> Path:
-        MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        cfg = self.config
-        model_dir = MODELS_DIR / f"{cfg.name}"
+    def _setup_model_dir(self, model_dir: Path) -> None:
         model_dir.mkdir(parents=True, exist_ok=True)
         (model_dir / "graphs").mkdir(exist_ok=True)
         self.current_model_dir = model_dir
-        return model_dir
 
     def _init_metrics(self) -> None:
         label_types = self.evaluator.label_types()
@@ -262,7 +264,7 @@ class Trainer:
 
     def _record_evals(self, results: Dict[str, Optional[GameResults]]) -> str:
         evaluations = self.metrics["evaluations"]
-        lines = ""
+        formatted: list[str] = []
         for label in self.evaluator.labels():
             result = results.get(label)
             bucket = evaluations[label]
@@ -273,24 +275,22 @@ class Trainer:
                 bucket[position]["losses"].append(half.losses if half else None)
                 bucket[position]["draws"].append(half.draws if half else None)
             if result is not None:
-                lines += self._format_eval_line(label, result)
-        return lines
+                formatted.append(self._format_eval_line(label, result))
+        return "\n".join(formatted)
 
     @staticmethod
     def _format_eval_line(label: str, result: GameResults) -> str:
-        line = (
-            f"\n\n{' ' * 32}"
-            f" | {label}: {result.wins}W/{result.losses}L/{result.draws}D"
+        lines = [
+            f"  │ {label}: {result.wins}W/{result.losses}L/{result.draws}D"
             f" - {result.win_rate:.0%}/{result.loss_rate:.0%}/{result.draw_rate:.0%}"
             f" (avg: {result.avg_moves:.1f})"
-        )
+        ]
         if result.as_p0 and result.as_p1:
             p0, p1 = result.as_p0, result.as_p1
-            line += (
-                f"\n{' ' * 32}"
-                f"   P0: {p0.wins}W/{p0.losses}L/{p0.draws}D"
+            lines.append(
+                f"  │   P0: {p0.wins}W/{p0.losses}L/{p0.draws}D"
                 f" ({p0.win_rate:.0%}) avg:{p0.avg_moves:.1f}"
                 f" | P1: {p1.wins}W/{p1.losses}L/{p1.draws}D"
                 f" ({p1.win_rate:.0%}) avg:{p1.avg_moves:.1f}"
             )
-        return line
+        return "\n".join(lines)

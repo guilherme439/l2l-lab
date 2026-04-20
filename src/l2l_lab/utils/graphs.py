@@ -435,6 +435,7 @@ def plot_metrics(graphs_dir: Path, metrics: Dict[str, Any], eval_graph_split: in
     if not iterations:
         return
 
+    print("\n\nPlotting...")
     plot_training_overview(graphs_dir, metrics)
     plot_loss_breakdown(graphs_dir, metrics)
     plot_policy_health(graphs_dir, metrics)

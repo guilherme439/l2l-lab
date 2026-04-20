@@ -48,7 +48,7 @@ class RLlibBackend(AlgorithmBackend):
                 object_store_memory=2 * 1024 * 1024 * 1024,
             )
             print()
-            
+
         self._config = config
         self._register_env(config.env)
         obs_space, act_space = self._get_spaces(config.env)
@@ -216,7 +216,7 @@ class RLlibBackend(AlgorithmBackend):
     def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
         total = self._config.algorithm.iterations
-        print(f"{iteration:8d}/{total} | EpLen: {ep_len:6.1f}")
+        print(f"\n{iteration}/{total} | EpLen: {ep_len:6.1f}\n")
 
     def _print_training_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
         timesteps = metrics.get("timesteps_lifetime", 0)
