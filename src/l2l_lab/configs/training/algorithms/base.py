@@ -6,8 +6,8 @@ from typing import Any, Union
 from alphazoo import AlphaZooConfig
 
 from ...utils import dataclass_from_dict
-from .AlgoIMPALAConfig import AlgoIMPALAConfig
-from .AlgoPPOConfig import AlgoPPOConfig
+from .algo_impala_config import AlgoIMPALAConfig
+from .algo_ppo_config import AlgoPPOConfig
 
 _RLLIB_INNER_BY_NAME: dict[str, type] = {
     "ppo": AlgoPPOConfig,
