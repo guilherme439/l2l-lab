@@ -38,7 +38,7 @@ class IMPALATrainer(BaseAlgorithmTrainer):
         }
     
     def build_config(self, env_name: str, obs_space_format, obs_space, act_space) -> IMPALAConfig:
-        cfg = self.config.algorithm.config
+        cfg = self.config.backend.algorithm.config
         
         return (
             IMPALAConfig()

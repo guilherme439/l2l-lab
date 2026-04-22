@@ -92,8 +92,7 @@ class AlphaZooBackend(AlgorithmBackend):
 
         game = make_wrapper(env, env_config.obs_space_format)
 
-        az_config = config.algorithm.config
-        az_config.running.training_steps = config.algorithm.iterations
+        az_config = config.backend.algorithm.config
         az_config.data.observation_format = env_config.obs_space_format
         az_config.data.network_input_format = "channels_first"
 
@@ -133,22 +132,24 @@ class AlphaZooBackend(AlgorithmBackend):
 
         game = make_wrapper(env, env_config.obs_space_format)
 
-        cp_path = get_checkpoint_path(model_dir, config.continue_from_iteration)
+        backend_cfg = config.backend
+        cp_path = get_checkpoint_path(model_dir, backend_cfg.continue_from_iteration)
         optimizer_state_dict = None
         scheduler_state_dict = None
         replay_buffer_state = None
         if cp_path and cp_path.exists():
             cp_data_raw = torch.load(cp_path, weights_only=False)
             self._model.load_state_dict(cp_data_raw["model_state_dict"])
-            optimizer_state_dict = cp_data_raw.get("optimizer_state_dict")
-            scheduler_state_dict = cp_data_raw.get("scheduler_state_dict")
+            if backend_cfg.load_optimizer:
+                optimizer_state_dict = cp_data_raw.get("optimizer_state_dict")
+            if backend_cfg.load_scheduler:
+                scheduler_state_dict = cp_data_raw.get("scheduler_state_dict")
             replay_buffer_state = cp_data_raw.get("replay_buffer_state")
             print(f"✓ Model weights restored from {cp_path}")
         else:
             print("No checkpoint found. Starting fresh.")
 
-        az_config = config.algorithm.config
-        az_config.running.training_steps = config.algorithm.iterations
+        az_config = backend_cfg.algorithm.config
         az_config.data.observation_format = env_config.obs_space_format
         az_config.data.network_input_format = "channels_first"
 
@@ -161,7 +162,7 @@ class AlphaZooBackend(AlgorithmBackend):
             replay_buffer_state=replay_buffer_state,
         )
 
-        cp_data = load_checkpoint_data(model_dir, config.continue_from_iteration)
+        cp_data = load_checkpoint_data(model_dir, backend_cfg.continue_from_iteration)
         start_iteration = cp_data.iteration if cp_data else 0
 
         return start_iteration, cp_data
@@ -172,7 +173,7 @@ class AlphaZooBackend(AlgorithmBackend):
             az.config.running.training_steps = total_iterations
             az.starting_step = start_iteration
 
-            info_interval = self._config.info_interval
+            info_interval = self._config.common.info_interval
 
             def _on_step_end(alphazoo_instance, step, metrics):
                 public_metrics = {
@@ -198,7 +199,7 @@ class AlphaZooBackend(AlgorithmBackend):
 
     def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
-        total = self._config.algorithm.iterations
+        total = self._config.backend.algorithm.total_iterations
         print(f"\n{iteration}/{total} | EpLen: {ep_len:6.1f}\n")
 
     def get_eval_model(self) -> torch.nn.Module:

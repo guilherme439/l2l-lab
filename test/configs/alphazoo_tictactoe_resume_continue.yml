@@ -1,4 +1,4 @@
-name: "_test_alphazoo_tictactoe"
+name: "_test_alphazoo_tictactoe_resume"
 
 common:
   plot_interval: 1000
@@ -19,7 +19,7 @@ network:
 
 backend:
   name: "alphazoo"
-  continue_training: false
+  continue_training: true
   algorithm:
     name: "alphazero"
     config:
@@ -68,13 +68,5 @@ backend:
         gamma: 0.1
 
 evaluation:
-  training_eval:
-    - player: mcts
-      games_per_player: 2
-      interval: 5
-      search_config_path: "test/configs/search_test.yml"
-  checkpoint_eval:
-    - player: policy
-      opponent: mcts
-      games_per_player: 2
-      search_config_path: "test/configs/search_test.yml"
+  training_eval: []
+  checkpoint_eval: []

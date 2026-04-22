@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 
 from l2l_lab.backends import get_backend
+from l2l_lab.backends.backend_base import StepResult
 from l2l_lab.configs.training.TrainingConfig import TrainingConfig
 from l2l_lab.testing.tester import GameResults
 from l2l_lab.training.evaluator import Evaluator
@@ -28,7 +29,7 @@ class Trainer:
 
     def __init__(self, config_path: Union[str, Path]):
         self.config = TrainingConfig.from_yaml(config_path)
-        self.backend = get_backend(self.config.backend)()
+        self.backend = get_backend(self.config.backend.name)()
         self.evaluator = Evaluator(self.config.evaluation, self.backend, self.config.env)
         self.metrics: Dict[str, Any] = {}
         self.current_model_dir: Optional[Path] = None
@@ -36,20 +37,32 @@ class Trainer:
 
     def train(self) -> None:
         cfg = self.config
-        algo_cfg = cfg.algorithm
+        backend_cfg = cfg.backend
+        algo_cfg = backend_cfg.algorithm
+        total_iterations = algo_cfg.total_iterations
 
         print("\n" * 3)
         print("=" * 70)
-        print(f"\nTraining {cfg.env.name.upper()} with {algo_cfg.name.upper()} (backend: {cfg.backend})\n")
+        print(f"\nTraining {cfg.env.name.upper()} with {algo_cfg.name.upper()} (backend: {backend_cfg.name})\n")
         print(f"  Name: {cfg.name}")
         print()
         print("=" * 70)
+
+        if cfg.common.checkpoint_interval <= 0:
+            yellow_color_tags = "\033[33m", "\033[0m"
+            start, end = yellow_color_tags
+            logger.warning(
+                f"{start}\n"
+                "⚠ Checkpointing is disabled - "
+                "'checkpoint_interval' was set to 0 or not set at all ⚠\n"
+                f"{end}"
+            )
 
         self._init_metrics()
 
         model_dir = MODELS_DIR / cfg.name
 
-        if cfg.continue_training:
+        if backend_cfg.continue_training:
             self._setup_model_dir(model_dir)
             start_iteration, cp_data = self.backend.restore(
                 cfg, self.current_model_dir, self.current_model_dir
@@ -76,18 +89,18 @@ class Trainer:
         previous_checkpoint: Optional[Path] = None
         metrics_initialized = len(self.metrics.get("iteration", [])) > 0
 
-        remaining_iterations = algo_cfg.iterations - start_iteration
+        remaining_iterations = total_iterations - start_iteration
         if remaining_iterations <= 0:
-            print(f"\nAlready completed {start_iteration} iterations (target: {algo_cfg.iterations}). Nothing to do.")
+            print(f"\nAlready completed {start_iteration} iterations (target: {total_iterations}). Nothing to do.")
             return
 
         print()
         print("=" * 70)
-        print(f"\n\nStarting training for {remaining_iterations} iterations (from {start_iteration} to {algo_cfg.iterations})...")
+        print(f"\n\nStarting training for {remaining_iterations} iterations (from {start_iteration} to {total_iterations})...")
         print("Press Ctrl+C to stop early.")
         print("-" * 70)
 
-        self.backend.start_training(start_iteration, algo_cfg.iterations)
+        self.backend.start_training(start_iteration, total_iterations)
 
         i = start_iteration
 
@@ -130,12 +143,12 @@ class Trainer:
                 training_results = self.evaluator.run_training_evals(i)
 
                 checkpoint_results: Dict[str, Optional[GameResults]] = {}
-                if check_interval(i, cfg.checkpoint_interval):
+                if check_interval(i, cfg.common.checkpoint_interval):
                     checkpoint_results = self.evaluator.run_checkpoint_evals(previous_checkpoint)
 
                 eval_str += self._record_evals({**training_results, **checkpoint_results})
 
-                if check_interval(i, cfg.checkpoint_interval):
+                if check_interval(i, cfg.common.checkpoint_interval):
                     checkpoint_dir = self.save_checkpoint(i, self.backend.get_checkpoint_data())
                     previous_checkpoint = checkpoint_dir
                     self.backend.on_checkpoint_saved(self.current_model_dir, i)
@@ -147,7 +160,7 @@ class Trainer:
                     print("  └──────────────────────────────────────────────")
                     print()
 
-                if check_interval(i, cfg.plot_interval):
+                if check_interval(i, cfg.common.plot_interval):
                     self.plot_progress()
 
                 if self._early_stop_requested:
@@ -156,9 +169,13 @@ class Trainer:
             self.backend.request_stop()
             self.backend.wait_for_training()
 
-            if i < algo_cfg.iterations or self._early_stop_requested:
+            if i < total_iterations or self._early_stop_requested:
+                # on early stop, the trainer thread queue might be delayed, so we skip to the end
+                last_step = self._skip_to_end_of_queue()
+                if last_step is not None:
+                    i = last_step.iteration
                 print("-" * 70)
-                print(f"Training stopped early at iteration {i}/{algo_cfg.iterations}.")
+                print(f"Training stopped early at iteration {i}/{total_iterations}.")
                 self.save_checkpoint(i, self.backend.get_checkpoint_data())
                 self.plot_progress()
                 self.backend.shutdown()
@@ -167,7 +184,7 @@ class Trainer:
             print("-" * 70)
             print(f"✓ {algo_cfg.name.upper()} Training completed!")
 
-            self.save_checkpoint(algo_cfg.iterations, self.backend.get_checkpoint_data())
+            self.save_checkpoint(total_iterations, self.backend.get_checkpoint_data())
             self.backend.shutdown()
             self.plot_progress()
         finally:
@@ -197,7 +214,7 @@ class Trainer:
             raise RuntimeError("No model directory.")
 
         graphs_dir = self.current_model_dir / "graphs"
-        graphs.plot_metrics(graphs_dir, self.metrics, self.config.eval_graph_split)
+        graphs.plot_metrics(graphs_dir, self.metrics, self.config.common.eval_graph_split)
         print(f"\n\n📊 Graphs saved to: {graphs_dir}\n\n")
 
     @staticmethod
@@ -220,6 +237,19 @@ class Trainer:
             sys.exit(1)
         self._early_stop_requested = True
         print("\n\nStopping after current step completes... (Ctrl+C again to force quit)\n")
+
+    def _skip_to_end_of_queue(self) -> Optional[StepResult]:
+        """Drain the backend step queue, returning the most recent StepResult."""
+        last: Optional[StepResult] = None
+        while True:
+            try:
+                item = self.backend.step_queue.get_nowait()
+            except queue.Empty:
+                break
+            if item is None:
+                continue
+            last = item
+        return last
 
     def _setup_model_dir(self, model_dir: Path) -> None:
         model_dir.mkdir(parents=True, exist_ok=True)

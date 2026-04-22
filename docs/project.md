@@ -107,9 +107,11 @@ Metrics and graphs are label-agnostic — `graphs.plot_metrics` iterates `metric
 
 Python dataclasses live in `src/l2l_lab/configs/`; YAML files live at the repo root in `configs/`.
 
-- `TrainingConfig` → `AlgorithmConfig` + `NetworkConfig` + `EnvConfig` + `EvaluationConfig`
-- Algorithm-specific: `PPOConfig`, `IMPALAConfig`
-- Testing-specific: `TestingConfig` with agent configs
+`TrainingConfig` is layered: `name` + `common: CommonConfig` + `env: EnvConfig` + `network: NetworkConfig` + `backend: {Rllib|Alphazoo}BackendConfig` + `evaluation: EvaluationConfig`. The backend wrapper owns `continue_training` / `continue_from_iteration` and, for alphazoo, `load_scheduler` / `load_optimizer`. The algorithm config is nested under `backend.algorithm` and holds the algorithm name plus an inner `config:` block (PPO/IMPALA: `AlgoPPOConfig` / `AlgoIMPALAConfig`; AlphaZero: the external `AlphaZooConfig`).
+
+See [`configuration.md`](configuration.md) for the full field-by-field reference.
+
+Testing uses a separate flat `TestingConfig` with agent configs.
 
 ### Checkpoints
 

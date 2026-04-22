@@ -36,7 +36,7 @@ class PPOTrainer(BaseAlgorithmTrainer):
     
     def extract_metrics(self, result: Dict[str, Any]) -> Dict[str, Any]:
         env_runners = result.get("env_runners", {})
-        policy_cfg = self.config.algorithm.config.policy
+        policy_cfg = self.config.backend.algorithm.config.policy
         policy_name = "main_policy" if policy_cfg and policy_cfg.use_multiple_policies else "shared_policy"
         learner_stats = result.get("learners", {}).get(policy_name, {})
         icm_stats = result.get("learners", {}).get("_intrinsic_curiosity_model", {})
@@ -63,8 +63,8 @@ class PPOTrainer(BaseAlgorithmTrainer):
         return metrics
     
     def build_config(self, env_name: str, obs_space_format, obs_space, act_space) -> PPOConfig:
-        cfg = self.config.algorithm.config
-        policy_cfg = self.config.algorithm.config.policy
+        cfg = self.config.backend.algorithm.config
+        policy_cfg = self.config.backend.algorithm.config.policy
 
         config = (
             PPOConfig()
@@ -117,7 +117,7 @@ class PPOTrainer(BaseAlgorithmTrainer):
         use_curiosity: bool,
         curiosity_coeff: float,
     ):
-        policy_cfg = self.config.algorithm.config.policy
+        policy_cfg = self.config.backend.algorithm.config.policy
         
         policy_weights = policy_cfg.get_policy_weights(len(self.available_checkpoints))
         self.policy_sampler = PolicySampler(policy_weights)
@@ -159,7 +159,7 @@ class PPOTrainer(BaseAlgorithmTrainer):
         )
     
     def update_opponent_policies(self, model_dir: Path, new_checkpoint: int):
-        policy_cfg = self.config.algorithm.config.policy
+        policy_cfg = self.config.backend.algorithm.config.policy
         if not policy_cfg or not policy_cfg.use_multiple_policies:
             return
         

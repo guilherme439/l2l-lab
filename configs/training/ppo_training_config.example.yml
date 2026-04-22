@@ -1,5 +1,11 @@
 name: "example"
 
+common:
+  plot_interval: 35
+  info_interval: 100
+  eval_graph_split: 500
+  checkpoint_interval: 50
+
 env:
   name: "scs"
   kwargs:
@@ -7,51 +13,46 @@ env:
     action_mask_location: "obs"
     obs_space_format: "channels_first"
 
-algorithm:
-  name: "ppo"
-  iterations: 1000
-  config:
-    use_curiosity: false
-    curiosity_coeff: 0.05
-
-    num_env_runners: 0
-    rollout_fragment_length: 128
-    train_batch_size_per_learner: 256
-    minibatch_size: 64
-    num_epochs: 2
-    lr: 
-      - [0, 0.00004]
-      - [512000, 0.00002]
-      - [768000, 0.00001]
-      - [1024000, 0.000005]
-    gamma: 0.999
-    entropy_coeff: 0.05
-    vf_loss_coeff: 0.5
-    clip_param: 0.2
-    use_kl_loss: true
-    kl_coeff: 0.2
-    kl_target: 0.01
-
-    policy:
-      use_multiple_policies: true
-      number_previous_policies: 2
-      main_policy_ratio: 0.5
-      random_policy_ratio: 0.3
-
 network:
   architecture: "ResNet"
   num_filters: 16
   num_blocks: 4
   hex: false
 
+backend:
+  name: "rllib"
+  continue_training: false
+  # continue_from_iteration: 3000
+  algorithm:
+    name: "ppo"
+    iterations: 1000
+    config:
+      use_curiosity: false
+      curiosity_coeff: 0.05
 
-eval_graph_split: 500
-plot_interval: 35
-info_interval: 100
+      num_env_runners: 0
+      rollout_fragment_length: 128
+      train_batch_size_per_learner: 256
+      minibatch_size: 64
+      num_epochs: 2
+      lr:
+        - [0, 0.00004]
+        - [512000, 0.00002]
+        - [768000, 0.00001]
+        - [1024000, 0.000005]
+      gamma: 0.999
+      entropy_coeff: 0.05
+      vf_loss_coeff: 0.5
+      clip_param: 0.2
+      use_kl_loss: true
+      kl_coeff: 0.2
+      kl_target: 0.01
 
-checkpoint_interval: 50
-continue_training: false
-# continue_from_iteration: 3000
+      policy:
+        use_multiple_policies: true
+        number_previous_policies: 2
+        main_policy_ratio: 0.5
+        random_policy_ratio: 0.3
 
 evaluation:
   training_eval:
@@ -62,5 +63,3 @@ evaluation:
     - player: policy
       opponent: policy
       games_per_player: 50
-
-

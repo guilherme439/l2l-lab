@@ -32,7 +32,7 @@ class RLlibBackend(AlgorithmBackend):
     @property
     def name(self) -> str:
         if self._config:
-            return f"rllib_{self._config.algorithm.name}"
+            return f"rllib_{self._config.backend.algorithm.name}"
         return "rllib"
 
     def setup(self, config: TrainingConfig, model_dir: Path) -> None:
@@ -71,7 +71,7 @@ class RLlibBackend(AlgorithmBackend):
             config.env.name, config.env.obs_space_format, obs_space, act_space
         )
 
-        print(f"\nBuilding {config.algorithm.name.upper()} algorithm...\n")
+        print(f"\nBuilding {config.backend.algorithm.name.upper()} algorithm...\n")
         self.algo = rllib_config.build_algo()
         self.algo_trainer.algo = self.algo
         print("\n✓ Algorithm built successfully!")
@@ -112,13 +112,13 @@ class RLlibBackend(AlgorithmBackend):
         )
 
         start_iteration, cp_data = self.algo_trainer.load_checkpoint_for_continue(
-            rllib_config, model_dir, target_iteration=config.continue_from_iteration
+            rllib_config, model_dir, target_iteration=config.backend.continue_from_iteration
         )
         self.algo = self.algo_trainer.algo
         return start_iteration, cp_data
 
     def _train(self, start_iteration: int, total_iterations: int) -> None:
-        info_interval = self._config.info_interval
+        info_interval = self._config.common.info_interval
         try:
             for i in range(start_iteration, total_iterations):
                 if self._stop_event.is_set():
@@ -215,7 +215,7 @@ class RLlibBackend(AlgorithmBackend):
 
     def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
-        total = self._config.algorithm.iterations
+        total = self._config.backend.algorithm.total_iterations
         print(f"\n{iteration}/{total} | EpLen: {ep_len:6.1f}\n")
 
     def _print_training_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
@@ -245,7 +245,7 @@ class RLlibBackend(AlgorithmBackend):
         return obs_space, act_space
 
     def _get_algorithm_trainer(self) -> BaseAlgorithmTrainer:
-        algo_name = self._config.algorithm.name.lower()
+        algo_name = self._config.backend.algorithm.name.lower()
         if algo_name == "ppo":
             from l2l_lab.rllib.algorithms.ppo import PPOTrainer
             return PPOTrainer(self._config)
@@ -256,7 +256,7 @@ class RLlibBackend(AlgorithmBackend):
             raise ValueError(f"Unsupported algorithm: {algo_name}. Supported: ppo, impala")
 
     def _get_policy_name(self) -> str:
-        policy_cfg = self._config.algorithm.config.policy
+        policy_cfg = self._config.backend.algorithm.config.policy
         if policy_cfg and policy_cfg.use_multiple_policies:
             return "main_policy"
         return "shared_policy"

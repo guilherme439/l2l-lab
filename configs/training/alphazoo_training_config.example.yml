@@ -1,60 +1,15 @@
 name: "alphazoo_connect_four"
-backend: "alphazoo"
+
+common:
+  plot_interval: 25
+  info_interval: 50
+  eval_graph_split: 100
+  checkpoint_interval: 50
 
 env:
   name: "connect_four"
   obs_space_format: "channels_last"
   kwargs: {}
-
-algorithm:
-  name: "alphazero"
-  iterations: 500
-  config:
-    verbose: false
-    running:
-      running_mode: "sequential"
-      num_gamers: 6
-      training_steps: 500
-      early_fill_per_type: 100
-      sequential:
-        num_games_per_type_per_step: 12
-    data:
-      player_dependent_value: true
-    cache:
-      enabled: true
-      max_size: 8000
-    learning:
-      learning_method: "samples"
-      replay_window_size: 10000
-      value_loss: "SE"
-      policy_loss: "CEL"
-      samples:
-        batch_size: 64
-        num_samples: 128
-    search:
-      simulation:
-        mcts_simulations: 100
-        keep_subtree: true
-        parallel_search: false
-        parallel:
-          num_search_threads: 4
-          virtual_loss: 3.0
-      uct:
-        pb_c_base: 10000
-        pb_c_init: 1.15
-      exploration:
-        number_of_softmax_moves: 0
-        epsilon_softmax_exploration: 0.04
-        epsilon_random_exploration: 0.0001
-        value_factor: 1.0
-        root_exploration_distribution: "gamma"
-        root_exploration_fraction: 0.20
-        root_dist_alpha: 0.15
-        root_dist_beta: 1.0
-    scheduler:
-      starting_lr: 0.001
-      boundaries: [10000, 20000]
-      gamma: 0.2
 
 network:
   architecture: "MLPNet"
@@ -62,10 +17,60 @@ network:
   neurons_per_layer: 64
   head_layers: 2
 
-plot_interval: 25
-info_interval: 50
-eval_graph_split: 100
-checkpoint_interval: 50
+backend:
+  name: "alphazoo"
+  continue_training: false
+  # continue_from_iteration: 100
+  # load_scheduler: false
+  # load_optimizer: false
+  algorithm:
+    name: "alphazero"
+    config:
+      verbose: false
+      running:
+        running_mode: "sequential"
+        num_gamers: 6
+        training_steps: 500
+        early_fill_per_type: 100
+        sequential:
+          num_games_per_type_per_step: 12
+      data:
+        player_dependent_value: true
+      cache:
+        enabled: true
+        max_size: 8000
+      learning:
+        learning_method: "samples"
+        replay_window_size: 10000
+        value_loss: "SE"
+        policy_loss: "CEL"
+        samples:
+          batch_size: 64
+          num_samples: 128
+      search:
+        simulation:
+          mcts_simulations: 100
+          keep_subtree: true
+          parallel_search: false
+          parallel:
+            num_search_threads: 4
+            virtual_loss: 3.0
+        uct:
+          pb_c_base: 10000
+          pb_c_init: 1.15
+        exploration:
+          number_of_softmax_moves: 0
+          epsilon_softmax_exploration: 0.04
+          epsilon_random_exploration: 0.0001
+          value_factor: 1.0
+          root_exploration_distribution: "gamma"
+          root_exploration_fraction: 0.20
+          root_dist_alpha: 0.15
+          root_dist_beta: 1.0
+      scheduler:
+        starting_lr: 0.001
+        boundaries: [10000, 20000]
+        gamma: 0.2
 
 evaluation:
   training_eval:
@@ -80,7 +85,3 @@ evaluation:
     - player: policy
       opponent: policy
       games_per_player: 50
-
-
-continue_training: false
-# continue_from_iteration: 100

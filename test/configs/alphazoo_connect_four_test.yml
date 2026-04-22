@@ -1,61 +1,15 @@
 name: "_test_alphazoo_connect_four"
-backend: "alphazoo"
+
+common:
+  plot_interval: 1000
+  info_interval: 1000
+  eval_graph_split: 100
+  checkpoint_interval: 4
 
 env:
   name: "connect_four"
   obs_space_format: "channels_last"
   kwargs: {}
-
-algorithm:
-  name: "alphazero"
-  iterations: 8
-  config:
-    verbose: false
-    running:
-      running_mode: "sequential"
-      num_gamers: 2
-      training_steps: 8
-      early_fill_per_type: 3
-      sequential:
-        num_games_per_type_per_step: 2
-    data:
-      player_dependent_value: false
-    cache:
-      enabled: false
-    learning:
-      learning_method: "epochs"
-      replay_window_size: 400
-      value_loss: "AE"
-      policy_loss: "KLD"
-      epochs:
-        batch_size: 16
-        learning_epochs: 1
-    optimizer:
-      optimizer_choice: "SGD"
-      sgd:
-        weight_decay: 0.0001
-        momentum: 0.9
-        nesterov: false
-    search:
-      simulation:
-        mcts_simulations: 12
-        keep_subtree: true
-      uct:
-        pb_c_base: 20000
-        pb_c_init: 1.25
-      exploration:
-        number_of_softmax_moves: 0
-        epsilon_softmax_exploration: 0.02
-        epsilon_random_exploration: 0.0
-        value_factor: 1.0
-        root_exploration_distribution: "gamma"
-        root_exploration_fraction: 0.15
-        root_dist_alpha: 0.2
-        root_dist_beta: 1.0
-    scheduler:
-      starting_lr: 0.002
-      boundaries: [500, 1500]
-      gamma: 0.2
 
 network:
   architecture: "MLPNet"
@@ -63,10 +17,58 @@ network:
   neurons_per_layer: 32
   head_layers: 2
 
-plot_interval: 1000
-info_interval: 1000
-eval_graph_split: 100
-checkpoint_interval: 4
+backend:
+  name: "alphazoo"
+  continue_training: false
+  algorithm:
+    name: "alphazero"
+    config:
+      verbose: false
+      running:
+        running_mode: "sequential"
+        num_gamers: 2
+        training_steps: 8
+        early_fill_per_type: 3
+        sequential:
+          num_games_per_type_per_step: 2
+      data:
+        player_dependent_value: false
+      cache:
+        enabled: false
+      learning:
+        learning_method: "epochs"
+        replay_window_size: 400
+        value_loss: "AE"
+        policy_loss: "KLD"
+        epochs:
+          batch_size: 16
+          learning_epochs: 1
+      optimizer:
+        optimizer_choice: "SGD"
+        sgd:
+          weight_decay: 0.0001
+          momentum: 0.9
+          nesterov: false
+      search:
+        simulation:
+          mcts_simulations: 12
+          keep_subtree: true
+        uct:
+          pb_c_base: 20000
+          pb_c_init: 1.25
+        exploration:
+          number_of_softmax_moves: 0
+          epsilon_softmax_exploration: 0.02
+          epsilon_random_exploration: 0.0
+          value_factor: 1.0
+          root_exploration_distribution: "gamma"
+          root_exploration_fraction: 0.15
+          root_dist_alpha: 0.2
+          root_dist_beta: 1.0
+      scheduler:
+        starting_lr: 0.002
+        boundaries: [500, 1500]
+        gamma: 0.2
 
 evaluation:
   training_eval:
@@ -78,5 +80,3 @@ evaluation:
       opponent: policy
       games_per_player: 2
       search_config_path: "test/configs/search_test.yml"
-
-continue_training: false

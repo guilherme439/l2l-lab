@@ -1,38 +1,15 @@
 name: "connect_four_ppo"
 
+common:
+  plot_interval: 40
+  info_interval: 100
+  eval_graph_split: 400
+  checkpoint_interval: 70
+
 env:
   name: "connect_four"
   obs_space_format: "channels_last"
   kwargs: {}
-
-algorithm:
-  name: "ppo"
-  iterations: 1000
-  config:
-    use_curiosity: false
-
-    num_env_runners: 0
-    rollout_fragment_length: 32
-    train_batch_size_per_learner: 4096
-    minibatch_size: 256
-    num_epochs: 2
-    lr: 
-      - [0,       0.002]
-      - [2000000,  0.0001]
-      - [10000000, 0.00005]
-    gamma: 0.995
-    entropy_coeff: 0.02
-    vf_loss_coeff: 1.1
-    clip_param: 0.25
-    use_kl_loss: true
-    kl_coeff: 0.2
-    kl_target: 0.01
-
-    policy:
-      use_multiple_policies: true
-      number_previous_policies: 2
-      main_policy_ratio: 0.5
-      random_policy_ratio: 0.1
 
 network:
   architecture: "MLPNet"
@@ -40,13 +17,37 @@ network:
   neurons_per_layer: 64
   head_layers: 2
 
+backend:
+  name: "rllib"
+  continue_training: true
+  algorithm:
+    name: "ppo"
+    iterations: 1000
+    config:
+      use_curiosity: false
 
-eval_graph_split: 400
-plot_interval: 40
-info_interval: 100
+      num_env_runners: 0
+      rollout_fragment_length: 32
+      train_batch_size_per_learner: 4096
+      minibatch_size: 256
+      num_epochs: 2
+      lr:
+        - [0,        0.002]
+        - [2000000,  0.0001]
+        - [10000000, 0.00005]
+      gamma: 0.995
+      entropy_coeff: 0.02
+      vf_loss_coeff: 1.1
+      clip_param: 0.25
+      use_kl_loss: true
+      kl_coeff: 0.2
+      kl_target: 0.01
 
-checkpoint_interval: 70
-continue_training: true
+      policy:
+        use_multiple_policies: true
+        number_previous_policies: 2
+        main_policy_ratio: 0.5
+        random_policy_ratio: 0.1
 
 evaluation:
   training_eval:
@@ -57,4 +58,3 @@ evaluation:
     - player: policy
       opponent: policy
       games_per_player: 100
-
