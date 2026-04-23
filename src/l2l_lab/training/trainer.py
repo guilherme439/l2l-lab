@@ -14,6 +14,7 @@ import numpy as np
 from l2l_lab.backends import get_backend
 from l2l_lab.backends.backend_base import StepResult
 from l2l_lab.configs.training.TrainingConfig import TrainingConfig
+from l2l_lab.reporting import Reporter
 from l2l_lab.testing.tester import GameResults
 from l2l_lab.training.evaluator import Evaluator
 from l2l_lab.utils import graphs
@@ -28,11 +29,13 @@ logger = logging.getLogger("alphazoo")
 class Trainer:
 
     def __init__(self, config_path: Union[str, Path]):
+        self.config_path = Path(config_path)
         self.config = TrainingConfig.from_yaml(config_path)
         self.backend = get_backend(self.config.backend.name)()
         self.evaluator = Evaluator(self.config.evaluation, self.backend, self.config.env)
         self.metrics: Dict[str, Any] = {}
         self.current_model_dir: Optional[Path] = None
+        self.reporter: Optional[Reporter] = None
         self._early_stop_requested = False
 
     def train(self) -> None:
@@ -85,6 +88,8 @@ class Trainer:
             self._setup_model_dir(model_dir)
             start_iteration = 0
             self.backend.setup(cfg, self.current_model_dir)
+
+        self._setup_reporter(cfg, start_iteration)
 
         previous_checkpoint: Optional[Path] = None
         metrics_initialized = len(self.metrics.get("iteration", [])) > 0
@@ -139,12 +144,15 @@ class Trainer:
                     else:
                         self.metrics[key] = [None] * (len(self.metrics["iteration"]) - 1) + [value]
 
+                if self.reporter is not None:
+                    self.reporter.on_step(i, metrics)
+
                 eval_str = ""
                 training_results = self.evaluator.run_training_evals(i)
 
                 checkpoint_results: Dict[str, Optional[GameResults]] = {}
                 if check_interval(i, cfg.common.checkpoint_interval):
-                    checkpoint_results = self.evaluator.run_checkpoint_evals(previous_checkpoint)
+                    checkpoint_results = self.evaluator.run_checkpoint_evals(previous_checkpoint, iteration=i)
 
                 eval_str += self._record_evals({**training_results, **checkpoint_results})
 
@@ -188,6 +196,8 @@ class Trainer:
             self.backend.shutdown()
             self.plot_progress()
         finally:
+            if self.reporter is not None:
+                self.reporter.on_shutdown()
             signal.signal(signal.SIGINT, original_sigint)
 
     def save_checkpoint(self, iteration: int, checkpoint_data: Dict[str, Any]) -> Path:
@@ -255,6 +265,26 @@ class Trainer:
         model_dir.mkdir(parents=True, exist_ok=True)
         (model_dir / "graphs").mkdir(exist_ok=True)
         self.current_model_dir = model_dir
+
+    def _setup_reporter(self, cfg: TrainingConfig, start_iteration: int) -> None:
+        if self.current_model_dir is None:
+            raise RuntimeError("Model directory must be set before wiring the reporter.")
+        reports_dir = self.current_model_dir / "reports"
+        self.reporter = Reporter(
+            cfg=cfg.reporting,
+            run_name=cfg.name,
+            backend_name=cfg.backend.name,
+            env_config=cfg.env,
+            config_path=self.config_path,
+            reports_dir=reports_dir,
+            resume=cfg.backend.continue_training,
+        )
+        self.reporter.attach_sources(
+            metrics_getter=lambda: self.metrics,
+            model_getter=self.backend.get_eval_model,
+        )
+        self.reporter.on_setup(start_iteration=start_iteration)
+        self.evaluator.reporter = self.reporter
 
     def _init_metrics(self) -> None:
         label_types = self.evaluator.label_types()

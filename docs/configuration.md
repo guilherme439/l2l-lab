@@ -19,6 +19,7 @@ Full examples live under [`configs/training/*.example.yml`](../configs/training/
   - [IMPALA](#impala)
   - [AlphaZero](#alphazero)
 - [Evaluation](#evaluation)
+- [Reporting](#reporting)
 
 ---
 
@@ -49,9 +50,13 @@ TrainingConfig
 │       ├── name
 │       ├── iterations              # rllib only
 │       └── config: <algo-specific>
-└── evaluation: EvaluationConfig
-    ├── training_eval: list
-    └── checkpoint_eval: list
+├── evaluation: EvaluationConfig
+│   ├── training_eval: list
+│   └── checkpoint_eval: list
+└── reporting: ReportingConfig
+    ├── enabled
+    ├── interval
+    └── sample_games_per_eval
 ```
 
 ---
@@ -219,3 +224,35 @@ Fires on every checkpoint save. Current model plays vs `random`, the previous ch
 | `search_config_path` | str \| null | `null` | Required when `player: mcts` or `opponent: mcts`. |
 
 Labels are auto-derived from `{player}_vs_{opponent}` (or `{player}_vs_random` for training entries). Duplicate labels across the two lists are a validation error.
+
+---
+
+## Reporting
+
+Optional diagnostic layer. When enabled, writes structured artifacts to `models/<name>/reports/` for debugging training runs. Defined in [`training/ReportingConfig.py`](../src/l2l_lab/configs/training/ReportingConfig.py). Omitting the section is the same as `enabled: false`.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Master switch. When `false`, nothing is written. |
+| `interval` | int | `100` | Snapshot every N iterations. The CSV row-per-iteration writes regardless. |
+| `sample_games_per_eval` | int | `2` | Sample games captured per evaluation call, per position (`as_p0` and `as_p1`). |
+
+### Output files
+
+- `training.csv` — one row per iteration, flat scalars only. Header is locked at first write.
+- `report_{iter:06d}.md` — full snapshot every `interval` iterations. Older snapshots are kept so you can diff progress.
+- `config.yaml` — the originating training YAML, copied once at setup.
+- `config_{iter:06d}.yaml` — only if the YAML structurally changed since the last run.
+
+### Probe states
+
+Snapshots include a **Probe states** section: fixed canonical observations fed through the current model to show its policy + value on known positions. Probe states are env-specific and registered in code, not YAML — only `connect_four` ships with built-in probes. For other envs the section is omitted. To add coverage, see [`reporting/probe_states.py`](../src/l2l_lab/reporting/probe_states.py).
+
+Example block:
+
+```yaml
+reporting:
+  enabled: true
+  interval: 100
+  sample_games_per_eval: 2
+```

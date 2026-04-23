@@ -58,3 +58,8 @@ evaluation:
     - player: policy
       opponent: policy
       games_per_player: 100
+
+reporting:
+  enabled: false
+  interval: 100
+  sample_games_per_eval: 2

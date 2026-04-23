@@ -13,7 +13,8 @@ l2l-lab/
 │   ├── cli.py              # CLI entry point; also exposed as the `l2l-lab` script
 │   ├── testing/            # tester.py (YAML-driven manual testing flow)
 │   ├── training/           # trainer.py, evaluator.py
-│   ├── utils/              # graphs.py, checkpoint.py
+│   ├── reporting/          # diagnostic CSV + Markdown snapshot writer
+│   ├── utils/              # common.py, graphs.py, checkpoint.py, search.py
 │   ├── agents/  backends/  envs/  neural_networks/  rllib/
 │   └── configs/            # Python dataclass definitions
 ├── configs/                # YAML assets (training/, testing/, search/)
@@ -107,7 +108,7 @@ Metrics and graphs are label-agnostic — `graphs.plot_metrics` iterates `metric
 
 Python dataclasses live in `src/l2l_lab/configs/`; YAML files live at the repo root in `configs/`.
 
-`TrainingConfig` is layered: `name` + `common: CommonConfig` + `env: EnvConfig` + `network: NetworkConfig` + `backend: {Rllib|Alphazoo}BackendConfig` + `evaluation: EvaluationConfig`. The backend wrapper owns `continue_training` / `continue_from_iteration` and, for alphazoo, `load_scheduler` / `load_optimizer`. The algorithm config is nested under `backend.algorithm` and holds the algorithm name plus an inner `config:` block (PPO/IMPALA: `AlgoPPOConfig` / `AlgoIMPALAConfig`; AlphaZero: the external `AlphaZooConfig`).
+`TrainingConfig` is layered: `name` + `common: CommonConfig` + `env: EnvConfig` + `network: NetworkConfig` + `backend: {Rllib|Alphazoo}BackendConfig` + `evaluation: EvaluationConfig` + `reporting: ReportingConfig`. The backend wrapper owns `continue_training` / `continue_from_iteration` and, for alphazoo, `load_scheduler` / `load_optimizer`. The algorithm config is nested under `backend.algorithm` and holds the algorithm name plus an inner `config:` block (PPO/IMPALA: `AlgoPPOConfig` / `AlgoIMPALAConfig`; AlphaZero: the external `AlphaZooConfig`).
 
 See [`configuration.md`](configuration.md) for the full field-by-field reference.
 
@@ -116,6 +117,20 @@ Testing uses a separate flat `TestingConfig` with agent configs.
 ### Checkpoints
 
 Saved to `models/{name}/checkpoints/{iteration}/` containing model weights, RLlib algorithm state, and metrics history. Checkpoints can be loaded as frozen opponent policies for multi-policy training or as agents for evaluation.
+
+### Reporting (`l2l_lab.reporting`)
+
+Opt-in diagnostic layer, enabled by setting `reporting.enabled: true` in the training YAML. When enabled, the trainer writes LLM-friendly artifacts to `models/{name}/reports/`:
+
+- `training.csv` — one row per iteration, appended live. Only flat scalars from `Trainer.metrics` are persisted; the header is locked at first write, so schema stays stable across resumes.
+- `report_{iter:06d}.md` — full Markdown snapshot every `reporting.interval` iterations. Sections (omitted entirely when empty): header, scalar metrics with sparklines, evaluations with per-position win-rate sparklines, env-registered probe states with policy distribution + value, and sample games.
+- `config.yaml` — verbatim copy of the originating training YAML. On resume, if the current YAML differs structurally (canonical-YAML SHA-256 diff), an additional `config_{iter:06d}.yaml` is written — `config.yaml` is never overwritten.
+
+**Probe states** are env-specific canonical observations registered via `l2l_lab.reporting.register_probe_states(env_name, provider)`. The provider returns `ProbeState` instances each carrying a pre-built observation dict (`{"observation", "action_mask"}`) so they're robust to non-deterministic envs. Only `connect_four` ships with probes in v1; the probes section is omitted from reports for other envs.
+
+**Sample games** are returned directly by `Tester.play_games` via `GameResults.reports` when `reports_to_capture > 0`. `Evaluator._play_balanced` passes `reporting.sample_games_per_eval` as the capture count whenever reporting is enabled, stamps each returned `GameReport` with `(iteration, eval_label, as_position)`, and hands it to `Reporter.add_game_report`. Capture runs on both the `as_p0` and `as_p1` halves of each eval. The Reporter buffers the stamped reports and drains them into the next snapshot.
+
+Reporting I/O runs synchronously on the trainer thread. See `src/l2l_lab/reporting/` for the implementation.
 
 ## Dependency groups
 

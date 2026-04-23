@@ -11,6 +11,7 @@ from .backends.base import BaseBackendConfig, backend_config_from_dict
 from .CommonConfig import CommonConfig
 from .EvaluationConfig import EvaluationConfig
 from .NetworkConfig import NetworkConfig
+from .ReportingConfig import ReportingConfig
 
 
 @dataclass
@@ -21,6 +22,7 @@ class TrainingConfig:
     network: NetworkConfig
     backend: BaseBackendConfig
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
+    reporting: ReportingConfig = field(default_factory=ReportingConfig)
 
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "TrainingConfig":
@@ -50,6 +52,8 @@ class TrainingConfig:
 
         evaluation = EvaluationConfig.from_dict(data.get("evaluation", {}))
 
+        reporting = dataclass_from_dict(ReportingConfig, data.get("reporting", {}))
+
         return cls(
             name=data["name"],
             common=common,
@@ -57,4 +61,5 @@ class TrainingConfig:
             network=network,
             backend=backend,
             evaluation=evaluation,
+            reporting=reporting,
         )

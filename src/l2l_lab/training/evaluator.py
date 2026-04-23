@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from l2l_lab.agents.agent import Agent
     from l2l_lab.backends.backend_base import AlgorithmBackend
     from l2l_lab.configs.common.EnvConfig import EnvConfig
+    from l2l_lab.reporting import Reporter
 
 
 EvalEntry = Union[TrainingEvalEntry, CheckpointEvalEntry]
@@ -29,9 +30,13 @@ class Evaluator:
         self.eval_config = eval_config
         self.backend = backend
         self.env_config = env_config
+        self.reporter: Optional["Reporter"] = None
 
     def labels(self) -> list[str]:
         return self.eval_config.all_labels()
+
+    def is_reporter_enabled(self) -> bool:
+        return self.reporter is not None and self.reporter.enabled
 
     def label_types(self) -> Dict[str, str]:
         """{label -> 'training_eval' | 'checkpoint_eval'} for every configured entry."""
@@ -50,13 +55,17 @@ class Evaluator:
                 continue
             player = self._build_player_agent(entry)
             opponent = RandomAgent()
-            results[entry.label] = self._play_balanced(player, opponent, entry.games_per_player)
+            results[entry.label] = self._play_balanced(
+                player, opponent, entry.games_per_player,
+                iteration=iteration, label=entry.label,
+            )
             self._restore_training_mode()
         return results
 
     def run_checkpoint_evals(
         self,
         previous_checkpoint: Optional[Path],
+        iteration: int = 0,
     ) -> Dict[str, Optional[GameResults]]:
         results: Dict[str, Optional[GameResults]] = {}
         for entry in self.eval_config.checkpoint_eval:
@@ -66,7 +75,10 @@ class Evaluator:
                 continue
             player = self._build_player_agent(entry)
             opponent = self._build_opponent_agent(entry, previous_checkpoint)
-            results[entry.label] = self._play_balanced(player, opponent, entry.games_per_player)
+            results[entry.label] = self._play_balanced(
+                player, opponent, entry.games_per_player,
+                iteration=iteration, label=entry.label,
+            )
             self._restore_training_mode()
         return results
 
@@ -115,9 +127,25 @@ class Evaluator:
         player: "Agent",
         opponent: "Agent",
         games_per_side: int,
+        iteration: int = 0,
+        label: str = "",
     ) -> GameResults:
-        as_p0 = Tester.play_games(p0=player, p1=opponent, env_config=self.env_config, num_games=games_per_side)
-        as_p1_raw = Tester.play_games(p0=opponent, p1=player, env_config=self.env_config, num_games=games_per_side)
+        reports_to_capture = self.reporter.cfg.sample_games_per_eval if self.is_reporter_enabled() else 0
+
+        as_p0 = Tester.play_games(
+            p0=player, p1=opponent, env_config=self.env_config,
+            num_games=games_per_side, reports_to_capture=reports_to_capture,
+        )
+        as_p1_raw = Tester.play_games(
+            p0=opponent, p1=player, env_config=self.env_config,
+            num_games=games_per_side, reports_to_capture=reports_to_capture,
+        )
+
+        if self.is_reporter_enabled():
+            for report in as_p0.reports:
+                self.reporter.add_game_report(iteration, label, "as_p0", report)
+            for report in as_p1_raw.reports:
+                self.reporter.add_game_report(iteration, label, "as_p1", report)
 
         as_p1 = GameResults(
             wins=as_p1_raw.losses,

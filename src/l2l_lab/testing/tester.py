@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -21,6 +21,8 @@ from l2l_lab.configs.training.NetworkConfig import (CONV_ARCHITECTURES,
                                                        MLP_ARCHITECTURES,
                                                        NetworkConfig)
 from l2l_lab.envs.registry import create_env
+from l2l_lab.reporting.types import GameReport
+from l2l_lab.utils.common import clone_observation
 
 MODELS_DIR = Path("models")
 
@@ -36,6 +38,7 @@ class GameResults:
     elapsed_time: float = 0.0
     as_p0: Optional['GameResults'] = None
     as_p1: Optional['GameResults'] = None
+    reports: list[GameReport] = field(default_factory=list)
 
     @property
     def win_rate(self) -> float:
@@ -65,23 +68,33 @@ class Tester:
         p1: Agent,
         env_config: EnvConfig,
         num_games: int,
+        reports_to_capture: int = 0,
     ) -> GameResults:
         """
             Play `num_games` games with a fixed (p0, p1) pair.
             Returns results from p0's perspective.
+
+            The first ``reports_to_capture`` games have their move sequences
+            recorded as ``GameReport`` objects and returned in
+            ``GameResults.reports``.
         """
         start_time = time.time()
         wins, losses, draws = 0, 0, 0
         total_moves = 0
         env = create_env(env_config.name, **env_config.kwargs)
 
+        captured_reports: list[GameReport] = []
+
         for _ in range(num_games):
             env.reset()
             moves = 0
+            capture = len(captured_reports) < reports_to_capture
+            recorded_moves: list[tuple[str, Optional[int], Dict[str, Any]]] = []
 
             while not Tester._is_env_done(env):
                 agent_id = env.agent_selection
-                action_mask = env.observe(agent_id)["action_mask"]
+                obs = env.observe(agent_id)
+                action_mask = obs["action_mask"]
 
                 if np.sum(action_mask) == 0:
                     print("\nno valid actions found")
@@ -90,6 +103,9 @@ class Tester:
 
                 current = p0 if agent_id == "player_0" else p1
                 action = current.choose_action(env)
+
+                if capture:
+                    recorded_moves.append((agent_id, action, clone_observation(obs)))
 
                 env.step(action)
                 if action is not None:
@@ -105,9 +121,18 @@ class Tester:
 
             total_moves += moves
 
+            if capture:
+                captured_reports.append(GameReport(
+                    p0_name=getattr(p0, "name", p0.__class__.__name__),
+                    p1_name=getattr(p1, "name", p1.__class__.__name__),
+                    result_from_p0=result,
+                    num_moves=moves,
+                    moves=recorded_moves,
+                ))
+
         elapsed = time.time() - start_time
         avg_moves = (total_moves / num_games) if num_games > 0 else 0.0
-        return GameResults(wins, losses, draws, num_games, avg_moves, elapsed)
+        return GameResults(wins, losses, draws, num_games, avg_moves, elapsed, reports=captured_reports)
 
     def test(self) -> GameResults:
         print("\n" + "=" * 70)
