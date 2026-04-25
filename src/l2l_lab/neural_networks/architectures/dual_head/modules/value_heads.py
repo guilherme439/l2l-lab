@@ -96,17 +96,24 @@ class ReduceMLP_ValueHead(nn.Module):
 
         layer_list = []
 
-        dims = []
-        for i in range(num_layers + 1):
-            t = i / num_layers
-            size = in_features + (1 - in_features) * t
-            dims.append(max(1, int(size)))
-        dims[0] = in_features
-        dims[-1] = 1
+        delta = 1 - in_features
+        step = delta / num_layers
+        previous_layer_features = in_features
 
-        for in_dim, out_dim in zip(dims[:-1], dims[1:]):
-            layer_list.append(nn.Linear(in_dim, out_dim))
-            layer_list.append(nn.Tanh())
+        for layer in range(num_layers, 0, -1):
+            current_layer_features = previous_layer_features + step
+
+            layer_list.append(nn.Linear(
+                max(1, int(previous_layer_features)),
+                max(1, int(current_layer_features)),
+            ))
+
+            if layer != 1:
+                layer_list.append(nn.Tanh())
+
+            previous_layer_features = current_layer_features
+
+        layer_list.append(nn.Tanh())
 
         self.layers = nn.Sequential(*layer_list)
 

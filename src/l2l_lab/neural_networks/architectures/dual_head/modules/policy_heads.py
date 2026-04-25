@@ -67,17 +67,22 @@ class ReduceMLP_PolicyHead(nn.Module):
 
         layer_list = []
 
-        dims = []
-        for i in range(num_layers + 1):
-            t = i / num_layers
-            size = in_features + (out_features - in_features) * t
-            dims.append(max(1, int(size)))
-        dims[0] = in_features
-        dims[-1] = out_features
+        delta = out_features - in_features
+        step = delta / num_layers
+        previous_layer_features = in_features
 
-        for in_dim, out_dim in zip(dims[:-1], dims[1:]):
-            layer_list.append(nn.Linear(in_dim, out_dim))
-            layer_list.append(nn.ReLU())
+        for layer in range(num_layers, 0, -1):
+            current_layer_features = previous_layer_features + step
+
+            layer_list.append(nn.Linear(
+                max(1, int(previous_layer_features)),
+                max(1, int(current_layer_features)),
+            ))
+
+            if layer != 1:
+                layer_list.append(nn.ReLU())
+
+            previous_layer_features = current_layer_features
 
         self.layers = nn.Sequential(*layer_list)
 
