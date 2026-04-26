@@ -5,6 +5,7 @@ common:
   info_interval: 100
   eval_graph_split: 500
   checkpoint_interval: 50
+  plot_memory: false
 
 env:
   name: "scs"

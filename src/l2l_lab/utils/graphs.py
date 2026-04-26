@@ -335,6 +335,40 @@ def plot_weight_stats(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     plt.close(fig)
 
 
+def plot_memory_usage(graphs_dir: Path, metrics: Dict[str, Any]) -> None:
+    iterations = metrics.get("iteration", [])
+    memory = metrics.get("memory") or {}
+    total = memory.get("total_pss_mb", [])
+    main = memory.get("main_pss_mb", [])
+    workers = memory.get("workers_pss_mb", [])
+
+    if not _has_valid_data(total):
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    series = [
+        (total, "Trainer tree (total)", "#2980b9", 1.8),
+        (main, "Main process", "#16a085", 1.2),
+        (workers, "Workers (sum)", "#e67e22", 1.2),
+    ]
+    for values, label, color, width in series:
+        if not _has_valid_data(values):
+            continue
+        iters, vals = _filter_none(iterations, values)
+        ax.plot(iters, vals, color=color, linewidth=width, label=label)
+
+    ax.set_xlabel("Iteration", fontsize=10)
+    ax.set_ylabel("Memory PSS (MB)", fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.set_title("Memory Usage", fontsize=12, fontweight="bold")
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, -0.2), ncol=3, fontsize=8)
+
+    plt.tight_layout()
+    plt.savefig(graphs_dir / "memory.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _plot_wld_stacked_split(
     graphs_dir: Path,
     iterations: List[int],
@@ -408,26 +442,26 @@ def plot_evaluations(graphs_dir: Path, metrics: Dict[str, Any], split_interval: 
     iterations = metrics.get("iteration", [])
     evaluations = metrics.get("evaluations", {})
     titles_by_type = {
-        "training_eval": "Training Eval",
-        "checkpoint_eval": "Checkpoint Eval",
+        "training": "Training Eval",
+        "checkpoint": "Checkpoint Eval",
     }
     positions = (("as_p0", "as P0"), ("as_p1", "as P1"))
-    for label, bucket in evaluations.items():
-        prefix = titles_by_type.get(bucket.get("type"), "Results")
-        for position_key, position_label in positions:
-            sub = bucket.get(position_key, {})
-            wins = sub.get("wins", [])
-            losses = sub.get("losses", [])
-            draws = sub.get("draws", [])
-            if not _has_valid_data(wins):
-                continue
-            _plot_wld_stacked_split(
-                graphs_dir, iterations,
-                wins, losses, draws,
-                title_base=f"{prefix}: {label} ({position_label})",
-                filename_base=f"eval_{label}_{position_key}.png",
-                split_interval=split_interval,
-            )
+    for eval_type, prefix in titles_by_type.items():
+        for label, bucket in evaluations.get(eval_type, {}).items():
+            for position_key, position_label in positions:
+                sub = bucket.get(position_key, {})
+                wins = sub.get("wins", [])
+                losses = sub.get("losses", [])
+                draws = sub.get("draws", [])
+                if not _has_valid_data(wins):
+                    continue
+                _plot_wld_stacked_split(
+                    graphs_dir, iterations,
+                    wins, losses, draws,
+                    title_base=f"{prefix}: {label} ({position_label})",
+                    filename_base=f"eval_{label}_{position_key}.png",
+                    split_interval=split_interval,
+                )
 
 
 def plot_metrics(graphs_dir: Path, metrics: Dict[str, Any], eval_graph_split: int = 500) -> None:
@@ -442,6 +476,7 @@ def plot_metrics(graphs_dir: Path, metrics: Dict[str, Any], eval_graph_split: in
     plot_value_function(graphs_dir, metrics)
     plot_learning_rate(graphs_dir, metrics)
     plot_weight_stats(graphs_dir, metrics)
+    plot_memory_usage(graphs_dir, metrics)
 
     has_icm = _has_valid_data(metrics.get("intrinsic_reward_mean", []))
     if has_icm:

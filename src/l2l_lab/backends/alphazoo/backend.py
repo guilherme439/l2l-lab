@@ -202,6 +202,15 @@ class AlphaZooBackend(AlgorithmBackend):
         total = self._config.backend.algorithm.total_iterations
         print(f"\n{iteration}/{total} | EpLen: {ep_len:6.1f}\n")
 
+    def get_reporter_csv_keys(self) -> List[str]:
+        return [
+            "episode_len_mean",
+            "policy_loss",
+            "value_loss",
+            "combined_loss",
+            "learning_rate",
+        ]
+
     def get_eval_model(self) -> torch.nn.Module:
         model_copy = deepcopy(self._model)
         model_copy.eval()

@@ -213,6 +213,19 @@ class RLlibBackend(AlgorithmBackend):
     def on_checkpoint_saved(self, model_dir: Path, iteration: int) -> None:
         self.algo_trainer.update_opponent_policies(model_dir, iteration)
 
+    def get_reporter_csv_keys(self) -> List[str]:
+        return [
+            "episode_len_mean",
+            "episode_reward_mean",
+            "total_loss",
+            "policy_loss",
+            "vf_loss",
+            "entropy",
+            "kl_divergence",
+            "vf_explained_var",
+            "learning_rate",
+        ]
+
     def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
         total = self._config.backend.algorithm.total_iterations

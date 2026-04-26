@@ -19,6 +19,7 @@ dependencies = [
     "hexagdly~=2.0",
     "rlcard~=1.0",
     "pyyaml~=6.0",
+    "psutil~=5.9",
 ]
 
 [project.scripts]

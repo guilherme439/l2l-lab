@@ -20,6 +20,7 @@ from l2l_lab.training.evaluator import Evaluator
 from l2l_lab.utils import graphs
 from l2l_lab.utils.checkpoint import get_latest_checkpoint_dir
 from l2l_lab.utils.common import check_interval
+from l2l_lab.utils.memory import MemorySampler
 
 MODELS_DIR = Path("models")
 
@@ -37,6 +38,7 @@ class Trainer:
         self.current_model_dir: Optional[Path] = None
         self.reporter: Optional[Reporter] = None
         self._early_stop_requested = False
+        self._memory_sampler: Optional[MemorySampler] = None
 
     def train(self) -> None:
         cfg = self.config
@@ -62,6 +64,9 @@ class Trainer:
             )
 
         self._init_metrics()
+
+        if cfg.common.plot_memory:
+            self._memory_sampler = MemorySampler()
 
         model_dir = MODELS_DIR / cfg.name
 
@@ -125,38 +130,25 @@ class Trainer:
                     break
 
                 i = step_result.iteration
-                metrics = step_result.metrics
+                step_metrics = step_result.metrics
 
-                weight_params = self.backend.get_weight_parameters()
-                if weight_params is not None:
-                    weight_stats = Trainer._collect_weight_stats(weight_params)
-                    metrics.update(weight_stats)
+                self._collect_weight_metrics(step_metrics)
+                if self._memory_sampler is not None:
+                    self._collect_memory_metrics(step_metrics)
 
-                if not metrics_initialized:
-                    for key in metrics.keys():
-                        self.metrics[key] = []
-                    metrics_initialized = True
-
-                self.metrics["iteration"].append(i)
-                for key, value in metrics.items():
-                    if key in self.metrics:
-                        self.metrics[key].append(value)
-                    else:
-                        self.metrics[key] = [None] * (len(self.metrics["iteration"]) - 1) + [value]
-
-                if self.reporter is not None:
-                    self.reporter.on_step(i, metrics)
-
-                eval_str = ""
                 training_results = self.evaluator.run_training_evals(i)
-
                 checkpoint_results: Dict[str, Optional[GameResults]] = {}
                 if check_interval(i, cfg.common.checkpoint_interval):
                     checkpoint_results = self.evaluator.run_checkpoint_evals(previous_checkpoint, iteration=i)
+                eval_str = self._collect_eval_metrics({**training_results, **checkpoint_results}, step_metrics)
 
-                eval_str += self._record_evals({**training_results, **checkpoint_results})
+                self.metrics["iteration"].append(i)
+                self._update_metrics(step_metrics)
 
-                if check_interval(i, cfg.common.checkpoint_interval):
+                if self.reporter is not None:
+                    self.reporter.on_step(i, step_metrics)
+
+                if check_interval(i, cfg.common.checkpoint_interval): 
                     checkpoint_dir = self.save_checkpoint(i, self.backend.get_checkpoint_data())
                     previous_checkpoint = checkpoint_dir
                     self.backend.on_checkpoint_saved(self.current_model_dir, i)
@@ -227,27 +219,6 @@ class Trainer:
         graphs.plot_metrics(graphs_dir, self.metrics, self.config.common.eval_graph_split)
         print(f"\n\n📊 Graphs saved to: {graphs_dir}\n\n")
 
-    @staticmethod
-    def _collect_weight_stats(parameters) -> Dict[str, float]:
-        all_params = []
-        for p in parameters:
-            all_params.append(p.data.cpu().numpy().ravel())
-        if not all_params:
-            return {"weight_max": 0.0, "weight_min": 0.0, "weight_avg": 0.0}
-        all_weights = np.concatenate(all_params)
-        return {
-            "weight_max": float(np.max(np.abs(all_weights))),
-            "weight_min": float(np.min(np.abs(all_weights))),
-            "weight_avg": float(np.mean(np.abs(all_weights))),
-        }
-
-    def _handle_sigint(self, signum, frame):
-        if self._early_stop_requested:
-            print("\nForce stopping...")
-            sys.exit(1)
-        self._early_stop_requested = True
-        print("\n\nStopping after current step completes... (Ctrl+C again to force quit)\n")
-
     def _skip_to_end_of_queue(self) -> Optional[StepResult]:
         """Drain the backend step queue, returning the most recent StepResult."""
         last: Optional[StepResult] = None
@@ -278,6 +249,7 @@ class Trainer:
             config_path=self.config_path,
             reports_dir=reports_dir,
             resume=cfg.backend.continue_training,
+            csv_keys=self.backend.get_reporter_csv_keys(),
         )
         self.reporter.attach_sources(
             metrics_getter=lambda: self.metrics,
@@ -287,15 +259,12 @@ class Trainer:
         self.evaluator.reporter = self.reporter
 
     def _init_metrics(self) -> None:
-        label_types = self.evaluator.label_types()
-        evaluations: Dict[str, Dict[str, Any]] = {
-            label: {
-                "type": label_types[label],
+        evaluations: Dict[str, Dict[str, Any]] = {"training": {}, "checkpoint": {}}
+        for label, label_type in self.evaluator.label_to_type_map().items():
+            evaluations[label_type][label] = {
                 "as_p0": {"wins": [], "losses": [], "draws": []},
                 "as_p1": {"wins": [], "losses": [], "draws": []},
             }
-            for label in self.evaluator.labels()
-        }
         self.metrics = {
             "iteration": [],
             "evaluations": evaluations,
@@ -303,40 +272,114 @@ class Trainer:
             "weight_min": [],
             "weight_avg": [],
         }
+        if self.config.common.plot_memory:
+            self.metrics["memory"] = {
+                "main_pss_mb": [],
+                "workers_pss_mb": [],
+                "total_pss_mb": [],
+            }
 
     def _load_metrics(self, checkpoint_metrics: Dict[str, Any]) -> None:
         for key, values in checkpoint_metrics.items():
             self.metrics[key] = values
-        # If the resumed config introduces new eval labels, back-fill them with Nones
-        # so lengths stay aligned with "iteration".
-        evaluations = self.metrics.setdefault("evaluations", {})
-        pad_len = len(self.metrics.get("iteration", []))
-        label_types = self.evaluator.label_types()
-        for label in self.evaluator.labels():
-            bucket = evaluations.setdefault(label, {})
-            bucket["type"] = label_types[label]
-            for position in ("as_p0", "as_p1"):
-                sub = bucket.setdefault(position, {"wins": [], "losses": [], "draws": []})
-                for series in ("wins", "losses", "draws"):
-                    sub.setdefault(series, [])
-                    if len(sub[series]) < pad_len:
-                        sub[series] = sub[series] + [None] * (pad_len - len(sub[series]))
 
-    def _record_evals(self, results: Dict[str, Optional[GameResults]]) -> str:
-        evaluations = self.metrics["evaluations"]
+    def _collect_memory_metrics(self, step_metrics: Dict[str, Any]) -> None:
+        sample = self._memory_sampler.sample()
+        step_metrics["memory"] = {
+            "main_pss_mb": sample.main_pss_mb,
+            "workers_pss_mb": sample.workers_pss_mb,
+            "total_pss_mb": sample.total_pss_mb,
+        }
+
+    def _update_metrics(self, step_metrics: Dict[str, Any]) -> None:
+        target_len = len(self.metrics["iteration"])
+        self._update_into(self.metrics, step_metrics, target_len)
+        self._align_metrics(self.metrics)
+
+    def _update_into(self, target: Dict[str, Any], source: Dict[str, Any], target_len: int) -> None:
+        '''
+        Append source values into target (recursing into nested dicts).
+        '''
+        for key, value in source.items():
+            if isinstance(value, dict):
+                self._update_into(target.setdefault(key, {}), value, target_len)
+            else:
+                self._append_to_series(target.setdefault(key, []), value, target_len)
+        
+    def _align_metrics(self, metrics: dict) -> None:
+        '''
+        Append None to all metrics that are shorter than the number of interations
+        '''
+        target_len : int = metrics["iteration"]
+        for key, value in metrics.items():
+            if key == "iteration":
+                continue
+            if isinstance(value, list):
+                self._pad_series_to_len(value, target_len)
+            elif isinstance(value, dict):
+                self._align_metrics(value, target_len)
+
+
+    def _append_to_series(self, series: list, value: Any, target_len: int) -> None:
+        deficit = target_len - 1 - len(series)
+        # front-pad with None - This series didnt cover past iterations
+        if deficit > 0:
+            series[:0] = [None] * deficit
+        series.append(value)
+
+    def _pad_series_to_len(self, series: list, target_len: int) -> None:
+        deficit = target_len - len(series)
+        if deficit > 0:
+            series.extend([None] * deficit)
+
+    def _collect_weight_metrics(self, step_metrics: Dict[str, Any]) -> None:
+        parameters = self.backend.get_weight_parameters()
+        if parameters is None:
+            return
+        all_params = []
+        for p in parameters:
+            all_params.append(p.data.cpu().numpy().ravel())
+        if not all_params:
+            step_metrics["weight_max"] = 0.0
+            step_metrics["weight_min"] = 0.0
+            step_metrics["weight_avg"] = 0.0
+            return
+        all_weights = np.concatenate(all_params)
+        step_metrics["weight_max"] = float(np.max(np.abs(all_weights)))
+        step_metrics["weight_min"] = float(np.min(np.abs(all_weights)))
+        step_metrics["weight_avg"] = float(np.mean(np.abs(all_weights)))
+
+    def _collect_eval_metrics(self, results: Dict[str, Optional[GameResults]], step_metrics: Dict[str, Any]) -> str:
         formatted: list[str] = []
+        eval_buckets: Dict[str, Dict[str, Any]] = {"training": {}, "checkpoint": {}}
+        label_to_type = self.evaluator.label_to_type_map()
         for label in self.evaluator.labels():
             result = results.get(label)
-            bucket = evaluations[label]
             p0 = result.as_p0 if result is not None else None
             p1 = result.as_p1 if result is not None else None
-            for position, half in (("as_p0", p0), ("as_p1", p1)):
-                bucket[position]["wins"].append(half.wins if half else None)
-                bucket[position]["losses"].append(half.losses if half else None)
-                bucket[position]["draws"].append(half.draws if half else None)
+            eval_buckets[label_to_type[label]][label] = {
+                "as_p0": {
+                    "wins": p0.wins if p0 else None,
+                    "losses": p0.losses if p0 else None,
+                    "draws": p0.draws if p0 else None,
+                },
+                "as_p1": {
+                    "wins": p1.wins if p1 else None,
+                    "losses": p1.losses if p1 else None,
+                    "draws": p1.draws if p1 else None,
+                },
+            }
             if result is not None:
                 formatted.append(self._format_eval_line(label, result))
+        step_metrics["evaluations"] = eval_buckets
         return "\n".join(formatted)
+    
+    def _handle_sigint(self, signum, frame):
+        if self._early_stop_requested:
+            print("\nForce stopping...")
+            sys.exit(1)
+        self._early_stop_requested = True
+        print("\n\nStopping after current step completes... (Ctrl+C again to force quit)\n")
 
     @staticmethod
     def _format_eval_line(label: str, result: GameResults) -> str:

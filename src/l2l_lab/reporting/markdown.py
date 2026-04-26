@@ -126,51 +126,61 @@ def _render_evaluations(metrics: dict[str, Any], window: int) -> str:
     if not isinstance(evaluations, dict) or not evaluations:
         return ""
 
-    lines: list[str] = []
-    for label in sorted(evaluations.keys()):
-        bucket = evaluations[label]
-        if not isinstance(bucket, dict):
+    headings = {"training": "Training Evals", "checkpoint": "Checkpoint Evals"}
+    sections: list[str] = []
+    for eval_type, heading in headings.items():
+        type_buckets = evaluations.get(eval_type)
+        if not isinstance(type_buckets, dict) or not type_buckets:
             continue
 
-        eval_lines: list[str] = []
-        for position in ("as_p0", "as_p1"):
-            sub = bucket.get(position)
-            if not isinstance(sub, dict):
-                continue
-            wins = sub.get("wins", []) or []
-            losses = sub.get("losses", []) or []
-            draws = sub.get("draws", []) or []
-
-            latest_w = _latest_non_none(wins)
-            latest_l = _latest_non_none(losses)
-            latest_d = _latest_non_none(draws)
-            if latest_w is None and latest_l is None and latest_d is None:
+        lines: list[str] = []
+        for label in sorted(type_buckets.keys()):
+            bucket = type_buckets[label]
+            if not isinstance(bucket, dict):
                 continue
 
-            total = (latest_w or 0) + (latest_l or 0) + (latest_d or 0)
-            win_rate = (latest_w or 0) / total if total > 0 else 0.0
-
-            recent_rates: list[Optional[float]] = []
-            recent = list(zip(wins[-window:], losses[-window:], draws[-window:]))
-            for w, l, d in recent:
-                if w is None or l is None or d is None:
-                    recent_rates.append(None)
+            eval_lines: list[str] = []
+            for position in ("as_p0", "as_p1"):
+                sub = bucket.get(position)
+                if not isinstance(sub, dict):
                     continue
-                t = w + l + d
-                recent_rates.append(w / t if t > 0 else 0.0)
+                wins = sub.get("wins", []) or []
+                losses = sub.get("losses", []) or []
+                draws = sub.get("draws", []) or []
 
-            eval_lines.append(
-                f"  - {position}: {latest_w or 0}W/{latest_l or 0}L/{latest_d or 0}D"
-                f" (win_rate={win_rate:.1%}) spark={sparkline(recent_rates)}"
-            )
+                latest_w = _latest_non_none(wins)
+                latest_l = _latest_non_none(losses)
+                latest_d = _latest_non_none(draws)
+                if latest_w is None and latest_l is None and latest_d is None:
+                    continue
 
-        if eval_lines:
-            lines.append(f"- **{label}**")
-            lines.extend(eval_lines)
+                total = (latest_w or 0) + (latest_l or 0) + (latest_d or 0)
+                win_rate = (latest_w or 0) / total if total > 0 else 0.0
 
-    if not lines:
+                recent_rates: list[Optional[float]] = []
+                recent = list(zip(wins[-window:], losses[-window:], draws[-window:]))
+                for w, l, d in recent:
+                    if w is None or l is None or d is None:
+                        recent_rates.append(None)
+                        continue
+                    t = w + l + d
+                    recent_rates.append(w / t if t > 0 else 0.0)
+
+                eval_lines.append(
+                    f"  - {position}: {latest_w or 0}W/{latest_l or 0}L/{latest_d or 0}D"
+                    f" (win_rate={win_rate:.1%}) spark={sparkline(recent_rates)}"
+                )
+
+            if eval_lines:
+                lines.append(f"- **{label}**")
+                lines.extend(eval_lines)
+
+        if lines:
+            sections.append(f"### {heading}\n" + "\n".join(lines))
+
+    if not sections:
         return ""
-    return "## Evaluations\n" + "\n".join(lines)
+    return "## Evaluations\n" + "\n\n".join(sections)
 
 
 def _render_probe_states(probe_results: list[dict[str, Any]]) -> str:

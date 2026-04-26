@@ -7,3 +7,4 @@ class CommonConfig:
     info_interval: int = 0
     eval_graph_split: int = 0
     checkpoint_interval: int = 0
+    plot_memory: bool = False

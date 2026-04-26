@@ -81,6 +81,11 @@ class AlgorithmBackend(ABC):
         on disk. Default is a no-op."""
         pass
 
+    def get_reporter_csv_keys(self) -> List[str]:
+        """Return the step_metrics keys this backend wants written to the
+        per-iteration CSV. Default is no CSV columns; override per backend."""
+        return []
+
     @abstractmethod
     def get_eval_model(self) -> "torch.nn.Module":
         """Return an eval-mode snapshot of the currently-training model."""

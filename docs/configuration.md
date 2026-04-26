@@ -32,7 +32,8 @@ TrainingConfig
 │   ├── plot_interval
 │   ├── info_interval
 │   ├── eval_graph_split
-│   └── checkpoint_interval
+│   ├── checkpoint_interval
+│   └── plot_memory
 ├── env: EnvConfig
 │   ├── name
 │   ├── obs_space_format
@@ -81,6 +82,7 @@ Interval knobs. Setting any to `0` disables the corresponding action.
 | `info_interval` | int | `0` | Print the backend's periodic training-info block every N iterations. `0` disables. |
 | `eval_graph_split` | int | `0` | When plotting evaluation results, split the time axis into chunks of this many iterations. `0` keeps a single chart. |
 | `checkpoint_interval` | int | `0` | Save a checkpoint every N iterations. `0` disables and the trainer prints a warning at startup. |
+| `plot_memory` | bool | `false` | When `true`, sample RAM usage once per iteration and emit a `memory.png` graph alongside the other plots. Tracks system-wide used memory plus the trainer's whole process tree (main + Ray/AlphaZoo workers via PSS, falling back to RSS off Linux). Memory data is excluded from the reporting CSV/Markdown snapshots. |
 
 The `common:` section itself is required — parsing raises if it's missing, even though every field inside has a default.
 

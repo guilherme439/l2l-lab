@@ -41,6 +41,7 @@ class Reporter:
         config_path: Path,
         reports_dir: Path,
         resume: bool,
+        csv_keys: list[str],
     ) -> None:
         self.cfg = cfg
         self._run_name = run_name
@@ -49,6 +50,7 @@ class Reporter:
         self._config_path = config_path
         self._reports_dir = reports_dir
         self._resume = resume
+        self._csv_keys = set(csv_keys)
 
         self._pending_reports: list[StampedReport] = []
         self._csv_writer: Optional[MetricsCSVWriter] = None
@@ -104,7 +106,8 @@ class Reporter:
         if not self.cfg.enabled or self._csv_writer is None:
             return
 
-        self._csv_writer.append(iteration, step_metrics)
+        csv_row = {k: v for k, v in step_metrics.items() if k in self._csv_keys}
+        self._csv_writer.append(iteration, csv_row)
 
         if check_interval(iteration, self.cfg.interval):
             self._emit_snapshot(iteration)

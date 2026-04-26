@@ -5,6 +5,7 @@ common:
   info_interval: 50
   eval_graph_split: 100
   checkpoint_interval: 50
+  plot_memory: false
 
 env:
   name: "connect_four"
