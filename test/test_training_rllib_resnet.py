@@ -17,10 +17,12 @@ def test_rllib_resnet_training_completes() -> None:
 
         assert trainer.metrics["iteration"], "No iterations recorded"
         evaluations = trainer.metrics.get("evaluations", {})
-        assert "policy_vs_random" in evaluations
-        assert "policy_vs_policy" in evaluations
-        assert any(w is not None for w in evaluations["policy_vs_random"]["as_p0"]["wins"])
-        assert any(w is not None for w in evaluations["policy_vs_random"]["as_p1"]["wins"])
+        training = evaluations.get("training", {})
+        checkpoint = evaluations.get("checkpoint", {})
+        assert "policy_vs_random" in training
+        assert "policy_vs_policy" in checkpoint
+        assert any(w is not None for w in training["policy_vs_random"]["as_p0"]["wins"])
+        assert any(w is not None for w in training["policy_vs_random"]["as_p1"]["wins"])
     finally:
         model_dir = Path("models") / trainer.config.name
         if model_dir.exists():

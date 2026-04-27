@@ -19,18 +19,21 @@ def test_alphazoo_tictactoe_training_completes() -> None:
         assert iterations, "No iterations recorded"
 
         evaluations = trainer.metrics.get("evaluations", {})
-        assert "mcts_vs_random" in evaluations
-        assert "policy_vs_mcts" in evaluations
-        for bucket in evaluations.values():
-            for position in ("as_p0", "as_p1"):
-                assert len(bucket[position]["wins"]) == len(iterations)
+        training = evaluations.get("training", {})
+        checkpoint = evaluations.get("checkpoint", {})
+        assert "mcts_vs_random" in training
+        assert "policy_vs_mcts" in checkpoint
+        for sub in (training, checkpoint):
+            for bucket in sub.values():
+                for position in ("as_p0", "as_p1"):
+                    assert len(bucket[position]["wins"]) == len(iterations)
 
         # training_eval fires at iter 5 and 10
-        assert any(w is not None for w in evaluations["mcts_vs_random"]["as_p0"]["wins"])
-        assert any(w is not None for w in evaluations["mcts_vs_random"]["as_p1"]["wins"])
+        assert any(w is not None for w in training["mcts_vs_random"]["as_p0"]["wins"])
+        assert any(w is not None for w in training["mcts_vs_random"]["as_p1"]["wins"])
         # checkpoint_eval with mcts opponent needs a previous checkpoint → fires at iter 10
-        assert any(w is not None for w in evaluations["policy_vs_mcts"]["as_p0"]["wins"])
-        assert any(w is not None for w in evaluations["policy_vs_mcts"]["as_p1"]["wins"])
+        assert any(w is not None for w in checkpoint["policy_vs_mcts"]["as_p0"]["wins"])
+        assert any(w is not None for w in checkpoint["policy_vs_mcts"]["as_p1"]["wins"])
 
         cp_root = Path("models") / trainer.config.name / "checkpoints"
         assert cp_root.exists() and any(cp_root.iterdir())

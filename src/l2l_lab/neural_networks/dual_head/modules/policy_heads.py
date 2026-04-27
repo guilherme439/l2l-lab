@@ -1,9 +1,9 @@
 
 import hexagdly
-
 import torch.nn.functional as F
 from torch import nn
 
+from l2l_lab.neural_networks.utils.activations import make_activation
 
 
 class Reduce_PolicyHead(nn.Module):
@@ -62,7 +62,7 @@ class Reduce_PolicyHead(nn.Module):
 
 class ReduceMLP_PolicyHead(nn.Module):
 
-    def __init__(self, in_features, out_features, num_layers=3):
+    def __init__(self, in_features, out_features, num_layers=3, activation="relu"):
         super().__init__()
 
         layer_list = []
@@ -72,7 +72,10 @@ class ReduceMLP_PolicyHead(nn.Module):
         previous_layer_features = in_features
 
         for layer in range(num_layers, 0, -1):
-            current_layer_features = previous_layer_features + step
+            if layer == 1:
+                current_layer_features = out_features
+            else:
+                current_layer_features = previous_layer_features + step
 
             layer_list.append(nn.Linear(
                 max(1, int(previous_layer_features)),
@@ -80,7 +83,7 @@ class ReduceMLP_PolicyHead(nn.Module):
             ))
 
             if layer != 1:
-                layer_list.append(nn.ReLU())
+                layer_list.append(make_activation(activation))
 
             previous_layer_features = current_layer_features
 

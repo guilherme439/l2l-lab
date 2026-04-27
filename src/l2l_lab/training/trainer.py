@@ -294,7 +294,7 @@ class Trainer:
     def _update_metrics(self, step_metrics: Dict[str, Any]) -> None:
         target_len = len(self.metrics["iteration"])
         self._update_into(self.metrics, step_metrics, target_len)
-        self._align_metrics(self.metrics)
+        self._align_metrics(self.metrics, target_len)
 
     def _update_into(self, target: Dict[str, Any], source: Dict[str, Any], target_len: int) -> None:
         '''
@@ -306,11 +306,10 @@ class Trainer:
             else:
                 self._append_to_series(target.setdefault(key, []), value, target_len)
         
-    def _align_metrics(self, metrics: dict) -> None:
+    def _align_metrics(self, metrics: dict, target_len: int) -> None:
         '''
         Append None to all metrics that are shorter than the number of interations
         '''
-        target_len : int = metrics["iteration"]
         for key, value in metrics.items():
             if key == "iteration":
                 continue

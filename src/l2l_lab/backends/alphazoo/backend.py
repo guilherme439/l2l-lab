@@ -4,11 +4,14 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 
+import math
+
 import torch
 from gymnasium.spaces.utils import flatdim
 
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
 from l2l_lab.backends.obs_utils import make_wrapper, obs_to_state_provider
+from l2l_lab.configs.training.NetworkConfig import CONV_ARCHITECTURES, MLP_ARCHITECTURES
 from l2l_lab.envs.registry import create_env
 from l2l_lab.utils.common import check_interval
 
@@ -39,7 +42,7 @@ class AlphaZooBackend(AlgorithmBackend):
         kwargs = config.network.to_kwargs()
         architecture = config.network.architecture
 
-        if architecture in ("ResNet", "ConvNet", "RecurrentNet"):
+        if architecture in CONV_ARCHITECTURES:
             in_channels = state_shape[0]
             rows, cols = state_shape[1], state_shape[2]
             num_actions = action_space_shape[0]
@@ -49,12 +52,10 @@ class AlphaZooBackend(AlgorithmBackend):
                 policy_channels=policy_channels,
                 **kwargs,
             )
-        elif architecture == "MLPNet":
+        elif architecture in MLP_ARCHITECTURES:
             out_features = action_space_shape[0]
-            model = network_class(out_features=out_features, **kwargs)
-            dummy = torch.zeros((1,) + state_shape, dtype=torch.float32)
-            with torch.no_grad():
-                _ = model(dummy)
+            input_features = int(math.prod(state_shape))
+            model = network_class(out_features=out_features, input_features=input_features, **kwargs)
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
 

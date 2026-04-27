@@ -1,6 +1,6 @@
+import math
 from typing import Any, Dict, Type, TypedDict
 
-import torch
 import gymnasium as gym
 from ray.rllib.core.columns import Columns
 from ray.rllib.core.rl_module.apis.value_function_api import ValueFunctionAPI
@@ -26,11 +26,6 @@ class MLPDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
         network_kwargs = self.model_config.get("network_kwargs", {})
         
         out_features = self.action_space.n
-        
-        self.backbone = network_class(
-            out_features=out_features,
-            **network_kwargs,
-        )
 
         if not isinstance(self.observation_space, gym.spaces.Dict):
             raise ValueError(
@@ -39,11 +34,13 @@ class MLPDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
             )
 
         inner_obs_space = self.observation_space["observation"]
-        dummy_obs_shape = (1,) + inner_obs_space.shape
-        dummy_obs = torch.zeros(dummy_obs_shape, dtype=torch.float32)
+        input_features = int(math.prod(inner_obs_space.shape))
 
-        with torch.no_grad():
-            _ = self.backbone(dummy_obs)
+        self.backbone = network_class(
+            out_features=out_features,
+            input_features=input_features,
+            **network_kwargs,
+        )
     
     def _forward(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:
         obs_dict: Dict[str, Any] = batch[Columns.OBS]

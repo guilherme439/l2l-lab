@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
@@ -157,10 +158,12 @@ class RLlibBackend(AlgorithmBackend):
                 **network_kwargs,
             )
         elif architecture in MLP_ARCHITECTURES:
-            backbone = network_class(out_features=self._num_actions, **network_kwargs)
-            dummy = torch.zeros((1,) + self._input_shape, dtype=torch.float32)
-            with torch.no_grad():
-                _ = backbone(dummy)
+            input_features = int(math.prod(self._input_shape))
+            backbone = network_class(
+                out_features=self._num_actions,
+                input_features=input_features,
+                **network_kwargs,
+            )
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
 

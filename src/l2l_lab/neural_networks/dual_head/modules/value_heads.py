@@ -1,14 +1,15 @@
 
 import hexagdly
-
 from torch import nn
+
+from l2l_lab.neural_networks.utils.activations import make_activation
 
 
 class Reduce_ValueHead(nn.Module):
     '''Several conv layers that progressively reduce the amount of filters,
        followed by a global average pooling layer'''
 
-    def __init__(self, width, num_reduce_layers=4, activation="tanh", batch_norm=False, hex=True):
+    def __init__(self, width, num_reduce_layers=4, activation="tanh", final_activation=None, batch_norm=False, hex=True):
         super().__init__()
 
         value_head_layers = []
@@ -42,7 +43,8 @@ class Reduce_ValueHead(nn.Module):
 
         value_head_layers.append(nn.AdaptiveAvgPool3d(1))
         value_head_layers.append(nn.Flatten())
-        value_head_layers.append(nn.Tanh())
+        if final_activation is not None:
+            value_head_layers.append(make_activation(final_activation))
 
         self.layers = nn.Sequential(*value_head_layers)
 
@@ -57,11 +59,11 @@ class Reduce_ValueHead(nn.Module):
  
 class Dense_ValueHead(nn.Module):
 
-    def __init__(self, width, dense_layer_neurons=256, conv_layer_channels=32, batch_norm=False, hex=True):
-        super().__init__()        
-        
+    def __init__(self, width, dense_layer_neurons=256, conv_layer_channels=32, final_activation=None, batch_norm=False, hex=True):
+        super().__init__()
+
         layer_list = []
-        
+
         if hex:
             layer_list.append(hexagdly.Conv2d(in_channels=width, out_channels=conv_layer_channels, kernel_size=1, stride=1, bias=False))
         else:
@@ -74,8 +76,9 @@ class Dense_ValueHead(nn.Module):
         layer_list.append(nn.LazyLinear(dense_layer_neurons, bias=False))
         layer_list.append(nn.ReLU())
         layer_list.append(nn.Linear(in_features=dense_layer_neurons, out_features=1, bias=False))
-        layer_list.append(nn.Tanh())
-        
+        if final_activation is not None:
+            layer_list.append(make_activation(final_activation))
+
 
         self.layers = nn.Sequential(*layer_list)
 
@@ -91,7 +94,7 @@ class Dense_ValueHead(nn.Module):
 
 class ReduceMLP_ValueHead(nn.Module):
 
-    def __init__(self, in_features, num_layers=3):
+    def __init__(self, in_features, num_layers=3, activation="tanh", final_activation=None):
         super().__init__()
 
         layer_list = []
@@ -101,7 +104,10 @@ class ReduceMLP_ValueHead(nn.Module):
         previous_layer_features = in_features
 
         for layer in range(num_layers, 0, -1):
-            current_layer_features = previous_layer_features + step
+            if layer == 1:
+                current_layer_features = 1
+            else:
+                current_layer_features = previous_layer_features + step
 
             layer_list.append(nn.Linear(
                 max(1, int(previous_layer_features)),
@@ -109,11 +115,12 @@ class ReduceMLP_ValueHead(nn.Module):
             ))
 
             if layer != 1:
-                layer_list.append(nn.Tanh())
+                layer_list.append(make_activation(activation))
 
             previous_layer_features = current_layer_features
 
-        layer_list.append(nn.Tanh())
+        if final_activation is not None:
+            layer_list.append(make_activation(final_activation))
 
         self.layers = nn.Sequential(*layer_list)
 
