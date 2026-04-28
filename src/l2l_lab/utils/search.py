@@ -20,5 +20,4 @@ def load_search_config(path: str) -> "SearchConfig":
     config.simulation.keep_subtree = False
     config.exploration.root_exploration_fraction = 0.0
     config.exploration.root_dist_alpha = 0.0
-    config.exploration.root_dist_beta = 0.0
     return config

@@ -67,7 +67,6 @@ backend:
           root_exploration_distribution: "gamma"
           root_exploration_fraction: 0.20
           root_dist_alpha: 0.15
-          root_dist_beta: 1.0
       scheduler:
         starting_lr: 0.001
         boundaries: [10000, 20000]

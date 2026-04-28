@@ -14,4 +14,3 @@ exploration:
   root_exploration_distribution: "gamma"
   root_exploration_fraction: 0.0
   root_dist_alpha: 0.15
-  root_dist_beta: 1.0
