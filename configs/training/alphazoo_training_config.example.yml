@@ -14,8 +14,8 @@ common:
 
 network:
   architecture: "MLPNet"
-  hidden_layers: 3
-  neurons_per_layer: 64
+  hidden_layers: 6
+  neurons_per_layer: 512
   head_layers: 2
 
 backend:
@@ -32,9 +32,9 @@ backend:
         running_mode: "sequential"
         num_gamers: 6
         training_steps: 500
-        early_fill_per_type: 100
+        early_fill_games: 100
         sequential:
-          num_games_per_type_per_step: 12
+          num_games_per_step: 12
       data:
         player_dependent_value: true
       cache:

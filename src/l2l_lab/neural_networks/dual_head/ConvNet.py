@@ -1,3 +1,5 @@
+from typing import Optional
+
 import hexagdly
 from alphazoo import AlphaZooNet
 
@@ -8,8 +10,17 @@ from .modules.policy_heads import *
 
 class ConvNet(AlphaZooNet):
 
-    def __init__(self, in_channels, policy_channels, num_filters=256, num_layers=6, hex=True):
-
+    def __init__(
+        self,
+        in_channels,
+        num_actions,
+        num_filters=256,
+        num_layers=6,
+        policy_head="conv-projection",
+        value_head="conv-projection",
+        policy_channels: Optional[int] = None,
+        hex=False,
+    ):
         super().__init__()
         self.num_filters = num_filters
 
@@ -55,11 +66,22 @@ class ConvNet(AlphaZooNet):
         
     
         # Policy Head
-        self.policy_head = Reduce_PolicyHead(self.num_filters, policy_channels, hex=hex)
-        
+        match policy_head:
+            case "conv-reduce":
+                self.policy_head = ConvReduce_PolicyHead(self.num_filters, policy_channels, hex=hex)
+            case "conv-projection":
+                self.policy_head = ConvProjection_PolicyHead(self.num_filters, num_actions, hex=hex)
+            case _:
+                raise ValueError(f"Unknown policy_head: {policy_head}")
 
         # Value Head
-        self.value_head = Reduce_ValueHead(self.num_filters, hex=hex)
+        match value_head:
+            case "conv-reduce":
+                self.value_head = ConvReduce_ValueHead(self.num_filters, hex=hex)
+            case "conv-projection":
+                self.value_head = ConvProjection_ValueHead(self.num_filters, hex=hex)
+            case _:
+                raise ValueError(f"Unknown value_head: {value_head}")
 
 
     def forward_trunk(self, x):

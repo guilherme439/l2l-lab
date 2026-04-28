@@ -5,11 +5,12 @@ from pathlib import Path
 from l2l_lab.training.trainer import Trainer
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "configs", "alphazoo_tictactoe_test.yml")
+RECURRENT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "configs", "alphazoo_tictactoe_recurrent_test.yml")
 
 
 def test_alphazoo_tictactoe_training_completes() -> None:
     """
-        AlphaZoo + MLPNet + tictactoe + inference cache + Adam + samples.
+        AlphaZoo + ResNet + tictactoe + inference cache + Adam + samples.
     """
     trainer = Trainer(CONFIG_PATH)
     try:
@@ -34,6 +35,38 @@ def test_alphazoo_tictactoe_training_completes() -> None:
         # checkpoint_eval with mcts opponent needs a previous checkpoint → fires at iter 10
         assert any(w is not None for w in checkpoint["policy_vs_mcts"]["as_p0"]["wins"])
         assert any(w is not None for w in checkpoint["policy_vs_mcts"]["as_p1"]["wins"])
+
+        cp_root = Path("models") / trainer.config.name / "checkpoints"
+        assert cp_root.exists() and any(cp_root.iterdir())
+    finally:
+        _cleanup(trainer)
+
+
+def test_alphazoo_tictactoe_recurrent_training_completes() -> None:
+    """
+        AlphaZoo + RecurrentNet + tictactoe + progressive loss.
+    """
+    trainer = Trainer(RECURRENT_CONFIG_PATH)
+    try:
+        trainer.train()
+
+        iterations = trainer.metrics["iteration"]
+        assert iterations, "No iterations recorded"
+
+        evaluations = trainer.metrics.get("evaluations", {})
+        training = evaluations.get("training", {})
+        checkpoint = evaluations.get("checkpoint", {})
+        assert "policy_vs_random" in training
+        assert "mcts_vs_policy" in checkpoint
+        for sub in (training, checkpoint):
+            for bucket in sub.values():
+                for position in ("as_p0", "as_p1"):
+                    assert len(bucket[position]["wins"]) == len(iterations)
+
+        assert any(w is not None for w in training["policy_vs_random"]["as_p0"]["wins"])
+        assert any(w is not None for w in training["policy_vs_random"]["as_p1"]["wins"])
+        assert any(w is not None for w in checkpoint["mcts_vs_policy"]["as_p0"]["wins"])
+        assert any(w is not None for w in checkpoint["mcts_vs_policy"]["as_p1"]["wins"])
 
         cp_root = Path("models") / trainer.config.name / "checkpoints"
         assert cp_root.exists() and any(cp_root.iterdir())

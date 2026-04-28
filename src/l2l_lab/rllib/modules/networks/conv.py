@@ -9,6 +9,8 @@ from ray.rllib.utils.torch_utils import FLOAT_MIN
 from ray.rllib.utils.typing import TensorType
 from torch import nn
 
+from l2l_lab.configs.training.NetworkConfig import NetworkConfig
+
 
 class ConvDualHeadModelConfig(TypedDict):
     network_class: Type[nn.Module]
@@ -33,22 +35,23 @@ class ConvDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
         
         network_class = self.model_config["network_class"]
         network_kwargs = self.model_config.get("network_kwargs", {})
-        
+
+        # FIXME: this code is a mess and needs to be improved    
         obs_shape = inner_obs_space.shape
         if self.obs_space_format == "channels_first":
-            in_channels, rows, cols = obs_shape[0], obs_shape[1], obs_shape[2]
+            in_channels, h, w = obs_shape[0], obs_shape[1], obs_shape[2]
         elif self.obs_space_format == "channels_last":
-            rows, cols, in_channels = obs_shape[0], obs_shape[1], obs_shape[2]
+            h, w, in_channels = obs_shape[0], obs_shape[1], obs_shape[2]
         else:
             raise ValueError(f"Unsupported obs_space_format: {self.obs_space_format}")
-        
-        policy_channels = self.action_space.n // (rows * cols)
-        
-        self.backbone = network_class(
-            in_channels=in_channels,
-            policy_channels=policy_channels,
-            **network_kwargs,
-        )
+
+        num_actions = self.action_space.n
+        NetworkConfig(
+            architecture=network_class.__name__,
+            kwargs=network_kwargs,
+        ).validate_for_env((in_channels, h, w), num_actions)
+
+        self.backbone = network_class(in_channels=in_channels, num_actions=num_actions, **network_kwargs)
     
     def _preprocess_obs(self, obs: TensorType) -> TensorType:
         if self.obs_space_format == "channels_last":

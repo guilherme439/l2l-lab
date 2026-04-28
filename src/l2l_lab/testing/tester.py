@@ -225,16 +225,13 @@ class Tester:
         input_shape = tuple(checkpoint["input_shape"])
         num_actions = checkpoint["num_actions"]
 
-        network_class = NetworkConfig(architecture=architecture).get_network_class()
+        network_config = NetworkConfig(architecture=architecture, kwargs=network_kwargs)
+        network_class = network_config.get_network_class()
 
         if architecture in CONV_ARCHITECTURES:
+            network_config.validate_for_env(input_shape, num_actions)
             in_channels = input_shape[0]
-            rows, cols = input_shape[1], input_shape[2]
-            backbone = network_class(
-                in_channels=in_channels,
-                policy_channels=num_actions // (rows * cols),
-                **network_kwargs,
-            )
+            backbone = network_class(in_channels=in_channels, num_actions=num_actions, **network_kwargs)
         elif architecture in MLP_ARCHITECTURES:
             backbone = network_class(out_features=num_actions, **network_kwargs)
             dummy = torch.zeros((1,) + input_shape, dtype=torch.float32)

@@ -16,7 +16,7 @@ warnings.filterwarnings(
 )
 
 
-DEFAULT_TRAINING_CONFIG_PATH = "configs/training/connect_four_training_config.example.yml"
+DEFAULT_TRAINING_CONFIG_PATH = "configs/training/ppo_training_config.example.yml"
 DEFAULT_TESTING_CONFIG_PATH = "configs/testing/testing_config.example.yml"
 PROFILE_OUTPUT_PATH = Path("profiling/profile_output.prof")
 

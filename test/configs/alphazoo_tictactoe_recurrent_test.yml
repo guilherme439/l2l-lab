@@ -1,10 +1,10 @@
-name: "_test_alphazoo_tictactoe_resume"
+name: "_test_alphazoo_tictactoe_recurrent"
 
 common:
   plot_interval: 1000
   info_interval: 1000
   eval_graph_split: 100
-  checkpoint_interval: 5
+  checkpoint_interval: 4
 
 env:
   name: "tictactoe"
@@ -12,10 +12,11 @@ env:
   kwargs: {}
 
 network:
-  architecture: "MLPNet"
-  hidden_layers: 2
-  neurons_per_layer: 16
-  head_layers: 1
+  architecture: "RecurrentNet"
+  num_filters: 8
+  num_blocks: 1
+  recall: true
+  hex: false
 
 backend:
   name: "alphazoo"
@@ -27,23 +28,33 @@ backend:
       running:
         running_mode: "sequential"
         num_gamers: 1
-        training_steps: 5
+        training_steps: 8
         early_fill_games: 2
         sequential:
           num_games_per_step: 2
       data:
         player_dependent_value: true
       cache:
-        enabled: true
-        max_size: 500
+        enabled: false
+      recurrent:
+        train_iterations: 2
+        pred_iterations: 2
+        use_progressive_loss: true
+        prog_alpha: 0.5
       learning:
-        learning_method: "samples"
-        replay_window_size: 300
+        learning_method: "epochs"
+        replay_window_size: 200
         value_loss: "SE"
         policy_loss: "CEL"
-        samples:
+        epochs:
           batch_size: 16
-          num_samples: 48
+          learning_epochs: 1
+      optimizer:
+        optimizer_choice: "Adam"
+      scheduler:
+        starting_lr: 0.001
+        boundaries: [1000]
+        gamma: 0.1
       search:
         simulation:
           mcts_simulations: 8
@@ -60,13 +71,14 @@ backend:
           root_exploration_fraction: 0.25
           root_dist_alpha: 0.3
           root_dist_beta: 1.0
-      optimizer:
-        optimizer_choice: "Adam"
-      scheduler:
-        starting_lr: 0.001
-        boundaries: [1000]
-        gamma: 0.1
 
 evaluation:
-  training_eval: []
-  checkpoint_eval: []
+  training_eval:
+    - player: policy
+      games_per_player: 2
+      interval: 4
+  checkpoint_eval:
+    - player: mcts
+      opponent: policy
+      games_per_player: 2
+      search_config_path: "test/configs/search_test.yml"

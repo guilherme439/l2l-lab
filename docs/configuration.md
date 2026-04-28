@@ -109,6 +109,21 @@ Neural network architecture + its construction kwargs. `NetworkConfig` is define
 | `architecture` | `"ResNet" \| "ConvNet" \| "MLPNet" \| "RecurrentNet"` | *(required)* | Which architecture class to instantiate. |
 | *(remaining keys)* | varies | — | Architecture-specific kwargs (e.g. `num_filters`, `num_blocks`, `hidden_layers`, `neurons_per_layer`). Any unknown key under `network:` is treated as a constructor kwarg. |
 
+### Conv-based architectures: head selection
+
+`ResNet`, `ConvNet`, and `RecurrentNet` accept two extra string keys under `network:` that pick which policy and value head to use:
+
+| Key | Value | Description |
+|---|---|---|
+| `policy_head` | `"conv-projection"` *(default)* | One-by-one conv channel-reduction → flatten → two-layer MLP → `num_actions` logits. Works with any action space size. |
+| `policy_head` | `"conv-reduce"` | Progressive conv reductions producing a spatial `(policy_channels, H, W)` tensor. Requires `policy_channels` in the same block, and `policy_channels × H × W` must equal the env's action space size. |
+| `value_head`  | `"conv-projection"` *(default)* | One-by-one conv channel-reduction → flatten → two-layer MLP → scalar value. |
+| `value_head`  | `"conv-reduce"` | Progressive conv reductions to a single channel, then global-average-pool to a scalar. |
+
+The default (`conv-projection` for both) works for any env. Use `conv-reduce` only when the env's action space tiles the board (e.g. tictactoe, Go), in which case the framework validates `policy_channels × H × W == num_actions` at build time and raises a clear error otherwise.
+
+`policy_channels` is only consumed when `policy_head: "conv-reduce"`. With the default `conv-projection`, omit it.
+
 ---
 
 ## Backend

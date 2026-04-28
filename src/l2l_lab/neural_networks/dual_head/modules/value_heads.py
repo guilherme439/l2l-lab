@@ -5,11 +5,18 @@ from torch import nn
 from l2l_lab.neural_networks.utils.activations import make_activation
 
 
-class Reduce_ValueHead(nn.Module):
+class ConvReduce_ValueHead(nn.Module):
     '''Several conv layers that progressively reduce the amount of filters,
        followed by a global average pooling layer'''
 
-    def __init__(self, width, num_reduce_layers=4, activation="tanh", final_activation=None, batch_norm=False, hex=True):
+    def __init__(self, 
+        width, 
+        num_reduce_layers=4, 
+        activation="tanh", 
+        final_activation=None, 
+        batch_norm=False, 
+        hex=False
+    ):
         super().__init__()
 
         value_head_layers = []
@@ -57,9 +64,12 @@ class Reduce_ValueHead(nn.Module):
 
 # ------------------------------ #
  
-class Dense_ValueHead(nn.Module):
+class ConvProjection_ValueHead(nn.Module):
+    '''Reduces channel count with a single conv layer, flattens the
+       remaining spatial features, and projects them to a scalar value
+       through a two-layer MLP.'''
 
-    def __init__(self, width, dense_layer_neurons=256, conv_layer_channels=32, final_activation=None, batch_norm=False, hex=True):
+    def __init__(self, width, dense_layer_neurons=256, conv_layer_channels=32, final_activation=None, batch_norm=False, hex=False):
         super().__init__()
 
         layer_list = []
@@ -92,7 +102,7 @@ class Dense_ValueHead(nn.Module):
 ##################################################################################################
 
 
-class ReduceMLP_ValueHead(nn.Module):
+class LinearReduce_ValueHead(nn.Module):
 
     def __init__(self, in_features, num_layers=3, activation="tanh", final_activation=None):
         super().__init__()

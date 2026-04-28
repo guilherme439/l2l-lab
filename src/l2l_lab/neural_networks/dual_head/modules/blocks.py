@@ -10,7 +10,7 @@ from l2l_lab.neural_networks.utils.activations import make_activation
 
 class BasicBlock(nn.Module):
 
-    def __init__(self, channels, batch_norm=False, hex=True):
+    def __init__(self, channels, batch_norm=False, hex=False):
         super().__init__()
 
         before_shortcut_layers = []

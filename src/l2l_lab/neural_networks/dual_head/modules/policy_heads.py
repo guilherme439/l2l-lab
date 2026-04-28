@@ -6,11 +6,11 @@ from torch import nn
 from l2l_lab.neural_networks.utils.activations import make_activation
 
 
-class Reduce_PolicyHead(nn.Module):
+class ConvReduce_PolicyHead(nn.Module):
     '''Several conv layers that progressively reduce the amount of filters,
        until the policy's number of channels is reached'''
 
-    def __init__(self, width, policy_channels, num_reduce_layers=2, batch_norm=False, hex=True):
+    def __init__(self, width, policy_channels, num_reduce_layers=2, batch_norm=False, hex=False):
         super().__init__()
 
         layer_list = []
@@ -60,7 +60,41 @@ class Reduce_PolicyHead(nn.Module):
 ##################################################################################################
 
 
-class ReduceMLP_PolicyHead(nn.Module):
+class ConvProjection_PolicyHead(nn.Module):
+    '''Reduces channel count with a single conv layer, flattens the
+       remaining spatial features, and projects them to `num_actions`
+       logits through a two-layer MLP.'''
+
+    def __init__(self, width, num_actions, dense_layer_neurons=256, conv_layer_channels=32, batch_norm=False, hex=False):
+        super().__init__()
+
+        layer_list = []
+
+        if hex:
+            layer_list.append(hexagdly.Conv2d(in_channels=width, out_channels=conv_layer_channels, kernel_size=1, stride=1, bias=False))
+        else:
+            layer_list.append(nn.Conv2d(in_channels=width, out_channels=conv_layer_channels, kernel_size=3, stride=1, padding='same', bias=False))
+
+        if batch_norm:
+            layer_list.append(nn.BatchNorm2d(num_features=conv_layer_channels))
+        layer_list.append(nn.Flatten())
+        layer_list.append(nn.ReLU())
+        layer_list.append(nn.LazyLinear(dense_layer_neurons, bias=False))
+        layer_list.append(nn.ReLU())
+        layer_list.append(nn.Linear(in_features=dense_layer_neurons, out_features=num_actions, bias=False))
+
+        self.layers = nn.Sequential(*layer_list)
+
+
+    def forward(self, x):
+        out = self.layers(x)
+        return out
+
+
+##################################################################################################
+
+
+class LinearReduce_PolicyHead(nn.Module):
 
     def __init__(self, in_features, out_features, num_layers=3, activation="relu"):
         super().__init__()

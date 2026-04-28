@@ -150,13 +150,9 @@ class RLlibBackend(AlgorithmBackend):
         network_kwargs = cfg.network.to_kwargs()
 
         if architecture in CONV_ARCHITECTURES:
+            cfg.network.validate_for_env(self._input_shape, self._num_actions)
             in_channels = self._input_shape[0]
-            rows, cols = self._input_shape[1], self._input_shape[2]
-            backbone = network_class(
-                in_channels=in_channels,
-                policy_channels=self._num_actions // (rows * cols),
-                **network_kwargs,
-            )
+            backbone = network_class(in_channels=in_channels, num_actions=self._num_actions, **network_kwargs)
         elif architecture in MLP_ARCHITECTURES:
             input_features = int(math.prod(self._input_shape))
             backbone = network_class(

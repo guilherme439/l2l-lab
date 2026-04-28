@@ -8,11 +8,9 @@ common:
   plot_memory: false
 
 env:
-  name: "scs"
-  kwargs:
-    config: "/path/to/game_config.yml"
-    action_mask_location: "obs"
-    obs_space_format: "channels_first"
+  name: "connect_four"
+  obs_space_format: "channels_last"
+  kwargs: {}
 
 network:
   architecture: "ResNet"

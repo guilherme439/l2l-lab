@@ -1,4 +1,4 @@
-name: "recurrentnet_connect_four"
+name: "recurrentnet_tictactoe"
 
 common:
   plot_interval: 25
@@ -8,7 +8,7 @@ common:
   plot_memory: false
 
 env:
-  name: "connect_four"
+  name: "tictactoe"
   obs_space_format: "channels_last"
   kwargs: {}
 
@@ -33,9 +33,9 @@ backend:
         running_mode: "sequential"
         num_gamers: 6
         training_steps: 500
-        early_fill_per_type: 100
+        early_fill_games: 100
         sequential:
-          num_games_per_type_per_step: 12
+          num_games_per_step: 12
       data:
         player_dependent_value: true
       cache:

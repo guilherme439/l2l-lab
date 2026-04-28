@@ -37,10 +37,10 @@ class MLPNet(AlphaZooNet):
         
 
         # Policy Head
-        self.policy_head = ReduceMLP_PolicyHead(neurons_per_layer, out_features, num_layers=head_layers)
+        self.policy_head = LinearReduce_PolicyHead(neurons_per_layer, out_features, num_layers=head_layers)
 
         # Value Head
-        self.value_head = ReduceMLP_ValueHead(neurons_per_layer, num_layers=head_layers)
+        self.value_head = LinearReduce_ValueHead(neurons_per_layer, num_layers=head_layers)
         
 
 

@@ -10,8 +10,8 @@ import math
 from alphazoo import AlphaZooNet
 from torch import nn
 
-from .modules.policy_heads import ReduceMLP_PolicyHead
-from .modules.value_heads import ReduceMLP_ValueHead
+from .modules.policy_heads import LinearReduce_PolicyHead
+from .modules.value_heads import LinearReduce_ValueHead
 
 
 class SNNet(AlphaZooNet):
@@ -45,10 +45,10 @@ class SNNet(AlphaZooNet):
                 trunk_layers.append(nn.AlphaDropout(p=dropout))
         self.general_module = nn.Sequential(*trunk_layers)
 
-        self.policy_head = ReduceMLP_PolicyHead(
+        self.policy_head = LinearReduce_PolicyHead(
             neurons_per_layer, out_features, num_layers=head_layers, activation="selu",
         )
-        self.value_head = ReduceMLP_ValueHead(
+        self.value_head = LinearReduce_ValueHead(
             neurons_per_layer, num_layers=head_layers, activation="selu",
         )
 

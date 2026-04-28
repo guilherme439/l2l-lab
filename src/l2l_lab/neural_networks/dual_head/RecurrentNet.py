@@ -1,6 +1,8 @@
-""" 
+"""
 Adapted from the Deepthinking repository.
 """
+
+from typing import Optional
 
 import hexagdly
 import torch
@@ -18,7 +20,19 @@ from .modules.value_heads import *
 
 class RecurrentNet(AlphaZooRecurrentNet):
 
-    def __init__(self, in_channels, policy_channels, num_filters=256, num_blocks=2, recall=True, policy_head="conv", value_head="reduce", value_activation="tanh", hex=True):
+    def __init__(
+        self,
+        in_channels,
+        num_actions,
+        num_filters=256,
+        num_blocks=2,
+        recall=True,
+        policy_head="conv-projection",
+        value_head="conv-projection",
+        policy_channels: Optional[int] = None,
+        value_activation="tanh",
+        hex=False,
+    ):
         super().__init__()
         
         self.recall = recall
@@ -47,22 +61,22 @@ class RecurrentNet(AlphaZooRecurrentNet):
 
         ## POLICY HEAD
         match policy_head:
-            case "conv":
-                self.policy_head = Reduce_PolicyHead(num_filters, policy_channels, hex=hex)
+            case "conv-reduce":
+                self.policy_head = ConvReduce_PolicyHead(num_filters, policy_channels, hex=hex)
+            case "conv-projection":
+                self.policy_head = ConvProjection_PolicyHead(num_filters, num_actions, hex=hex)
             case _:
-                print("Unknown choice")
-                exit()
-        
+                raise ValueError(f"Unknown policy_head: {policy_head}")
+
 
         ## VALUE HEAD
         match value_head:
-            case "reduce":
-                self.value_head = Reduce_ValueHead(num_filters, activation=value_activation, hex=hex)
-            case "dense":
-                self.value_head = Dense_ValueHead(num_filters)
+            case "conv-reduce":
+                self.value_head = ConvReduce_ValueHead(num_filters, activation=value_activation, hex=hex)
+            case "conv-projection":
+                self.value_head = ConvProjection_ValueHead(num_filters, hex=hex)
             case _:
-                print("Unknown choice")
-                exit()
+                raise ValueError(f"Unknown value_head: {value_head}")
 
         
 

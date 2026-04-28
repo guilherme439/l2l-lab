@@ -43,15 +43,10 @@ class AlphaZooBackend(AlgorithmBackend):
         architecture = config.network.architecture
 
         if architecture in CONV_ARCHITECTURES:
-            in_channels = state_shape[0]
-            rows, cols = state_shape[1], state_shape[2]
             num_actions = action_space_shape[0]
-            policy_channels = num_actions // (rows * cols)
-            model = network_class(
-                in_channels=in_channels,
-                policy_channels=policy_channels,
-                **kwargs,
-            )
+            config.network.validate_for_env(state_shape, num_actions)
+            in_channels = state_shape[0]
+            model = network_class(in_channels=in_channels, num_actions=num_actions, **kwargs)
         elif architecture in MLP_ARCHITECTURES:
             out_features = action_space_shape[0]
             input_features = int(math.prod(state_shape))
