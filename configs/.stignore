@@ -1,0 +1,13 @@
+.DS_Store
+*.swp
+*.swo
+*.tmp
+*~
+
+// Python
+__pycache__
+*.pyc
+*.pyo
+.ipynb_checkpoints
+
+*.example.yml

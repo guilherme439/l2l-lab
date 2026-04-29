@@ -3,8 +3,11 @@
 models/*
 !models/__init__.py
 
+configs/*
+
+!configs/.stignore
+
 configs/training/*
-!configs/training/trained_examples
 !configs/training/*.example.yml
 
 configs/testing/*
