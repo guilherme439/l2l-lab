@@ -93,6 +93,7 @@ class Trainer:
             self._setup_model_dir(model_dir)
             start_iteration = 0
             self.backend.setup(cfg, self.current_model_dir)
+            self._log_network_summary()
 
         self._setup_reporter(cfg, start_iteration)
 
@@ -331,6 +332,22 @@ class Trainer:
         deficit = target_len - len(series)
         if deficit > 0:
             series.extend([None] * deficit)
+
+    def _log_network_summary(self) -> None:
+        model = self.backend.get_eval_model()
+        if model is None:
+            return
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        bar = "=" * 70
+        sep = "-" * 70
+        logger.info(
+            "\n%s\n\nNetwork architecture\n%s\n%s\n%s\n"
+            "Total parameters:     %s\n"
+            "Trainable parameters: %s\n%s\n",
+            bar, sep, model, sep,
+            f"{total_params:,}", f"{trainable_params:,}", bar,
+        )
 
     def _collect_weight_metrics(self, step_metrics: Dict[str, Any]) -> None:
         parameters = self.backend.get_weight_parameters()
