@@ -45,6 +45,31 @@ def _rolling_mean(values: List[float], window: int = 10) -> List[float]:
     return result
 
 
+def _scatter_marker_size(n: int) -> float:
+    if n <= 0:
+        return 8.0
+    return max(1.5, min(8.0, 60.0 / (n ** 0.5)))
+
+
+def _binned_min_max(
+    iterations: List[int],
+    values: List[float],
+    bin_width: int = 5,
+) -> Tuple[List[float], List[float], List[float]]:
+    centers: List[float] = []
+    mins: List[float] = []
+    maxs: List[float] = []
+    for start in range(0, len(values), bin_width):
+        chunk_iters = iterations[start:start + bin_width]
+        chunk_vals = values[start:start + bin_width]
+        if not chunk_vals:
+            continue
+        centers.append((chunk_iters[0] + chunk_iters[-1]) / 2)
+        mins.append(min(chunk_vals))
+        maxs.append(max(chunk_vals))
+    return centers, mins, maxs
+
+
 def plot_training_overview(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     iterations = metrics.get("iteration", [])
     ep_len = metrics.get("episode_len_mean", [])
@@ -101,7 +126,9 @@ def plot_loss_breakdown(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     
     if vals_t:
         fig, ax = plt.subplots(figsize=(10, 5))
-        ax.scatter(iters_t, vals_t, color="#e74c3c", s=8, alpha=0.6)
+        centers, mins, maxs = _binned_min_max(iters_t, vals_t, bin_width=5)
+        ax.fill_between(centers, mins, maxs, color="#e74c3c", alpha=0.15, zorder=1)
+        ax.scatter(iters_t, vals_t, color="#e74c3c", s=_scatter_marker_size(len(vals_t)), alpha=0.7, zorder=2)
         ax.set_xlabel("Iteration", fontsize=10)
         ax.set_ylabel("Total Loss", fontsize=10)
         ax.set_title("Total Loss", fontsize=12, fontweight="bold")
@@ -109,10 +136,12 @@ def plot_loss_breakdown(graphs_dir: Path, metrics: Dict[str, List]) -> None:
         plt.tight_layout()
         plt.savefig(graphs_dir / "total_loss.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
-    
+
     if vals_p:
         fig, ax = plt.subplots(figsize=(10, 5))
-        ax.scatter(iters_p, vals_p, color="#9b59b6", s=8, alpha=0.6)
+        centers, mins, maxs = _binned_min_max(iters_p, vals_p, bin_width=5)
+        ax.fill_between(centers, mins, maxs, color="#9b59b6", alpha=0.15, zorder=1)
+        ax.scatter(iters_p, vals_p, color="#9b59b6", s=_scatter_marker_size(len(vals_p)), alpha=0.7, zorder=2)
         ax.set_xlabel("Iteration", fontsize=10)
         ax.set_ylabel("Policy Loss", fontsize=10)
         ax.set_title("Policy Loss", fontsize=12, fontweight="bold")
@@ -120,10 +149,12 @@ def plot_loss_breakdown(graphs_dir: Path, metrics: Dict[str, List]) -> None:
         plt.tight_layout()
         plt.savefig(graphs_dir / "policy_loss.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
-    
+
     if vals_v:
         fig, ax = plt.subplots(figsize=(10, 5))
-        ax.scatter(iters_v, vals_v, color="#3498db", s=8, alpha=0.6)
+        centers, mins, maxs = _binned_min_max(iters_v, vals_v, bin_width=5)
+        ax.fill_between(centers, mins, maxs, color="#3498db", alpha=0.15, zorder=1)
+        ax.scatter(iters_v, vals_v, color="#3498db", s=_scatter_marker_size(len(vals_v)), alpha=0.7, zorder=2)
         ax.set_xlabel("Iteration", fontsize=10)
         ax.set_ylabel("Value Loss", fontsize=10)
         ax.set_title("Value Loss", fontsize=12, fontweight="bold")
@@ -183,50 +214,6 @@ def plot_policy_health(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     
     plt.tight_layout()
     plt.savefig(graphs_dir / "policy_health.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
-
-
-def plot_value_function(graphs_dir: Path, metrics: Dict[str, List]) -> None:
-    iterations = metrics.get("iteration", [])
-    vf_loss = _get_metric(metrics, "vf_loss", "value_loss")
-    vf_explained = _get_metric(metrics, "vf_explained_var")
-    
-    has_loss = _has_valid_data(vf_loss)
-    has_explained = _has_valid_data(vf_explained)
-    
-    if not has_loss and not has_explained:
-        return
-    
-    fig, ax1 = plt.subplots(figsize=(10, 5))
-    
-    if has_loss:
-        iters_l, vals_l = _filter_none(iterations, vf_loss)
-        ax1.plot(iters_l, vals_l, color="#3498db", linewidth=1.5, label="VF Loss")
-        ax1.set_ylabel("VF Loss", color="#3498db", fontsize=10)
-        ax1.tick_params(axis="y", labelcolor="#3498db")
-    
-    ax1.set_xlabel("Iteration", fontsize=10)
-    ax1.grid(True, alpha=0.3)
-    
-    if has_explained:
-        iters_e, vals_e = _filter_none(iterations, vf_explained)
-        ax2 = ax1.twinx() if has_loss else ax1
-        ax2.plot(iters_e, vals_e, color="#27ae60", linewidth=1.5, linestyle="--", label="Explained Variance")
-        ax2.set_ylabel("Explained Variance", color="#27ae60", fontsize=10)
-        ax2.tick_params(axis="y", labelcolor="#27ae60")
-        ax2.set_ylim(-1.1, 1.1)
-    
-    ax1.set_title("Value Function Quality", fontsize=12, fontweight="bold")
-    
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    if has_explained and has_loss:
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper right", fontsize=9)
-    else:
-        ax1.legend(loc="upper right", fontsize=9)
-    
-    plt.tight_layout()
-    plt.savefig(graphs_dir / "value_function.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -438,7 +425,7 @@ def _plot_wld_stacked_split(
         plt.close(fig)
 
 
-def plot_evaluations(graphs_dir: Path, metrics: Dict[str, Any], split_interval: int) -> None:
+def plot_evaluations(eval_dir: Path, metrics: Dict[str, Any], split_interval: int) -> None:
     iterations = metrics.get("iteration", [])
     evaluations = metrics.get("evaluations", {})
     titles_by_type = {
@@ -456,7 +443,7 @@ def plot_evaluations(graphs_dir: Path, metrics: Dict[str, Any], split_interval: 
                 if not _has_valid_data(wins):
                     continue
                 _plot_wld_stacked_split(
-                    graphs_dir, iterations,
+                    eval_dir, iterations,
                     wins, losses, draws,
                     title_base=f"{prefix}: {label} ({position_label})",
                     filename_base=f"eval_{label}_{position_key}.png",
@@ -464,7 +451,7 @@ def plot_evaluations(graphs_dir: Path, metrics: Dict[str, Any], split_interval: 
                 )
 
 
-def plot_metrics(graphs_dir: Path, metrics: Dict[str, Any], eval_graph_split: int = 500) -> None:
+def plot_metrics(graphs_dir: Path, metrics: Dict[str, Any], eval_graph_split: int = 500, plot_memory: bool = True) -> None:
     iterations = metrics.get("iteration", [])
     if not iterations:
         return
@@ -473,13 +460,13 @@ def plot_metrics(graphs_dir: Path, metrics: Dict[str, Any], eval_graph_split: in
     plot_training_overview(graphs_dir, metrics)
     plot_loss_breakdown(graphs_dir, metrics)
     plot_policy_health(graphs_dir, metrics)
-    plot_value_function(graphs_dir, metrics)
     plot_learning_rate(graphs_dir, metrics)
     plot_weight_stats(graphs_dir, metrics)
-    plot_memory_usage(graphs_dir, metrics)
+    if plot_memory:
+        plot_memory_usage(graphs_dir, metrics)
 
     has_icm = _has_valid_data(metrics.get("intrinsic_reward_mean", []))
     if has_icm:
         plot_icm_dashboard(graphs_dir, metrics)
 
-    plot_evaluations(graphs_dir, metrics, eval_graph_split)
+    plot_evaluations(graphs_dir / "evaluations", metrics, eval_graph_split)

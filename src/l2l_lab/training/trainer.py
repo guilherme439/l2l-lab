@@ -174,19 +174,19 @@ class Trainer:
                 last_step = self._skip_to_end_of_queue()
                 if last_step is not None:
                     i = last_step.iteration
+                    
                 print("-" * 70)
                 print(f"Training stopped early at iteration {i}/{total_iterations}.")
                 self.save_checkpoint(i, self.backend.get_checkpoint_data())
-                self.plot_progress()
+                self.plot_progress(plot_memory=False)
                 self.backend.shutdown()
                 return
 
             print("-" * 70)
             print(f"✓ {algo_cfg.name.upper()} Training completed!")
-
             self.save_checkpoint(total_iterations, self.backend.get_checkpoint_data())
-            self.backend.shutdown()
             self.plot_progress()
+            self.backend.shutdown()
         finally:
             if self.reporter is not None:
                 self.reporter.on_shutdown()
@@ -207,7 +207,7 @@ class Trainer:
     def get_latest_checkpoint(self, model_dir: Path) -> Optional[Path]:
         return get_latest_checkpoint_dir(model_dir)
 
-    def plot_progress(self) -> None:
+    def plot_progress(self, plot_memory: bool = True) -> None:
         if not self.metrics.get("iteration"):
             print("No metrics to plot!")
             return
@@ -216,7 +216,7 @@ class Trainer:
             raise RuntimeError("No model directory.")
 
         graphs_dir = self.current_model_dir / "graphs"
-        graphs.plot_metrics(graphs_dir, self.metrics, self.config.common.eval_graph_split)
+        graphs.plot_metrics(graphs_dir, self.metrics, self.config.common.eval_graph_split, plot_memory=plot_memory)
         print(f"\n\n📊 Graphs saved to: {graphs_dir}\n\n")
 
     def _skip_to_end_of_queue(self) -> Optional[StepResult]:
@@ -235,6 +235,7 @@ class Trainer:
     def _setup_model_dir(self, model_dir: Path) -> None:
         model_dir.mkdir(parents=True, exist_ok=True)
         (model_dir / "graphs").mkdir(exist_ok=True)
+        (model_dir / "graphs" / "evaluations").mkdir(exist_ok=True)
         self.current_model_dir = model_dir
 
     def _setup_reporter(self, cfg: TrainingConfig, start_iteration: int) -> None:

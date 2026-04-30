@@ -43,6 +43,12 @@ scs = [
     "RL-SCS",
 ]
 
+dev = [
+    {include-group = "test"},
+    {include-group = "alphazoo"},
+    {include-group = "scs"},
+]
+
 [tool.pytest.ini_options]
 testpaths = ["test"]
 python_classes = ["DoNotSearchClasses"] # We do not use class-based tests.
