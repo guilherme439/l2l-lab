@@ -22,6 +22,7 @@ from l2l_lab.configs.training.NetworkConfig import (CONV_ARCHITECTURES,
                                                        NetworkConfig)
 from l2l_lab.envs.registry import create_env
 from l2l_lab.reporting.types import GameReport
+from l2l_lab.utils.checkpoint import load_checkpoint_file
 from l2l_lab.utils.common import clone_observation
 
 MODELS_DIR = Path("models")
@@ -195,7 +196,7 @@ class Tester:
 
         if isinstance(agent_config, PolicyAgentConfig):
             cp_path = self._get_checkpoint_path(agent_config.model_name, agent_config.checkpoint)
-            checkpoint = torch.load(cp_path, weights_only=False)
+            checkpoint = load_checkpoint_file(cp_path)
             backbone = self._create_backbone(checkpoint)
             label = f"{agent_config.model_name}@{agent_config.checkpoint}"
             return PolicyAgent(backbone, self.config.env.obs_space_format, name=label)
@@ -205,7 +206,7 @@ class Tester:
             from l2l_lab.utils.search import load_search_config
 
             cp_path = self._get_checkpoint_path(agent_config.model_name, agent_config.checkpoint)
-            checkpoint = torch.load(cp_path, weights_only=False)
+            checkpoint = load_checkpoint_file(cp_path)
             backbone = self._create_backbone(checkpoint)
             search_config = load_search_config(agent_config.search_config_path)
             label = f"mcts[{agent_config.model_name}@{agent_config.checkpoint}]"

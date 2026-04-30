@@ -13,6 +13,9 @@ from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
 from l2l_lab.backends.obs_utils import make_wrapper, obs_to_state_provider
 from l2l_lab.configs.training.NetworkConfig import CONV_ARCHITECTURES, MLP_ARCHITECTURES
 from l2l_lab.envs.registry import create_env
+from l2l_lab.utils.checkpoint import (get_checkpoint_path,
+                                      load_checkpoint_data,
+                                      load_checkpoint_file)
 from l2l_lab.utils.common import check_interval
 
 if TYPE_CHECKING:
@@ -104,9 +107,6 @@ class AlphaZooBackend(AlgorithmBackend):
         import ray
         from alphazoo import AlphaZoo
 
-        from l2l_lab.utils.checkpoint import (get_checkpoint_path,
-                                              load_checkpoint_data)
-
         if not ray.is_initialized():
             ray.init(
                 ignore_reinit_error=True,
@@ -134,7 +134,7 @@ class AlphaZooBackend(AlgorithmBackend):
         scheduler_state_dict = None
         replay_buffer_state = None
         if cp_path and cp_path.exists():
-            cp_data_raw = torch.load(cp_path, weights_only=False)
+            cp_data_raw = load_checkpoint_file(cp_path)
             self._model.load_state_dict(cp_data_raw["model_state_dict"])
             if backend_cfg.load_optimizer:
                 optimizer_state_dict = cp_data_raw.get("optimizer_state_dict")
@@ -213,7 +213,7 @@ class AlphaZooBackend(AlgorithmBackend):
         return model_copy
 
     def get_model_from_checkpoint(self, checkpoint_dir: Path) -> torch.nn.Module:
-        cp = torch.load(checkpoint_dir / "training" / "checkpoint.pt", weights_only=False)
+        cp = load_checkpoint_file(checkpoint_dir / "training" / "checkpoint.pt")
         model = self._build_model(self._config, self._state_shape, self._action_space_shape)
         model.load_state_dict(cp["model_state_dict"])
         model.eval()

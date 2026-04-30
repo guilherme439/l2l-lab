@@ -13,6 +13,11 @@ class CheckpointData:
     metrics: Dict[str, List]
 
 
+def load_checkpoint_file(path: Path) -> dict:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return torch.load(path, weights_only=False, map_location=device)
+
+
 def get_checkpoint_dir(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
     checkpoints_dir = model_dir / "checkpoints"
     if not checkpoints_dir.exists():
@@ -68,7 +73,7 @@ def get_latest_checkpoint_dir(model_dir: Path) -> Optional[Path]:
 def load_checkpoint_data(model_dir: Path, iteration: Optional[int] = None) -> Optional[CheckpointData]:
     cp_path = get_checkpoint_path(model_dir, iteration)
     if cp_path and cp_path.exists():
-        cp_data = torch.load(cp_path, weights_only=False)
+        cp_data = load_checkpoint_file(cp_path)
         return CheckpointData(
             iteration=cp_data.get("iteration", 0),
             metrics=cp_data.get("metrics", {}),

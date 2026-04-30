@@ -13,6 +13,7 @@ from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
 from l2l_lab.configs.training.NetworkConfig import (CONV_ARCHITECTURES,
                                                     MLP_ARCHITECTURES)
 from l2l_lab.envs.registry import create_env
+from l2l_lab.utils.checkpoint import load_checkpoint_file
 from l2l_lab.utils.common import check_interval
 
 if TYPE_CHECKING:
@@ -142,7 +143,7 @@ class RLlibBackend(AlgorithmBackend):
         return backbone
 
     def get_model_from_checkpoint(self, checkpoint_dir: Path) -> torch.nn.Module:
-        cp = torch.load(checkpoint_dir / "training" / "data.pt", weights_only=False)
+        cp = load_checkpoint_file(checkpoint_dir / "training" / "data.pt")
         cfg = self._config
 
         architecture = cfg.network.architecture

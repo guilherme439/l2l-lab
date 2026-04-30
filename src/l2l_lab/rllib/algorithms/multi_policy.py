@@ -9,6 +9,7 @@ from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 
 from l2l_lab.rllib.modules.RandomRLModule import RandomRLModule
+from l2l_lab.utils.checkpoint import load_checkpoint_file
 
 if TYPE_CHECKING:
     from l2l_lab.configs.training.PolicyConfig import PolicyConfig
@@ -76,7 +77,7 @@ def load_checkpoint_weights_into_policy(algo, policy_name: str, checkpoint_path:
         print(f"Warning: Checkpoint not found: {checkpoint_path}")
         return False
     
-    checkpoint = torch.load(checkpoint_path, weights_only=False)
+    checkpoint = load_checkpoint_file(checkpoint_path)
     backbone_state_dict = checkpoint.get("backbone_state_dict")
     
     if backbone_state_dict is None:
