@@ -20,6 +20,8 @@ configs/search/*
 
 profiling/*
 
+wandb
+
 # config
 application.yml
 
