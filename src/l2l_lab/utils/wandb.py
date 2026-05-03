@@ -55,7 +55,7 @@ def init(
             "tags": wandb_settings.get("tags") or [],
         }
         if resume and run_id is not None:
-            init_kwargs["resume_from"] = f"{run_id}?_step={start_iteration}"
+            init_kwargs["fork_from"] = f"{run_id}?_step={start_iteration}"
 
         run = _wandb_pkg.init(**init_kwargs)
         if run is None:
