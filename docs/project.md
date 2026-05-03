@@ -149,7 +149,7 @@ wandb:
 
 The api key is read from this file and exported as `WANDB_API_KEY` before `wandb.init`. The `TrainingConfig` for the run is passed as the wandb run's `config` so hyperparameters are searchable in the dashboard.
 
-Resume behaviour: the wandb run id is persisted to `models/<run_name>/run_state.json` after a successful `wandb.init`. When a training run is resumed (`backend.continue_training: true`), the same run id is reused so the dashboard charts continue on a single run instead of forking. A fresh training run wipes the model directory and therefore starts a new wandb run.
+Resume behaviour: the wandb run id is persisted to `models/<run_name>/run_state.json` after a successful `wandb.init`. When a training run is resumed (`backend.continue_training: true`), the same run id is reused via `wandb.init(resume_from="<run_id>?_step=<start_iteration>")`, so the dashboard charts continue on a single run instead of forking, and any wandb history past `start_iteration` is discarded — resuming from an earlier checkpoint (`backend.continue_from_iteration: 500`) cleanly rewinds the wandb run to that step. A fresh training run wipes the model directory and therefore starts a new wandb run.
 
 Failure resilience: any failure path (missing `application.yml`, `enabled: false`, bad api key, network outage, missing dependencies) emits a single log line and disables wandb for the remainder of the run; the local CSV / Markdown / matplotlib graph sinks are unaffected.
 

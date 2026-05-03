@@ -19,7 +19,13 @@ _RUN_STATE_FILENAME = "run_state.json"
 _API_KEY_PLACEHOLDER = "your-wandb-api-key-here"
 
 
-def init(run_name: str, training_config: TrainingConfig, model_dir: Path, resume: bool) -> bool:
+def init(
+    run_name: str,
+    training_config: TrainingConfig,
+    model_dir: Path,
+    resume: bool,
+    start_iteration: int,
+) -> bool:
     try:
         wandb_settings = _load_wandb_settings()
         if wandb_settings is None:
@@ -41,15 +47,17 @@ def init(run_name: str, training_config: TrainingConfig, model_dir: Path, resume
 
         config_dict = extract_hyperparameters(training_config)
 
-        run = _wandb_pkg.init(
-            project=wandb_settings.get("project", "l2l-lab"),
-            entity=wandb_settings.get("entity"),
-            name=run_name,
-            id=run_id,
-            resume="allow",
-            config=config_dict,
-            tags=wandb_settings.get("tags") or [],
-        )
+        init_kwargs: dict[str, Any] = {
+            "project": wandb_settings.get("project", "l2l-lab"),
+            "entity": wandb_settings.get("entity"),
+            "name": run_name,
+            "config": config_dict,
+            "tags": wandb_settings.get("tags") or [],
+        }
+        if resume and run_id is not None:
+            init_kwargs["resume_from"] = f"{run_id}?_step={start_iteration}"
+
+        run = _wandb_pkg.init(**init_kwargs)
         if run is None:
             logger.warning("wandb: init returned None; skipping")
             return False

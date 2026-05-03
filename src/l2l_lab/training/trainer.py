@@ -104,6 +104,7 @@ class Trainer:
             training_config=cfg,
             model_dir=self.current_model_dir,
             resume=backend_cfg.continue_training,
+            start_iteration=start_iteration,
         )
 
         previous_checkpoint: Optional[Path] = None
