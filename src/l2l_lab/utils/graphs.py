@@ -51,22 +51,23 @@ def _scatter_marker_size(n: int) -> float:
     return max(1.5, min(8.0, 60.0 / (n ** 0.5)))
 
 
-def _binned_min_max(
+def _rolling_min_max(
     iterations: List[int],
     values: List[float],
-    bin_width: int = 5,
+    window: int = 5,
 ) -> Tuple[List[float], List[float], List[float]]:
     centers: List[float] = []
     mins: List[float] = []
     maxs: List[float] = []
-    for start in range(0, len(values), bin_width):
-        chunk_iters = iterations[start:start + bin_width]
-        chunk_vals = values[start:start + bin_width]
-        if not chunk_vals:
-            continue
-        centers.append((chunk_iters[0] + chunk_iters[-1]) / 2)
-        mins.append(min(chunk_vals))
-        maxs.append(max(chunk_vals))
+    half = window // 2
+    n = len(values)
+    for i in range(n):
+        start = max(0, i - half)
+        end = min(n, i + half + 1)
+        window_vals = values[start:end]
+        centers.append(iterations[i])
+        mins.append(min(window_vals))
+        maxs.append(max(window_vals))
     return centers, mins, maxs
 
 
@@ -126,7 +127,7 @@ def plot_loss_breakdown(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     
     if vals_t:
         fig, ax = plt.subplots(figsize=(10, 5))
-        centers, mins, maxs = _binned_min_max(iters_t, vals_t, bin_width=5)
+        centers, mins, maxs = _rolling_min_max(iters_t, vals_t, window=5)
         ax.fill_between(centers, mins, maxs, color="#e74c3c", alpha=0.15, zorder=1)
         ax.scatter(iters_t, vals_t, color="#e74c3c", s=_scatter_marker_size(len(vals_t)), alpha=0.7, zorder=2)
         ax.set_xlabel("Iteration", fontsize=10)
@@ -139,7 +140,7 @@ def plot_loss_breakdown(graphs_dir: Path, metrics: Dict[str, List]) -> None:
 
     if vals_p:
         fig, ax = plt.subplots(figsize=(10, 5))
-        centers, mins, maxs = _binned_min_max(iters_p, vals_p, bin_width=5)
+        centers, mins, maxs = _rolling_min_max(iters_p, vals_p, window=5)
         ax.fill_between(centers, mins, maxs, color="#9b59b6", alpha=0.15, zorder=1)
         ax.scatter(iters_p, vals_p, color="#9b59b6", s=_scatter_marker_size(len(vals_p)), alpha=0.7, zorder=2)
         ax.set_xlabel("Iteration", fontsize=10)
@@ -152,7 +153,7 @@ def plot_loss_breakdown(graphs_dir: Path, metrics: Dict[str, List]) -> None:
 
     if vals_v:
         fig, ax = plt.subplots(figsize=(10, 5))
-        centers, mins, maxs = _binned_min_max(iters_v, vals_v, bin_width=5)
+        centers, mins, maxs = _rolling_min_max(iters_v, vals_v, window=5)
         ax.fill_between(centers, mins, maxs, color="#3498db", alpha=0.15, zorder=1)
         ax.scatter(iters_v, vals_v, color="#3498db", s=_scatter_marker_size(len(vals_v)), alpha=0.7, zorder=2)
         ax.set_xlabel("Iteration", fontsize=10)
