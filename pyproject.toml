@@ -20,6 +20,7 @@ dependencies = [
     "rlcard~=1.0",
     "pyyaml~=6.0",
     "psutil~=5.9",
+    "wandb~=0.18",
 ]
 
 [project.scripts]
@@ -35,18 +36,9 @@ test = [
     "snakeviz~=2.2",
 ]
 
-alphazoo = [
-    "alphazoo",
-]
-
-scs = [
-    "RL-SCS",
-]
 
 dev = [
     {include-group = "test"},
-    {include-group = "alphazoo"},
-    {include-group = "scs"},
 ]
 
 [tool.pytest.ini_options]

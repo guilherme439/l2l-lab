@@ -132,11 +132,32 @@ Opt-in diagnostic layer, enabled by setting `reporting.enabled: true` in the tra
 
 Reporting I/O runs synchronously on the trainer thread. See `src/l2l_lab/reporting/` for the implementation.
 
+### Weights & Biases (`l2l_lab.utils.wandb`)
+
+Opt-in cloud logging. When active, every per-iteration scalar handed to the trainer (`policy_loss`, `value_loss`, `combined_loss`, `learning_rate`, `replay_buffer_size`, `episode_len_mean`, `weight_max/min/avg`), the nested `memory/*` series, and the nested `evaluations/*` series (only on iterations they actually fire — `None` values are dropped) are streamed to a wandb run via `wandb.log(..., step=iteration)`. `wandb.init` also enables wandb's built-in system monitor, so CPU %, RAM, GPU util, GPU memory, disk, and network metrics are logged automatically every ~15s.
+
+Configuration lives outside the training YAML, in `application.yml` at the repo root (gitignored — see `application.example.yml` for the schema):
+
+```yaml
+wandb:
+  enabled: true
+  api_key: "..."
+  project: "l2l-lab"
+  entity: null
+  tags: []
+```
+
+The api key is read from this file and exported as `WANDB_API_KEY` before `wandb.init`. The `TrainingConfig` for the run is passed as the wandb run's `config` so hyperparameters are searchable in the dashboard.
+
+Resume behaviour: the wandb run id is persisted to `models/<run_name>/run_state.json` after a successful `wandb.init`. When a training run is resumed (`backend.continue_training: true`), the same run id is reused so the dashboard charts continue on a single run instead of forking. A fresh training run wipes the model directory and therefore starts a new wandb run.
+
+Failure resilience: any failure path (missing `application.yml`, `enabled: false`, bad api key, network outage, missing dependencies) emits a single log line and disables wandb for the remainder of the run; the local CSV / Markdown / matplotlib graph sinks are unaffected.
+
 ## Dependency groups
 
 See [`pyproject.toml`](../pyproject.toml):
 
-- Core `dependencies` — PyTorch, NumPy, PettingZoo, Gymnasium, Ray/RLlib, matplotlib, hexagdly, rlcard, pyyaml.
+- Core `dependencies` — PyTorch, NumPy, PettingZoo, Gymnasium, Ray/RLlib, matplotlib, hexagdly, rlcard, pyyaml, psutil, wandb.
 - `test` — pytest, yappi, snakeviz.
 - `alphazoo` — declares the dep for the AlphaZoo backend / `MCTSAgent`; install the package editable first from your local clone.
 - `scs` — declares the dep for the SCS env; install `RL-SCS` editable first from your local clone.

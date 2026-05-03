@@ -208,7 +208,7 @@ class AlphaZooBackend(AlgorithmBackend):
         ]
 
     def get_eval_model(self) -> torch.nn.Module:
-        model_copy = deepcopy(self._model)
+        model_copy = deepcopy(self._model).cpu()
         model_copy.eval()
         return model_copy
 

@@ -14,8 +14,7 @@ class CheckpointData:
 
 
 def load_checkpoint_file(path: Path) -> dict:
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    return torch.load(path, weights_only=False, map_location=device)
+    return torch.load(path, weights_only=False, map_location="cpu")
 
 
 def get_checkpoint_dir(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:

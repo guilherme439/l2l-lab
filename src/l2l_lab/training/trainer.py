@@ -18,6 +18,7 @@ from l2l_lab.reporting import Reporter
 from l2l_lab.testing.tester import GameResults
 from l2l_lab.training.evaluator import Evaluator
 from l2l_lab.utils import graphs
+from l2l_lab.utils import wandb as wandb_helper
 from l2l_lab.utils.checkpoint import get_latest_checkpoint_dir
 from l2l_lab.utils.common import check_interval
 from l2l_lab.utils.memory import MemorySampler
@@ -39,6 +40,7 @@ class Trainer:
         self.reporter: Optional[Reporter] = None
         self._early_stop_requested = False
         self._memory_sampler: Optional[MemorySampler] = None
+        self._wandb_enabled: bool = False
 
     def train(self) -> None:
         cfg = self.config
@@ -97,6 +99,13 @@ class Trainer:
 
         self._setup_reporter(cfg, start_iteration)
 
+        self._wandb_enabled = wandb_helper.init(
+            run_name=cfg.name,
+            training_config=cfg,
+            model_dir=self.current_model_dir,
+            resume=backend_cfg.continue_training,
+        )
+
         previous_checkpoint: Optional[Path] = None
         metrics_initialized = len(self.metrics.get("iteration", [])) > 0
 
@@ -149,7 +158,10 @@ class Trainer:
                 if self.reporter is not None:
                     self.reporter.on_step(i, step_metrics)
 
-                if check_interval(i, cfg.common.checkpoint_interval): 
+                if self._wandb_enabled:
+                    wandb_helper.log(step_metrics, i)
+
+                if check_interval(i, cfg.common.checkpoint_interval):
                     checkpoint_dir = self.save_checkpoint(i, self.backend.get_checkpoint_data())
                     previous_checkpoint = checkpoint_dir
                     self.backend.on_checkpoint_saved(self.current_model_dir, i)
@@ -191,6 +203,8 @@ class Trainer:
         finally:
             if self.reporter is not None:
                 self.reporter.on_shutdown()
+            if self._wandb_enabled:
+                wandb_helper.finish()
             signal.signal(signal.SIGINT, original_sigint)
 
     def save_checkpoint(self, iteration: int, checkpoint_data: Dict[str, Any]) -> Path:

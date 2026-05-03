@@ -41,3 +41,15 @@ Optional:
 
 - **alphazoo** — required for the AlphaZoo training backend and the `MCTSAgent`
 - **RL-SCS** — required if you want to use the SCS environment
+
+## Weights & Biases (optional)
+
+Wandb logging is opt-in. To enable it:
+
+1. Sign up at https://wandb.ai.
+2. Copy the template and fill it in:
+   ```bash
+   cp application.example.yml application.yml
+   ```
+   Set `enabled: true`, paste your `api_key`, and set `project` / `entity` / `tags` to taste.
+

@@ -20,6 +20,9 @@ configs/search/*
 
 profiling/*
 
+# config
+application.yml
+
 # vscode
 .vscode/
 

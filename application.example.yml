@@ -1,0 +1,6 @@
+wandb:
+  enabled: false
+  api_key: "your-wandb-api-key-here"
+  project: "l2l-lab"
+  entity: null
+  tags: []
