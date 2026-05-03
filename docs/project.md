@@ -149,7 +149,11 @@ wandb:
 
 The api key is read from this file and exported as `WANDB_API_KEY` before `wandb.init`. The `TrainingConfig` for the run is passed as the wandb run's `config` so hyperparameters are searchable in the dashboard.
 
-Resume behaviour: the wandb run id is persisted to `models/<run_name>/run_state.json` after a successful `wandb.init`. When a training run is resumed (`backend.continue_training: true`), the trainer calls `wandb.init(fork_from="<run_id>?_step=<start_iteration>")`, which creates a new wandb run forked from the previous one at `start_iteration`. The previous run is left untouched on the dashboard; the new run id replaces the old one in `run_state.json` so subsequent logs and resumes target the latest forked run. This means resuming from an earlier checkpoint (e.g. `backend.continue_from_iteration: 500`) cleanly produces a new run starting at step 500, while the original full-history run remains available for comparison. A fresh training run wipes the model directory and therefore starts a new wandb run from scratch.
+Resume behaviour: the wandb run id is persisted to `models/<run_name>/run_state.json` after a successful `wandb.init`. Every wandb run is tagged with `group=<run_name>` so all attempts of a given training name cluster together in the dashboard.
+
+- **Forward resume** — when `backend.continue_training: true` and `start_iteration` matches the latest existing checkpoint under `models/<run_name>/checkpoints/`, the persisted run id is reused via `wandb.init(id=..., resume="allow")` and logging continues on the same run.
+- **Rewind** — when `start_iteration` is less than the latest existing checkpoint (e.g. `backend.continue_from_iteration: 500` while checkpoints up to 1000 exist on disk), the trainer instead starts a fresh wandb run. The new run id replaces the old one in `run_state.json` for subsequent logging and future resumes. The previous run is preserved on the dashboard for comparison; clean it up manually if undesired.
+- **Fresh training** — wipes the model directory (and therefore `run_state.json`), so a brand-new wandb run is started from scratch.
 
 Failure resilience: any failure path (missing `application.yml`, `enabled: false`, bad api key, network outage, missing dependencies) emits a single log line and disables wandb for the remainder of the run; the local CSV / Markdown / matplotlib graph sinks are unaffected.
 

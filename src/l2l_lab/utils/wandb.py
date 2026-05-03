@@ -11,6 +11,7 @@ import wandb as _wandb_pkg
 import yaml
 
 from l2l_lab.configs.training.TrainingConfig import TrainingConfig
+from l2l_lab.utils.checkpoint import get_checkpoint_dir
 
 logger = logging.getLogger("alphazoo")
 
@@ -51,11 +52,13 @@ def init(
             "project": wandb_settings.get("project", "l2l-lab"),
             "entity": wandb_settings.get("entity"),
             "name": run_name,
+            "group": run_name,
             "config": config_dict,
             "tags": wandb_settings.get("tags") or [],
         }
-        if resume and run_id is not None:
-            init_kwargs["fork_from"] = f"{run_id}?_step={start_iteration}"
+        if resume and run_id is not None and not _is_rewind(model_dir, start_iteration):
+            init_kwargs["id"] = run_id
+            init_kwargs["resume"] = "allow"
 
         run = _wandb_pkg.init(**init_kwargs)
         if run is None:
@@ -129,6 +132,17 @@ def _persist_run_id(model_dir: Path, run_id: str) -> None:
     state["wandb_run_id"] = run_id
     with open(state_path, "w") as f:
         json.dump(state, f, indent=2)
+
+
+def _is_rewind(model_dir: Path, start_iteration: int) -> bool:
+    latest_dir = get_checkpoint_dir(model_dir)
+    if latest_dir is None:
+        return False
+    try:
+        latest_iter = int(latest_dir.name)
+    except ValueError:
+        return False
+    return start_iteration < latest_iter
 
 
 def _flatten(metrics: dict[str, Any], prefix: str = "") -> dict[str, Any]:
