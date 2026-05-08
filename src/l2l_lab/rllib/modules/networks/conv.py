@@ -1,6 +1,7 @@
 from typing import Any, Dict, Literal, Type, TypedDict
 
 import gymnasium as gym
+import torch
 from ray.rllib.core.columns import Columns
 from ray.rllib.core.rl_module.apis.value_function_api import ValueFunctionAPI
 from ray.rllib.core.rl_module.torch.torch_rl_module import TorchRLModule
@@ -52,7 +53,8 @@ class ConvDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
         ).validate_for_env((in_channels, h, w), num_actions)
 
         self.backbone = network_class(in_channels=in_channels, num_actions=num_actions, **network_kwargs)
-    
+        self._initialize_lazy_params(in_channels, h, w)
+
     def _preprocess_obs(self, obs: TensorType) -> TensorType:
         if self.obs_space_format == "channels_last":
             return obs.permute(0, 3, 1, 2)
@@ -112,5 +114,9 @@ class ConvDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
         
         if value.dim() > 1:
             value = value.squeeze(-1)
-        
+
         return value
+
+    def _initialize_lazy_params(self, in_channels: int, h: int, w: int) -> None:
+        with torch.no_grad():
+            self.backbone(torch.zeros(1, in_channels, h, w))

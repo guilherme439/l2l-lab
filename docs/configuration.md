@@ -107,6 +107,7 @@ Neural network architecture + its construction kwargs. `NetworkConfig` is define
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `architecture` | `"ResNet" \| "ConvNet" \| "MLPNet" \| "RecurrentNet"` | *(required)* | Which architecture class to instantiate. |
+| `recurrent_iterations` | int | `1` | Number of recurrent iterations to run during evaluation. Only used when `architecture: "RecurrentNet"`. |
 | *(remaining keys)* | varies | — | Architecture-specific kwargs (e.g. `num_filters`, `num_blocks`, `hidden_layers`, `neurons_per_layer`). Any unknown key under `network:` is treated as a constructor kwarg. |
 
 ### Conv-based architectures: head selection

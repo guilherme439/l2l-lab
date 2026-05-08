@@ -34,7 +34,7 @@ class Trainer:
         self.config_path = Path(config_path)
         self.config = TrainingConfig.from_yaml(config_path)
         self.backend = get_backend(self.config.backend.name)()
-        self.evaluator = Evaluator(self.config.evaluation, self.backend, self.config.env)
+        self.evaluator = Evaluator(self.config.evaluation, self.backend, self.config.env, self.config.network)
         self.metrics: Dict[str, Any] = {}
         self.current_model_dir: Optional[Path] = None
         self.reporter: Optional[Reporter] = None
@@ -108,7 +108,6 @@ class Trainer:
         )
 
         previous_checkpoint: Optional[Path] = None
-        metrics_initialized = len(self.metrics.get("iteration", [])) > 0
 
         remaining_iterations = total_iterations - start_iteration
         if remaining_iterations <= 0:
@@ -188,7 +187,8 @@ class Trainer:
                 last_step = self._skip_to_end_of_queue()
                 if last_step is not None:
                     i = last_step.iteration
-                    
+
+                print()   
                 print("-" * 70)
                 print(f"Training stopped early at iteration {i}/{total_iterations}.")
                 self.save_checkpoint(i, self.backend.get_checkpoint_data())

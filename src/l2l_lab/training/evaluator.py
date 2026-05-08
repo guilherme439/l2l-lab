@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from l2l_lab.agents.agent import Agent
     from l2l_lab.backends.backend_base import AlgorithmBackend
     from l2l_lab.configs.common.EnvConfig import EnvConfig
+    from l2l_lab.configs.training.NetworkConfig import NetworkConfig
     from l2l_lab.reporting import Reporter
 
 
@@ -26,10 +27,12 @@ class Evaluator:
         eval_config: EvaluationConfig,
         backend: "AlgorithmBackend",
         env_config: "EnvConfig",
+        network_config: "NetworkConfig",
     ) -> None:
         self.eval_config = eval_config
         self.backend = backend
         self.env_config = env_config
+        self.network_config = network_config
         self.reporter: Optional["Reporter"] = None
 
     def labels(self) -> list[str]:
@@ -104,18 +107,25 @@ class Evaluator:
         search_config_path: Optional[str],
         name_prefix: str,
     ) -> "Agent":
+        is_recurrent = self.network_config.is_recurrent()
+        recurrent_iterations = self.network_config.recurrent_iterations
         if agent_type == "policy":
-            return PolicyAgent(model, self.env_config.obs_space_format, name=f"{name_prefix}_policy")
+            return PolicyAgent(
+                model,
+                self.env_config.obs_space_format,
+                is_recurrent=is_recurrent,
+                recurrent_iterations=recurrent_iterations,
+                name=f"{name_prefix}_policy",
+            )
         if agent_type == "mcts":
             from l2l_lab.agents import MCTSAgent
             from l2l_lab.utils.search import load_search_config
 
             search_config = load_search_config(search_config_path)
-            # FIXME: is_recurrent should be threaded through from the trainer/network config.
-            is_recurrent = False
             return MCTSAgent(
                 model=model,
                 is_recurrent=is_recurrent,
+                recurrent_iterations=recurrent_iterations,
                 search_config=search_config,
                 obs_space_format=self.env_config.obs_space_format,
                 name=f"{name_prefix}_mcts",

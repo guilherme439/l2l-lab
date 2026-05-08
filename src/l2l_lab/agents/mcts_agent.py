@@ -17,10 +17,12 @@ class MCTSAgent(Agent):
         is_recurrent: bool,
         search_config: SearchConfig,
         obs_space_format: str,
+        recurrent_iterations: int = 1,
         name: str = "mcts",
     ) -> None:
         self._model = model
         self._is_recurrent = is_recurrent
+        self._recurrent_iterations = recurrent_iterations
         self._search_config = search_config
         self._obs_space_format = obs_space_format
         self.name = name
@@ -32,4 +34,5 @@ class MCTSAgent(Agent):
             search_config=self._search_config,
             obs_space_format=self._obs_space_format,
             is_recurrent=self._is_recurrent,
+            recurrent_iterations=self._recurrent_iterations,
         )

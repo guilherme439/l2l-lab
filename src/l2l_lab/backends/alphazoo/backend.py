@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 import math
 
 import torch
+from alphazoo import AlphaZooRecurrentNet
 from gymnasium.spaces.utils import flatdim
 
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
@@ -88,8 +89,7 @@ class AlphaZooBackend(AlgorithmBackend):
         print("=" * 70)
 
         self._model = self._build_model(config, state_shape, action_space_shape)
-        with torch.no_grad():
-            self._model(torch.zeros(1, *state_shape))
+        self._initialize_lazy_params(state_shape)
 
         game = make_wrapper(env, env_config.obs_space_format)
 
@@ -127,8 +127,7 @@ class AlphaZooBackend(AlgorithmBackend):
         self._action_space_shape = action_space_shape
 
         self._model = self._build_model(config, state_shape, action_space_shape)
-        with torch.no_grad():
-            self._model(torch.zeros(1, *state_shape))
+        self._initialize_lazy_params(state_shape)
 
         game = make_wrapper(env, env_config.obs_space_format)
 
@@ -263,6 +262,14 @@ class AlphaZooBackend(AlgorithmBackend):
         import ray
         if ray.is_initialized():
             ray.shutdown()
+
+    def _initialize_lazy_params(self, state_shape) -> None:
+        with torch.no_grad():
+            dummy = torch.zeros(1, *state_shape)
+            if isinstance(self._model, AlphaZooRecurrentNet):
+                self._model(dummy, iters_to_do=1)
+            else:
+                self._model(dummy)
 
     def _get_shapes(self, env, obs_to_state):
         """Compute state shape and action space shape from a PettingZoo env."""

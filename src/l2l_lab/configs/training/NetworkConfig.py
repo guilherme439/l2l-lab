@@ -9,14 +9,20 @@ from l2l_lab.neural_networks.dual_head.SNNet import SNNet
 
 CONV_ARCHITECTURES = {"ResNet", "ConvNet", "RecurrentNet"}
 MLP_ARCHITECTURES = {"MLPNet", "SNNet"}
+RECURRENT_ARCHITECTURES = {"RecurrentNet"}
+
 
 @dataclass
 class NetworkConfig:
     architecture: str
     kwargs: Dict[str, Any] = field(default_factory=dict)
+    recurrent_iterations: int = 1
 
     def to_kwargs(self) -> Dict[str, Any]:
         return self.kwargs.copy()
+
+    def is_recurrent(self) -> bool:
+        return self.architecture in RECURRENT_ARCHITECTURES
 
     def validate_for_env(self, state_shape: Tuple[int, ...], num_actions: int) -> None:
         """Raises ValueError if the network kwargs are incompatible with the env shapes.

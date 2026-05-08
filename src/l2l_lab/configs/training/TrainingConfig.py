@@ -41,9 +41,12 @@ class TrainingConfig:
         )
 
         network_data = dict(data.get("network", {}))
+        architecture = network_data.pop("architecture")
+        recurrent_iterations = network_data.pop("recurrent_iterations", 1)
         network = NetworkConfig(
-            architecture=network_data.pop("architecture"),
+            architecture=architecture,
             kwargs=network_data,
+            recurrent_iterations=recurrent_iterations,
         )
 
         if "backend" not in data:
