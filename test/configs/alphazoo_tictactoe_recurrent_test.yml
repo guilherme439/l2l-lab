@@ -29,7 +29,6 @@ backend:
         running_mode: "sequential"
         num_gamers: 1
         training_steps: 8
-        early_fill_games: 2
         sequential:
           num_games_per_step: 2
       data:
@@ -43,9 +42,11 @@ backend:
         prog_alpha: 0.5
       learning:
         learning_method: "epochs"
-        replay_window_size: 200
+        replay_buffer:
+          window_size: 200
+          leak_chance: 0.0
         value_loss: "SE"
-        policy_loss: "CEL"
+        policy_loss: "CE"
         epochs:
           batch_size: 16
           learning_epochs: 1

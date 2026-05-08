@@ -140,7 +140,7 @@ class Reporter:
 
         out_path = self._reports_dir / f"report_{iteration:06d}.md"
         out_path.write_text(md, encoding="utf-8")
-        logger.info("Reporter snapshot written: %s", out_path)
+        logger.info("\nReporter snapshot written: %s", out_path)
 
     def _drain_reports(self) -> list[StampedReport]:
         drained = self._pending_reports

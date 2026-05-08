@@ -28,7 +28,6 @@ backend:
         running_mode: "sequential"
         num_gamers: 2
         training_steps: 8
-        early_fill_games: 3
         sequential:
           num_games_per_step: 2
       data:
@@ -37,7 +36,9 @@ backend:
         enabled: false
       learning:
         learning_method: "epochs"
-        replay_window_size: 400
+        replay_buffer:
+          window_size: 400
+          leak_chance: 0.0
         value_loss: "AE"
         policy_loss: "KLD"
         epochs:

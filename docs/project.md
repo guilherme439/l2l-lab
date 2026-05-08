@@ -1,3 +1,5 @@
+[Reference document for LLM agents only. Human-facing docs live in README.md and the rest of docs/.]
+
 # l2l-lab — Project Overview
 
 Reinforcement learning research framework for training agents in multi-agent game environments with different algorithms.

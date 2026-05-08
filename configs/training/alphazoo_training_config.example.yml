@@ -41,10 +41,12 @@ backend:
         enabled: true
         max_size: 8000
       learning:
-        learning_method: "samples"
-        replay_window_size: 10000
+        replay_buffer:
+          window_size: 10000
+          leak_chance: 0.001
         value_loss: "SE"
-        policy_loss: "CEL"
+        policy_loss: "CE"
+        learning_method: "samples"
         samples:
           batch_size: 64
           num_samples: 128

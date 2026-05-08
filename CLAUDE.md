@@ -22,9 +22,7 @@
 
 ## Comments & docstrings
 
-- Do not erase comments, unless they dont make sence anymore.
 - Write docstrings for modules, public classes, and non-trivial algorithms only — skip them for self-evident code. Docstrings describe the function's contract; they should not narrate the current implementation, nor reference specific call sites that might move.
-- Do not put conversation-specific comments in the code.
 
 
 ## Output
