@@ -76,7 +76,7 @@ class Trainer:
             )
             if cp_data and cp_data.metrics:
                 self._load_metrics(cp_data.metrics)
-                print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint")
+                print(f"\n✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint")
         else:
             if model_dir.exists():
                 red_color_tags = "\033[31m", "\033[0m"
@@ -193,6 +193,7 @@ class Trainer:
                 self.backend.shutdown()
                 return
 
+            print()
             print("-" * 70)
             print(f"✓ {algo_cfg.name.upper()} Training completed!")
             self.save_checkpoint(total_iterations, self.backend.get_checkpoint_data())

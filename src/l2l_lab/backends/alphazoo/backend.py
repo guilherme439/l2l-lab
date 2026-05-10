@@ -146,7 +146,7 @@ class AlphaZooBackend(AlgorithmBackend):
             if backend_cfg.load_scheduler:
                 scheduler_state_dict = cp_data_raw.get("scheduler_state_dict")
             replay_buffer_state = cp_data_raw.get("replay_buffer_state")
-            print(f"✓ Model weights restored from {cp_path}")
+            print(f"\n✓ Model weights restored from {cp_path}")
         else:
             print("No checkpoint found. Starting fresh.")
 

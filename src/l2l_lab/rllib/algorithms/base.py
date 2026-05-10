@@ -96,7 +96,7 @@ class BaseAlgorithmTrainer(ABC):
 
         print("Restoring weights from checkpoint...")
         self.algo.restore_from_path(str(algo_checkpoint_path.absolute()))
-        print("✓ Weights restored from checkpoint")
+        print("\n✓ Weights restored from checkpoint")
 
         cp_data = load_checkpoint_data(model_dir, iteration=target_iteration)
         start_iteration = cp_data.iteration if cp_data else 0
