@@ -7,9 +7,12 @@ from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
+from dataclasses import asdict
+
+from l2l_lab.configs.training.network import (BaseNetworkConfig, MLPNetConfig,
+                                                SNNetConfig)
 from l2l_lab.rllib.modules.networks.conv import ConvDualHeadRLModule
 from l2l_lab.rllib.modules.networks.mlp import MLPDualHeadRLModule
-from l2l_lab.configs.training.NetworkConfig import CONV_ARCHITECTURES, MLP_ARCHITECTURES
 from l2l_lab.utils.checkpoint import CheckpointData, load_checkpoint_data, trim_metrics_to_iteration, get_algo_checkpoint_path
 
 if TYPE_CHECKING:
@@ -46,22 +49,16 @@ class BaseAlgorithmTrainer(ABC):
         pass
 
     @staticmethod
-    def get_adapter_class(architecture: str):
-        if architecture in CONV_ARCHITECTURES:
-            return ConvDualHeadRLModule
-        elif architecture in MLP_ARCHITECTURES:
+    def get_adapter_class(network: BaseNetworkConfig):
+        if isinstance(network, (MLPNetConfig, SNNetConfig)):
             return MLPDualHeadRLModule
-        else:
-            raise ValueError(f"No RLlib adapter for architecture: {architecture}")
+        return ConvDualHeadRLModule
 
     def get_rl_module_spec(self, obs_space, obs_space_format, act_space) -> MultiRLModuleSpec:
-        network_class = self.config.network.get_network_class()
-        adapter_class = self.get_adapter_class(self.config.network.architecture)
+        adapter_class = self.get_adapter_class(self.config.network)
 
         model_config = {
-            "network_class": network_class,
-            "network_kwargs": self.config.network.to_kwargs(),
-            "architecture": self.config.network.architecture,
+            "network_config": asdict(self.config.network),
         }
 
         if adapter_class == ConvDualHeadRLModule:

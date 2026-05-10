@@ -10,7 +10,7 @@ from ..utils import dataclass_from_dict
 from .backends.base import BaseBackendConfig, backend_config_from_dict
 from .CommonConfig import CommonConfig
 from .EvaluationConfig import EvaluationConfig
-from .NetworkConfig import NetworkConfig
+from .network import BaseNetworkConfig, network_config_from_dict
 from .ReportingConfig import ReportingConfig
 
 
@@ -19,7 +19,7 @@ class TrainingConfig:
     name: str
     common: CommonConfig
     env: EnvConfig
-    network: NetworkConfig
+    network: BaseNetworkConfig
     backend: BaseBackendConfig
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
     reporting: ReportingConfig = field(default_factory=ReportingConfig)
@@ -40,14 +40,9 @@ class TrainingConfig:
             kwargs=env_data.get("kwargs", {}),
         )
 
-        network_data = dict(data.get("network", {}))
-        architecture = network_data.pop("architecture")
-        recurrent_iterations = network_data.pop("recurrent_iterations", 1)
-        network = NetworkConfig(
-            architecture=architecture,
-            kwargs=network_data,
-            recurrent_iterations=recurrent_iterations,
-        )
+        if "network" not in data:
+            raise ValueError("training config is missing required 'network' section")
+        network = network_config_from_dict(data["network"])
 
         if "backend" not in data:
             raise ValueError("training config is missing required 'backend' section")

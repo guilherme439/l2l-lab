@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,9 +18,9 @@ from l2l_lab.configs.testing.agents.PolicyAgentConfig import \
 from l2l_lab.configs.testing.agents.RandomAgentConfig import \
     RandomAgentConfig
 from l2l_lab.configs.testing.TestingConfig import TestingConfig
-from l2l_lab.configs.training.NetworkConfig import (CONV_ARCHITECTURES,
-                                                       MLP_ARCHITECTURES,
-                                                       NetworkConfig)
+from l2l_lab.configs.training.network import (MLPNetConfig, SNNetConfig,
+                                                network_config_from_dict)
+from l2l_lab.neural_networks.utils.builders import build_network
 from l2l_lab.envs.registry import create_env
 from l2l_lab.reporting.types import GameReport
 from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
@@ -221,25 +222,22 @@ class Tester:
         raise ValueError(f"Unknown agent config type: {type(agent_config)}")
 
     def _create_backbone(self, checkpoint: Dict[str, Any]) -> torch.nn.Module:
-        architecture = checkpoint["architecture"]
-        network_kwargs = checkpoint.get("network_kwargs", {})
+        network_cfg = network_config_from_dict(checkpoint["network_config"])
         input_shape = tuple(checkpoint["input_shape"])
         num_actions = checkpoint["num_actions"]
 
-        network_config = NetworkConfig(architecture=architecture, kwargs=network_kwargs)
-        network_class = network_config.get_network_class()
+        network_cfg.validate_for_env(input_shape, num_actions)
 
-        if architecture in CONV_ARCHITECTURES:
-            network_config.validate_for_env(input_shape, num_actions)
-            in_channels = input_shape[0]
-            backbone = network_class(in_channels=in_channels, num_actions=num_actions, **network_kwargs)
-        elif architecture in MLP_ARCHITECTURES:
-            backbone = network_class(out_features=num_actions, **network_kwargs)
-            dummy = torch.zeros((1,) + input_shape, dtype=torch.float32)
-            with torch.no_grad():
-                _ = backbone(dummy)
+        if isinstance(network_cfg, (MLPNetConfig, SNNetConfig)):
+            input_features = int(math.prod(input_shape))
+            backbone = build_network(
+                network_cfg, input_features=input_features, num_actions=num_actions,
+            )
         else:
-            raise ValueError(f"Unknown architecture: {architecture}")
+            in_channels = input_shape[0]
+            backbone = build_network(
+                network_cfg, in_channels=in_channels, num_actions=num_actions,
+            )
 
         load_model_state_dict(backbone, checkpoint["state_dict"])
         backbone.eval()

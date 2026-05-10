@@ -15,7 +15,12 @@ network:
   architecture: "MLPNet"
   hidden_layers: 2
   neurons_per_layer: 16
-  head_layers: 1
+  policy_head:
+    name: "linear_reduce"
+    num_layers: 1
+  value_head:
+    name: "linear_reduce"
+    num_layers: 1
 
 backend:
   name: "alphazoo"

@@ -5,28 +5,29 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from l2l_lab.neural_networks.utils.activations import make_activation
+from l2l_lab.neural_networks.utils.builders import build_activation
 
 
 class BasicBlock(nn.Module):
 
-    def __init__(self, channels, batch_norm=False, hex=False):
+    def __init__(self, channels, batch_norm=False, hex=False, use_bias=True):
         super().__init__()
 
         before_shortcut_layers = []
 
+        first_conv_bias = use_bias and not batch_norm
         if hex:
-            before_shortcut_layers.append(hexagdly.Conv2d(in_channels=channels, out_channels=channels, kernel_size = 1, bias=False))
+            before_shortcut_layers.append(hexagdly.Conv2d(in_channels=channels, out_channels=channels, kernel_size=1, bias=first_conv_bias))
         else:
-            before_shortcut_layers.append(nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size = 3, padding='same', bias=False))
+            before_shortcut_layers.append(nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, padding='same', bias=first_conv_bias))
         if batch_norm:
             before_shortcut_layers.append(nn.BatchNorm2d(num_features=channels))
         before_shortcut_layers.append(nn.ReLU())
 
         if hex:
-            before_shortcut_layers.append(hexagdly.Conv2d(in_channels=channels, out_channels=channels, kernel_size = 1, bias=False))
+            before_shortcut_layers.append(hexagdly.Conv2d(in_channels=channels, out_channels=channels, kernel_size=1, bias=use_bias))
         else:
-            before_shortcut_layers.append(nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size = 3, padding='same', bias=False))
+            before_shortcut_layers.append(nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, padding='same', bias=use_bias))
 
         self.before_shortcut = nn.Sequential(*before_shortcut_layers)
         self.shortcut = nn.Sequential()
@@ -49,7 +50,7 @@ class HighwayBlock(nn.Module):
         transform_layers = []
         for _ in range(num_layers):
             transform_layers.append(nn.Linear(in_features=width, out_features=width))
-            transform_layers.append(make_activation(activation))
+            transform_layers.append(build_activation(activation))
 
         self.transform_block = nn.Sequential(*transform_layers)
         self.gate_layer = nn.Linear(in_features=width, out_features=width)

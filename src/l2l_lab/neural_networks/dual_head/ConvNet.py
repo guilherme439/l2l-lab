@@ -1,88 +1,63 @@
-from typing import Optional
+from __future__ import annotations
 
 import hexagdly
 from alphazoo import AlphaZooNet
+from torch import nn
 
-from .modules.blocks import *
-from .modules.value_heads import *
-from .modules.policy_heads import *
+from l2l_lab.configs.training.network import ConvNetConfig
+from l2l_lab.neural_networks.utils.builders import (build_policy_head,
+                                                     build_value_head)
 
 
 class ConvNet(AlphaZooNet):
 
-    def __init__(
-        self,
-        in_channels,
-        num_actions,
-        num_filters=256,
-        num_layers=6,
-        policy_head="conv-projection",
-        value_head="conv-projection",
-        policy_channels: Optional[int] = None,
-        hex=False,
-    ):
+    def __init__(self, cfg: ConvNetConfig, in_channels: int, num_actions: int) -> None:
         super().__init__()
-        self.num_filters = num_filters
+        self.num_filters = cfg.num_filters
 
-        # General Module
-        general_layer_list = []
-        if hex:
+        general_layer_list: list[nn.Module] = []
+        if cfg.hex:
             general_layer_list.append(hexagdly.Conv2d(
                 kernel_size=1,
-                in_channels=in_channels, 
-                out_channels=self.num_filters, 
-                bias=False
+                in_channels=in_channels,
+                out_channels=self.num_filters
             ))
         else:
             general_layer_list.append(nn.Conv2d(
                 kernel_size=3,
-                in_channels=in_channels, 
-                out_channels=self.num_filters, 
-                padding='same', 
-                bias=False
+                in_channels=in_channels,
+                out_channels=self.num_filters,
+                padding='same'
             ))
         general_layer_list.append(nn.ELU())
-         
-        for i in range(num_layers):
-            if hex:
+
+        for _ in range(cfg.num_layers):
+            if cfg.hex:
                 general_layer_list.append(hexagdly.Conv2d(
                     kernel_size=1,
-                    in_channels=self.num_filters, 
-                    out_channels=self.num_filters, 
-                    bias=False
+                    in_channels=self.num_filters,
+                    out_channels=self.num_filters
                 ))
             else:
                 general_layer_list.append(nn.Conv2d(
                     kernel_size=3,
-                    in_channels=self.num_filters, 
-                    out_channels=self.num_filters, 
-                    padding='same', 
-                    bias=False
+                    in_channels=self.num_filters,
+                    out_channels=self.num_filters,
+                    padding='same'
                 ))
             general_layer_list.append(nn.ELU())
-        
-        
+
         self.general_module = nn.Sequential(*general_layer_list)
-        
-    
-        # Policy Head
-        match policy_head:
-            case "conv-reduce":
-                self.policy_head = ConvReduce_PolicyHead(self.num_filters, policy_channels, hex=hex)
-            case "conv-projection":
-                self.policy_head = ConvProjection_PolicyHead(self.num_filters, num_actions, hex=hex)
-            case _:
-                raise ValueError(f"Unknown policy_head: {policy_head}")
 
-        # Value Head
-        match value_head:
-            case "conv-reduce":
-                self.value_head = ConvReduce_ValueHead(self.num_filters, hex=hex)
-            case "conv-projection":
-                self.value_head = ConvProjection_ValueHead(self.num_filters, hex=hex)
-            case _:
-                raise ValueError(f"Unknown value_head: {value_head}")
-
+        self.policy_head = build_policy_head(
+            cfg.policy_head,
+            num_filters=self.num_filters,
+            num_actions=num_actions
+        )
+        self.value_head = build_value_head(
+            cfg.value_head,
+            num_filters=self.num_filters
+        )
 
     def forward_trunk(self, x):
         return self.general_module(x)
@@ -95,8 +70,3 @@ class ConvNet(AlphaZooNet):
     def forward(self, x):
         embeddings = self.forward_trunk(x)
         return self.forward_heads(embeddings)
-    
-
-
-
-    

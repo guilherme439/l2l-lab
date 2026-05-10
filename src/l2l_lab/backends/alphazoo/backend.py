@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 
@@ -12,8 +13,9 @@ from gymnasium.spaces.utils import flatdim
 
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
 from l2l_lab.backends.obs_utils import make_wrapper, obs_to_state_provider
-from l2l_lab.configs.training.NetworkConfig import CONV_ARCHITECTURES, MLP_ARCHITECTURES
+from l2l_lab.configs.training.network import MLPNetConfig, SNNetConfig
 from l2l_lab.envs.registry import create_env
+from l2l_lab.neural_networks.utils.builders import build_network
 from l2l_lab.utils.checkpoint import (get_checkpoint_path,
                                       load_checkpoint_data,
                                       load_checkpoint_file,
@@ -43,23 +45,22 @@ class AlphaZooBackend(AlgorithmBackend):
         return "alphazoo"
 
     def _build_model(self, config: TrainingConfig, state_shape, action_space_shape):
-        network_class = config.network.get_network_class()
-        kwargs = config.network.to_kwargs()
-        architecture = config.network.architecture
+        num_actions = action_space_shape[0]
+        config.network.validate_for_env(state_shape, num_actions)
 
-        if architecture in CONV_ARCHITECTURES:
-            num_actions = action_space_shape[0]
-            config.network.validate_for_env(state_shape, num_actions)
-            in_channels = state_shape[0]
-            model = network_class(in_channels=in_channels, num_actions=num_actions, **kwargs)
-        elif architecture in MLP_ARCHITECTURES:
-            out_features = action_space_shape[0]
+        if isinstance(config.network, (MLPNetConfig, SNNetConfig)):
             input_features = int(math.prod(state_shape))
-            model = network_class(out_features=out_features, input_features=input_features, **kwargs)
-        else:
-            raise ValueError(f"Unknown architecture: {architecture}")
-
-        return model
+            return build_network(
+                config.network,
+                input_features=input_features,
+                num_actions=num_actions,
+            )
+        in_channels = state_shape[0]
+        return build_network(
+            config.network,
+            in_channels=in_channels,
+            num_actions=num_actions,
+        )
 
     def setup(self, config: TrainingConfig, model_dir: Path) -> None:
         import ray
@@ -246,8 +247,7 @@ class AlphaZooBackend(AlgorithmBackend):
         model_dir.mkdir(exist_ok=True)
         torch.save({
             "state_dict": checkpoint_data["model_state_dict"],
-            "architecture": cfg.network.architecture,
-            "network_kwargs": cfg.network.to_kwargs(),
+            "network_config": asdict(cfg.network),
             "obs_space_format": cfg.env.obs_space_format,
             "input_shape": self._state_shape,
             "num_actions": self._action_space_shape[0],

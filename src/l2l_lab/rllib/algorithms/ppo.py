@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
@@ -139,18 +140,15 @@ class PPOTrainer(BaseAlgorithmTrainer):
         config.rl_module(rl_module_spec=multi_spec)
     
     def _get_base_rl_module_spec(self, obs_space, obs_space_format, act_space) -> RLModuleSpec:
-        network_class = self.config.network.get_network_class()
-        adapter_class = self.get_adapter_class(self.config.network.architecture)
-        
+        adapter_class = self.get_adapter_class(self.config.network)
+
         model_config = {
-            "network_class": network_class,
-            "network_kwargs": self.config.network.to_kwargs(),
-            "architecture": self.config.network.architecture,
+            "network_config": asdict(self.config.network),
         }
-        
+
         if adapter_class == ConvDualHeadRLModule:
             model_config["obs_space_format"] = obs_space_format
-        
+
         return RLModuleSpec(
             module_class=adapter_class,
             observation_space=obs_space,

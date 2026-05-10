@@ -1,4 +1,4 @@
-from typing import Any, Dict, Literal, Type, TypedDict
+from typing import Any, Dict, Literal, TypedDict
 
 import gymnasium as gym
 import torch
@@ -8,36 +8,33 @@ from ray.rllib.core.rl_module.torch.torch_rl_module import TorchRLModule
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.torch_utils import FLOAT_MIN
 from ray.rllib.utils.typing import TensorType
-from torch import nn
 
-from l2l_lab.configs.training.NetworkConfig import NetworkConfig
+from l2l_lab.configs.training.network import network_config_from_dict
+from l2l_lab.neural_networks.utils.builders import build_network
 
 
 class ConvDualHeadModelConfig(TypedDict):
-    network_class: Type[nn.Module]
-    network_kwargs: Dict[str, Any]
+    network_config: Dict[str, Any]
     obs_space_format: Literal["channels_first", "channels_last"]
 
 
 class ConvDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
-    
+
     @override(TorchRLModule)
     def setup(self):
         super().setup()
-        
+
         if not isinstance(self.observation_space, gym.spaces.Dict):
             raise ValueError(
                 "ConvDualHeadRLModule requires a Dict observation space with "
                 "'observation' and 'action_mask' keys."
             )
-        
+
         self.obs_space_format = self.model_config.get("obs_space_format")
         inner_obs_space = self.observation_space["observation"]
-        
-        network_class = self.model_config["network_class"]
-        network_kwargs = self.model_config.get("network_kwargs", {})
 
-        # FIXME: this code is a mess and needs to be improved    
+        network_cfg = network_config_from_dict(self.model_config["network_config"])
+
         obs_shape = inner_obs_space.shape
         if self.obs_space_format == "channels_first":
             in_channels, h, w = obs_shape[0], obs_shape[1], obs_shape[2]
@@ -47,12 +44,9 @@ class ConvDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
             raise ValueError(f"Unsupported obs_space_format: {self.obs_space_format}")
 
         num_actions = self.action_space.n
-        NetworkConfig(
-            architecture=network_class.__name__,
-            kwargs=network_kwargs,
-        ).validate_for_env((in_channels, h, w), num_actions)
+        network_cfg.validate_for_env((in_channels, h, w), num_actions)
 
-        self.backbone = network_class(in_channels=in_channels, num_actions=num_actions, **network_kwargs)
+        self.backbone = build_network(network_cfg, in_channels=in_channels, num_actions=num_actions)
         self._initialize_lazy_params(in_channels, h, w)
 
     def _preprocess_obs(self, obs: TensorType) -> TensorType:

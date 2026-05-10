@@ -24,10 +24,13 @@ def load_model_state_dict(model: torch.nn.Module, state_dict: dict[str, Any]) ->
         model.load_state_dict(state_dict, strict=True)
         return
     except RuntimeError as exc:
+        yellow_color_tags = "\033[33m", "\033[0m"
+        start_tag, end_tag = yellow_color_tags
         print(
-            f"\nWARNING: Strict load_state_dict failed — network architecture has "
-            f"changed since this checkpoint was saved. Falling back to "
-            f"non-strict load. Original error: {exc}"
+            f"{start_tag}\n"
+            "WARNING: Strict load_state_dict failed — network architecture has "
+            "changed since this checkpoint was saved. Falling back to "
+            f"non-strict load.{end_tag} Original error: \n{exc}\n"
         )
 
     model.load_state_dict(state_dict, strict=False)

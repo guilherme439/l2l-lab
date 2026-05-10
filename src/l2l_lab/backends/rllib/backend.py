@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from copy import deepcopy
+from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 
@@ -10,9 +11,9 @@ from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from ray.tune.registry import register_env
 
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
-from l2l_lab.configs.training.NetworkConfig import (CONV_ARCHITECTURES,
-                                                    MLP_ARCHITECTURES)
+from l2l_lab.configs.training.network import MLPNetConfig, SNNetConfig
 from l2l_lab.envs.registry import create_env
+from l2l_lab.neural_networks.utils.builders import build_network
 from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
 from l2l_lab.utils.common import check_interval
 
@@ -146,23 +147,22 @@ class RLlibBackend(AlgorithmBackend):
         cp = load_checkpoint_file(checkpoint_dir / "training" / "data.pt")
         cfg = self._config
 
-        architecture = cfg.network.architecture
-        network_class = cfg.network.get_network_class()
-        network_kwargs = cfg.network.to_kwargs()
+        cfg.network.validate_for_env(self._input_shape, self._num_actions)
 
-        if architecture in CONV_ARCHITECTURES:
-            cfg.network.validate_for_env(self._input_shape, self._num_actions)
-            in_channels = self._input_shape[0]
-            backbone = network_class(in_channels=in_channels, num_actions=self._num_actions, **network_kwargs)
-        elif architecture in MLP_ARCHITECTURES:
+        if isinstance(cfg.network, (MLPNetConfig, SNNetConfig)):
             input_features = int(math.prod(self._input_shape))
-            backbone = network_class(
-                out_features=self._num_actions,
+            backbone = build_network(
+                cfg.network,
                 input_features=input_features,
-                **network_kwargs,
+                num_actions=self._num_actions,
             )
         else:
-            raise ValueError(f"Unknown architecture: {architecture}")
+            in_channels = self._input_shape[0]
+            backbone = build_network(
+                cfg.network,
+                in_channels=in_channels,
+                num_actions=self._num_actions,
+            )
 
         load_model_state_dict(backbone, cp["backbone_state_dict"])
         backbone.eval()
@@ -186,8 +186,7 @@ class RLlibBackend(AlgorithmBackend):
         model_dir.mkdir(exist_ok=True)
         torch.save({
             "state_dict": checkpoint_data["backbone_state_dict"],
-            "architecture": cfg.network.architecture,
-            "network_kwargs": cfg.network.to_kwargs(),
+            "network_config": asdict(cfg.network),
             "obs_space_format": cfg.env.obs_space_format,
             "input_shape": self._input_shape,
             "num_actions": self._num_actions,

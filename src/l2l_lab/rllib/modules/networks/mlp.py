@@ -1,5 +1,5 @@
 import math
-from typing import Any, Dict, Type, TypedDict
+from typing import Any, Dict, TypedDict
 
 import gymnasium as gym
 from ray.rllib.core.columns import Columns
@@ -8,38 +8,37 @@ from ray.rllib.core.rl_module.torch.torch_rl_module import TorchRLModule
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.torch_utils import FLOAT_MIN
 from ray.rllib.utils.typing import TensorType
-from torch import nn
+
+from l2l_lab.configs.training.network import network_config_from_dict
+from l2l_lab.neural_networks.utils.builders import build_network
 
 
 class MLPDualHeadModelConfig(TypedDict):
-    network_class: Type[nn.Module]
-    network_kwargs: Dict[str, Any]
+    network_config: Dict[str, Any]
 
 
 class MLPDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
-    
+
     @override(TorchRLModule)
     def setup(self):
         super().setup()
-        
-        network_class = self.model_config["network_class"]
-        network_kwargs = self.model_config.get("network_kwargs", {})
-        
-        out_features = self.action_space.n
 
         if not isinstance(self.observation_space, gym.spaces.Dict):
             raise ValueError(
-                "ConvDualHeadRLModule requires a Dict observation space with "
+                "MLPDualHeadRLModule requires a Dict observation space with "
                 "'observation' and 'action_mask' keys."
             )
 
+        network_cfg = network_config_from_dict(self.model_config["network_config"])
+
+        num_actions = self.action_space.n
         inner_obs_space = self.observation_space["observation"]
         input_features = int(math.prod(inner_obs_space.shape))
 
-        self.backbone = network_class(
-            out_features=out_features,
+        self.backbone = build_network(
+            network_cfg,
             input_features=input_features,
-            **network_kwargs,
+            num_actions=num_actions,
         )
     
     def _forward(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from l2l_lab.agents.agent import Agent
     from l2l_lab.backends.backend_base import AlgorithmBackend
     from l2l_lab.configs.common.EnvConfig import EnvConfig
-    from l2l_lab.configs.training.NetworkConfig import NetworkConfig
+    from l2l_lab.configs.training.network import BaseNetworkConfig
     from l2l_lab.reporting import Reporter
 
 
@@ -27,7 +27,7 @@ class Evaluator:
         eval_config: EvaluationConfig,
         backend: "AlgorithmBackend",
         env_config: "EnvConfig",
-        network_config: "NetworkConfig",
+        network_config: "BaseNetworkConfig",
     ) -> None:
         self.eval_config = eval_config
         self.backend = backend
@@ -108,7 +108,9 @@ class Evaluator:
         name_prefix: str,
     ) -> "Agent":
         is_recurrent = self.network_config.is_recurrent()
-        recurrent_iterations = self.network_config.recurrent_iterations
+        recurrent_iterations = (
+            self.network_config.recurrent_iterations if is_recurrent else 1
+        )
         if agent_type == "policy":
             return PolicyAgent(
                 model,
