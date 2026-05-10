@@ -13,7 +13,7 @@ from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
 from l2l_lab.configs.training.NetworkConfig import (CONV_ARCHITECTURES,
                                                     MLP_ARCHITECTURES)
 from l2l_lab.envs.registry import create_env
-from l2l_lab.utils.checkpoint import load_checkpoint_file
+from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
 from l2l_lab.utils.common import check_interval
 
 if TYPE_CHECKING:
@@ -164,7 +164,7 @@ class RLlibBackend(AlgorithmBackend):
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
 
-        backbone.load_state_dict(cp["backbone_state_dict"])
+        load_model_state_dict(backbone, cp["backbone_state_dict"])
         backbone.eval()
         return backbone
 

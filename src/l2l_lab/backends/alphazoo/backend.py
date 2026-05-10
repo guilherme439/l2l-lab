@@ -16,7 +16,8 @@ from l2l_lab.configs.training.NetworkConfig import CONV_ARCHITECTURES, MLP_ARCHI
 from l2l_lab.envs.registry import create_env
 from l2l_lab.utils.checkpoint import (get_checkpoint_path,
                                       load_checkpoint_data,
-                                      load_checkpoint_file)
+                                      load_checkpoint_file,
+                                      load_model_state_dict)
 from l2l_lab.utils.common import check_interval
 
 if TYPE_CHECKING:
@@ -138,7 +139,7 @@ class AlphaZooBackend(AlgorithmBackend):
         replay_buffer_state = None
         if cp_path and cp_path.exists():
             cp_data_raw = load_checkpoint_file(cp_path)
-            self._model.load_state_dict(cp_data_raw["model_state_dict"])
+            load_model_state_dict(self._model, cp_data_raw["model_state_dict"])
             if backend_cfg.load_optimizer:
                 optimizer_state_dict = cp_data_raw.get("optimizer_state_dict")
             if backend_cfg.load_scheduler:
@@ -221,7 +222,7 @@ class AlphaZooBackend(AlgorithmBackend):
     def get_model_from_checkpoint(self, checkpoint_dir: Path) -> torch.nn.Module:
         cp = load_checkpoint_file(checkpoint_dir / "training" / "checkpoint.pt")
         model = self._build_model(self._config, self._state_shape, self._action_space_shape)
-        model.load_state_dict(cp["model_state_dict"])
+        load_model_state_dict(model, cp["model_state_dict"])
         model.eval()
         return model
 

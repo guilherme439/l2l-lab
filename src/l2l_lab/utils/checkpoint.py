@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import torch
 
@@ -15,6 +15,22 @@ class CheckpointData:
 
 def load_checkpoint_file(path: Path) -> dict:
     return torch.load(path, weights_only=False, map_location="cpu")
+
+
+def load_model_state_dict(model: torch.nn.Module, state_dict: dict[str, Any]) -> None:
+    """Load `state_dict` into `model`, falling back to non-strict on architecture mismatch.
+    """
+    try:
+        model.load_state_dict(state_dict, strict=True)
+        return
+    except RuntimeError as exc:
+        print(
+            f"\nWARNING: Strict load_state_dict failed — network architecture has "
+            f"changed since this checkpoint was saved. Falling back to "
+            f"non-strict load. Original error: {exc}"
+        )
+
+    model.load_state_dict(state_dict, strict=False)
 
 
 def get_checkpoint_dir(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:

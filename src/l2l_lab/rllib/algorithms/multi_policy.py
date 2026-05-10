@@ -9,7 +9,7 @@ from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 
 from l2l_lab.rllib.modules.RandomRLModule import RandomRLModule
-from l2l_lab.utils.checkpoint import load_checkpoint_file
+from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
 
 if TYPE_CHECKING:
     from l2l_lab.configs.training.PolicyConfig import PolicyConfig
@@ -98,6 +98,6 @@ def load_checkpoint_weights_into_policy(algo, policy_name: str, checkpoint_path:
         print(f"Warning: Policy {policy_name} has no backbone attribute")
         return False
     
-    rl_module.backbone.load_state_dict(backbone_state_dict)
+    load_model_state_dict(rl_module.backbone, backbone_state_dict)
     rl_module.eval()
     return True

@@ -22,7 +22,7 @@ from l2l_lab.configs.training.NetworkConfig import (CONV_ARCHITECTURES,
                                                        NetworkConfig)
 from l2l_lab.envs.registry import create_env
 from l2l_lab.reporting.types import GameReport
-from l2l_lab.utils.checkpoint import load_checkpoint_file
+from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
 from l2l_lab.utils.common import clone_observation
 
 MODELS_DIR = Path("models")
@@ -241,6 +241,6 @@ class Tester:
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
 
-        backbone.load_state_dict(checkpoint["state_dict"])
+        load_model_state_dict(backbone, checkpoint["state_dict"])
         backbone.eval()
         return backbone
