@@ -182,6 +182,9 @@ class AlphaZooBackend(AlgorithmBackend):
                     "combined_loss": metrics.get("train/combined_loss"),
                     "learning_rate": metrics.get("train/learning_rate"),
                     "replay_buffer_size": metrics.get("train/replay_buffer_size"),
+                    "cache_hit_ratio": metrics.get("inference/cache_hit_ratio"),
+                    "cycle_size": metrics.get("inference/cycle_size"),
+                    "batch_size": metrics.get("inference/batch_size"),
                 }
                 self._print_step_info(step, public_metrics)
                 if check_interval(step, info_interval):
