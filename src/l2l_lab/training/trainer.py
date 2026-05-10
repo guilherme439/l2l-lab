@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import queue
 import shutil
 import signal
@@ -24,8 +23,6 @@ from l2l_lab.utils.common import check_interval
 from l2l_lab.utils.memory import MemorySampler
 
 MODELS_DIR = Path("models")
-
-logger = logging.getLogger("alphazoo")
 
 
 class Trainer:
@@ -58,7 +55,7 @@ class Trainer:
         if cfg.common.checkpoint_interval <= 0:
             yellow_color_tags = "\033[33m", "\033[0m"
             start, end = yellow_color_tags
-            logger.warning(
+            print(
                 f"{start}\n"
                 "⚠ Checkpointing is disabled - "
                 "'checkpoint_interval' was set to 0 or not set at all ⚠\n"
@@ -84,7 +81,7 @@ class Trainer:
             if model_dir.exists():
                 red_color_tags = "\033[31m", "\033[0m"
                 start, end = red_color_tags
-                logger.info(
+                print(
                     f"{start}\nModel directory {model_dir} already exists.\n"
                     "!! Directory will be cleared before starting a fresh training run !!\n"
                     f" - Press Ctrl+C within 20s to abort.\n\n{end}"
@@ -356,12 +353,10 @@ class Trainer:
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         bar = "=" * 70
         sep = "-" * 70
-        logger.info(
-            "\n%s\n\nNetwork architecture\n%s\n%s\n%s\n"
-            "Total parameters:     %s\n"
-            "Trainable parameters: %s\n%s\n",
-            bar, sep, model, sep,
-            f"{total_params:,}", f"{trainable_params:,}", bar,
+        print(
+            f"\n{bar}\n\nNetwork architecture\n{sep}\n{model}\n{sep}\n"
+            f"Total parameters:     {total_params:,}\n"
+            f"Trainable parameters: {trainable_params:,}\n{bar}\n"
         )
 
     def _collect_weight_metrics(self, step_metrics: Dict[str, Any]) -> None:

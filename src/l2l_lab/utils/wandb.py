@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 from dataclasses import asdict
 from pathlib import Path
@@ -12,8 +11,6 @@ import yaml
 
 from l2l_lab.configs.training.TrainingConfig import TrainingConfig
 from l2l_lab.utils.checkpoint import get_checkpoint_dir
-
-logger = logging.getLogger("alphazoo")
 
 _APPLICATION_CONFIG_PATH = Path("application.yml")
 _RUN_STATE_FILENAME = "run_state.json"
@@ -32,12 +29,12 @@ def init(
         if wandb_settings is None:
             return False
         if not wandb_settings.get("enabled", False):
-            logger.info("wandb: disabled in %s", _APPLICATION_CONFIG_PATH)
+            print(f"wandb: disabled in {_APPLICATION_CONFIG_PATH}")
             return False
 
         api_key = wandb_settings.get("api_key")
         if not api_key or api_key == _API_KEY_PLACEHOLDER:
-            logger.warning("wandb: api_key missing or placeholder in %s; skipping", _APPLICATION_CONFIG_PATH)
+            print(f"WARNING: wandb: api_key missing or placeholder in {_APPLICATION_CONFIG_PATH}; skipping")
             return False
 
         os.environ["WANDB_API_KEY"] = api_key
@@ -62,14 +59,14 @@ def init(
 
         run = _wandb_pkg.init(**init_kwargs)
         if run is None:
-            logger.warning("wandb: init returned None; skipping")
+            print("WARNING: wandb: init returned None; skipping")
             return False
 
         _persist_run_id(model_dir, run.id)
-        logger.info("wandb: run started (id=%s, project=%s)", run.id, wandb_settings.get("project"))
+        print(f"wandb: run started (id={run.id}, project={wandb_settings.get('project')})")
         return True
     except Exception as e:
-        logger.warning("wandb: init failed (%s); training will continue without wandb", e)
+        print(f"WARNING: wandb: init failed ({e}); training will continue without wandb")
         return False
 
 
@@ -80,27 +77,27 @@ def log(metrics: dict[str, Any], step: int) -> None:
             return
         _wandb_pkg.log(flat, step=step)
     except Exception as e:
-        logger.warning("wandb: log failed (%s)", e)
+        print(f"WARNING: wandb: log failed ({e})")
 
 
 def finish() -> None:
     try:
         _wandb_pkg.finish()
     except Exception as e:
-        logger.warning("wandb: finish failed (%s)", e)
+        print(f"WARNING: wandb: finish failed ({e})")
 
 
 def extract_hyperparameters(training_config: TrainingConfig) -> dict[str, Any]:
     try:
         return asdict(training_config)
     except Exception as e:
-        logger.warning("wandb: failed to convert TrainingConfig (%s); using minimal config", e)
+        print(f"WARNING: wandb: failed to convert TrainingConfig ({e}); using minimal config")
         return {"_config_name": training_config.name}
 
 
 def _load_wandb_settings() -> Optional[dict[str, Any]]:
     if not _APPLICATION_CONFIG_PATH.exists():
-        logger.info("wandb: %s not found; wandb disabled", _APPLICATION_CONFIG_PATH)
+        print(f"wandb: {_APPLICATION_CONFIG_PATH} not found; wandb disabled")
         return None
     with open(_APPLICATION_CONFIG_PATH, "r") as f:
         data = yaml.safe_load(f) or {}
@@ -116,7 +113,7 @@ def _read_persisted_run_id(model_dir: Path) -> Optional[str]:
             data = json.load(f)
         return data.get("wandb_run_id")
     except (json.JSONDecodeError, OSError) as e:
-        logger.warning("wandb: failed to read %s (%s); starting fresh run", state_path, e)
+        print(f"WARNING: wandb: failed to read {state_path} ({e}); starting fresh run")
         return None
 
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 import shutil
 from pathlib import Path
@@ -18,8 +17,6 @@ from .markdown import StampedReport, render_report
 from .probe_runner import run_probe_states
 from .probe_states import get_probe_states
 from .types import GameReport
-
-logger = logging.getLogger("alphazoo")
 
 
 class Reporter:
@@ -100,7 +97,7 @@ class Reporter:
 
         csv_path = self._reports_dir / "training.csv"
         self._csv_writer = MetricsCSVWriter(csv_path, resume=self._resume)
-        logger.info("\nReporter enabled: writing to %s", self._reports_dir)
+        print(f"\nReporter enabled: writing to {self._reports_dir}")
 
     def on_step(self, iteration: int, step_metrics: dict[str, Any]) -> None:
         if not self.cfg.enabled or self._csv_writer is None:
@@ -140,7 +137,7 @@ class Reporter:
 
         out_path = self._reports_dir / f"report_{iteration:06d}.md"
         out_path.write_text(md, encoding="utf-8")
-        logger.info("\nReporter snapshot written: %s", out_path)
+        print(f"\nReporter snapshot written: {out_path}")
 
     def _drain_reports(self) -> list[StampedReport]:
         drained = self._pending_reports
@@ -158,7 +155,7 @@ class Reporter:
             current_bytes = self._config_path.read_bytes()
             archived_bytes = archived_latest.read_bytes()
         except OSError as e:
-            logger.warning("Reporter: could not read config for hash diff: %s", e)
+            print(f"WARNING: Reporter: could not read config for hash diff: {e}")
             return
 
         if Reporter._canonical_hash(current_bytes) == Reporter._canonical_hash(archived_bytes):
@@ -167,7 +164,7 @@ class Reporter:
         archive_name = f"config_{self._start_iteration:06d}.yaml"
         archive_path = self._reports_dir / archive_name
         archive_path.write_bytes(current_bytes)
-        logger.info("Reporter: config change detected, archived to %s", archive_path)
+        print(f"Reporter: config change detected, archived to {archive_path}")
 
     def _latest_archived_config(self) -> Path:
         """Return the most recent config snapshot to compare against."""
