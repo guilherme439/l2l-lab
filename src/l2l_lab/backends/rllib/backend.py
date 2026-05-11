@@ -82,6 +82,7 @@ class RLlibBackend(AlgorithmBackend):
     def restore(self, config: TrainingConfig, model_dir: Path, checkpoint_dir: Path) -> int:
         import ray
         if not ray.is_initialized():
+            print()
             ray.init(
                 ignore_reinit_error=True,
                 _system_config={
@@ -91,6 +92,7 @@ class RLlibBackend(AlgorithmBackend):
                 },
                 object_store_memory=2 * 1024 * 1024 * 1024,
             )
+            print()
 
         self._config = config
         self._register_env(config.env)
