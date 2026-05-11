@@ -95,7 +95,7 @@ class Trainer:
             self._log_network_summary()
 
         self._setup_reporter(cfg, start_iteration)
-
+        
         self._wandb_enabled = wandb_helper.init(
             run_name=cfg.name,
             training_config=cfg,

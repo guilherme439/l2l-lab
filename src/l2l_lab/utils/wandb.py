@@ -25,6 +25,7 @@ def init(
     start_iteration: int,
 ) -> bool:
     try:
+        print()
         wandb_settings = _load_wandb_settings()
         if wandb_settings is None:
             return False
