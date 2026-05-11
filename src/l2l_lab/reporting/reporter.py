@@ -97,7 +97,7 @@ class Reporter:
 
         csv_path = self._reports_dir / "training.csv"
         self._csv_writer = MetricsCSVWriter(csv_path, resume=self._resume)
-        print(f"\nReporter enabled: writing to {self._reports_dir}")
+        print(f"Reporter enabled: writing to {self._reports_dir}")
 
     def on_step(self, iteration: int, step_metrics: dict[str, Any]) -> None:
         if not self.cfg.enabled or self._csv_writer is None:
