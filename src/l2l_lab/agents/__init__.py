@@ -7,8 +7,9 @@ __all__ = ["Agent", "PolicyAgent", "RandomAgent"]
 try:
     import alphazoo  # noqa: F401
 
-    from l2l_lab.agents.mcts_agent import MCTSAgent
+    from l2l_lab.agents.alphazero_mcts_agent import AlphaZeroMCTSAgent
+    from l2l_lab.agents.traditional_mcts_agent import TraditionalMCTSAgent
 
-    __all__.append("MCTSAgent")
+    __all__.extend(["AlphaZeroMCTSAgent", "TraditionalMCTSAgent"])
 except ImportError:
     pass

@@ -22,19 +22,19 @@ def test_alphazoo_tictactoe_training_completes() -> None:
         evaluations = trainer.metrics.get("evaluations", {})
         training = evaluations.get("training", {})
         checkpoint = evaluations.get("checkpoint", {})
-        assert "mcts_vs_random" in training
-        assert "policy_vs_mcts" in checkpoint
+        assert "alphazero_mcts_vs_random" in training
+        assert "policy_vs_alphazero_mcts" in checkpoint
         for sub in (training, checkpoint):
             for bucket in sub.values():
                 for position in ("as_p0", "as_p1"):
                     assert len(bucket[position]["wins"]) == len(iterations)
 
         # training_eval fires at iter 5 and 10
-        assert any(w is not None for w in training["mcts_vs_random"]["as_p0"]["wins"])
-        assert any(w is not None for w in training["mcts_vs_random"]["as_p1"]["wins"])
-        # checkpoint_eval with mcts opponent needs a previous checkpoint → fires at iter 10
-        assert any(w is not None for w in checkpoint["policy_vs_mcts"]["as_p0"]["wins"])
-        assert any(w is not None for w in checkpoint["policy_vs_mcts"]["as_p1"]["wins"])
+        assert any(w is not None for w in training["alphazero_mcts_vs_random"]["as_p0"]["wins"])
+        assert any(w is not None for w in training["alphazero_mcts_vs_random"]["as_p1"]["wins"])
+        # checkpoint_eval with alphazero_mcts opponent needs a previous checkpoint → fires at iter 10
+        assert any(w is not None for w in checkpoint["policy_vs_alphazero_mcts"]["as_p0"]["wins"])
+        assert any(w is not None for w in checkpoint["policy_vs_alphazero_mcts"]["as_p1"]["wins"])
 
         cp_root = Path("models") / trainer.config.name / "checkpoints"
         assert cp_root.exists() and any(cp_root.iterdir())
@@ -57,7 +57,7 @@ def test_alphazoo_tictactoe_recurrent_training_completes() -> None:
         training = evaluations.get("training", {})
         checkpoint = evaluations.get("checkpoint", {})
         assert "policy_vs_random" in training
-        assert "mcts_vs_policy" in checkpoint
+        assert "alphazero_mcts_vs_policy" in checkpoint
         for sub in (training, checkpoint):
             for bucket in sub.values():
                 for position in ("as_p0", "as_p1"):
@@ -65,8 +65,8 @@ def test_alphazoo_tictactoe_recurrent_training_completes() -> None:
 
         assert any(w is not None for w in training["policy_vs_random"]["as_p0"]["wins"])
         assert any(w is not None for w in training["policy_vs_random"]["as_p1"]["wins"])
-        assert any(w is not None for w in checkpoint["mcts_vs_policy"]["as_p0"]["wins"])
-        assert any(w is not None for w in checkpoint["mcts_vs_policy"]["as_p1"]["wins"])
+        assert any(w is not None for w in checkpoint["alphazero_mcts_vs_policy"]["as_p0"]["wins"])
+        assert any(w is not None for w in checkpoint["alphazero_mcts_vs_policy"]["as_p1"]["wins"])
 
         cp_root = Path("models") / trainer.config.name / "checkpoints"
         assert cp_root.exists() and any(cp_root.iterdir())

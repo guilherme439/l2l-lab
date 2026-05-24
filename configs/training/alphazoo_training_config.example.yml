@@ -49,6 +49,13 @@ backend:
         replay_buffer:
           window_size: 10000
           leak_chance: 0.001
+          reanalyse:
+            num_workers: 1
+            positions_per_step: 32
+            min_buffer_fill_ratio: 0.5
+            search:
+              simulation:
+                mcts_simulations: 200
         value_loss: "SE"
         policy_loss: "CE"
         learning_method: "samples"
@@ -82,9 +89,11 @@ backend:
 evaluation:
   training_eval:
     - player: policy
+      opponent: random
       games_per_player: 50
       interval: 20
-    - player: mcts
+    - player: alphazero_mcts
+      opponent: random
       games_per_player: 50
       interval: 50
       search_config_path: "configs/search/default.yml"

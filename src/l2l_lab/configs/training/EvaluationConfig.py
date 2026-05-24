@@ -4,20 +4,23 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
-PLAYER_TYPES = ("policy", "mcts")
-OPPONENT_TYPES = ("random", "policy", "mcts")
+PLAYER_TYPES = ("policy", "alphazero_mcts", "traditional_mcts")
+OPPONENT_TYPES = ("random", "policy", "alphazero_mcts", "traditional_mcts")
+TRAINING_EVAL_OPPONENT_TYPES = ("random", "traditional_mcts")
+MCTS_PLAYER_TYPES = ("alphazero_mcts", "traditional_mcts")
 
 
 @dataclass
 class TrainingEvalEntry:
     player: str
+    opponent: str
     games_per_player: int
     interval: int
     search_config_path: Optional[str] = None
 
     @property
     def label(self) -> str:
-        return f"{self.player}_vs_random"
+        return f"{self.player}_vs_{self.opponent}"
 
 
 @dataclass
@@ -42,7 +45,10 @@ class EvaluationConfig:
 
         for entry in self.training_eval:
             self._validate_player(entry.player)
-            self._validate_mcts_has_search_config(entry.player, entry.search_config_path)
+            self._validate_training_eval_opponent(entry.opponent)
+            self._validate_mcts_has_search_config(
+                entry.player, entry.opponent, entry.search_config_path,
+            )
             self._validate_positive(entry.games_per_player, "games_per_player")
             self._validate_positive(entry.interval, "interval")
             labels.append(entry.label)
@@ -50,12 +56,10 @@ class EvaluationConfig:
         for entry in self.checkpoint_eval:
             self._validate_player(entry.player)
             self._validate_opponent(entry.opponent)
-            self._validate_mcts_has_search_config(entry.player, entry.search_config_path)
+            self._validate_mcts_has_search_config(
+                entry.player, entry.opponent, entry.search_config_path,
+            )
             self._validate_positive(entry.games_per_player, "games_per_player")
-            if entry.opponent == "mcts" and entry.search_config_path is None:
-                raise ValueError(
-                    "checkpoint_eval entry with opponent='mcts' requires a search_config_path"
-                )
             labels.append(entry.label)
 
         duplicates = {lbl for lbl in labels if labels.count(lbl) > 1}
@@ -73,6 +77,7 @@ class EvaluationConfig:
         training = [
             TrainingEvalEntry(
                 player=item["player"],
+                opponent=item["opponent"],
                 games_per_player=item["games_per_player"],
                 interval=item["interval"],
                 search_config_path=item.get("search_config_path"),
@@ -101,9 +106,22 @@ class EvaluationConfig:
             raise ValueError(f"Invalid opponent type: {opponent!r}. Must be one of {OPPONENT_TYPES}.")
 
     @staticmethod
-    def _validate_mcts_has_search_config(player: str, search_config_path: Optional[str]) -> None:
-        if player == "mcts" and not search_config_path:
-            raise ValueError("Evaluation entry with player='mcts' requires a search_config_path.")
+    def _validate_training_eval_opponent(opponent: str) -> None:
+        if opponent not in TRAINING_EVAL_OPPONENT_TYPES:
+            raise ValueError(
+                f"Invalid training_eval opponent: {opponent!r}. "
+                f"Must be one of {TRAINING_EVAL_OPPONENT_TYPES} "
+                "(opponents that depend on a previous checkpoint belong in checkpoint_eval)."
+            )
+
+    @staticmethod
+    def _validate_mcts_has_search_config(
+        player: str, opponent: str, search_config_path: Optional[str],
+    ) -> None:
+        if (player in MCTS_PLAYER_TYPES or opponent in MCTS_PLAYER_TYPES) and not search_config_path:
+            raise ValueError(
+                "Evaluation entry with an mcts player or opponent requires a search_config_path."
+            )
 
     @staticmethod
     def _validate_positive(value: int, field_name: str) -> None:

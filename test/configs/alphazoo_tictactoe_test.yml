@@ -69,12 +69,13 @@ backend:
 
 evaluation:
   training_eval:
-    - player: mcts
+    - player: alphazero_mcts
+      opponent: random
       games_per_player: 2
       interval: 5
       search_config_path: "test/configs/search_test.yml"
   checkpoint_eval:
     - player: policy
-      opponent: mcts
+      opponent: alphazero_mcts
       games_per_player: 2
       search_config_path: "test/configs/search_test.yml"

@@ -22,6 +22,8 @@ profiling/*
 
 wandb
 
+CLAUDE.md
+
 # config
 application.yml
 

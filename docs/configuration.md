@@ -4,9 +4,8 @@ All training runs are driven by a single YAML file parsed into `TrainingConfig`.
 
 Full examples live under [`configs/training/*.example.yml`](../configs/training/).
 
-## Table of Contents
+## Quick Links
 
-- [Config Tree](#config-tree)
 - [Top-Level](#top-level)
 - [Common](#common)
 - [Env](#env)
@@ -206,7 +205,7 @@ Used with `backend.name: "rllib"` and `algorithm.name: "impala"`. Inner config: 
 
 ### AlphaZero
 
-Used with `backend.name: "alphazoo"` and `algorithm.name: "alphazero"`. The inner `config:` block is the full external [`AlphaZooConfig`](https://github.com/guilherme439/alphazoo/blob/main/src/alphazoo/configs/alphazoo_config.py) from the alphazoo package — **refer to [alphazoo's configuration reference](https://github.com/guilherme439/alphazoo/blob/main/docs/configuration.md) for every field under `config:`**.
+Used with `backend.name: "alphazoo"` and `algorithm.name: "alphazero"`. The inner `config:` block is the full external [`AlphaZooConfig`](https://github.com/guilherme439/alphazoo/blob/main/src/alphazoo/configs/alphazoo_config.py) from the alphazoo package — **refer to [alphazoo's configuration reference](https://github.com/guilherme439/alphazoo/blob/master/docs/configuration.md) for every field under `config:`**.
 
 Differences from `AlphaZooConfig` standalone:
 
@@ -221,27 +220,28 @@ See [`EvaluationConfig.py`](../src/l2l_lab/configs/training/EvaluationConfig.py)
 
 ### `evaluation.training_eval`
 
-Fires on fixed iteration intervals. Current model plays vs `random`.
+Fires on fixed iteration intervals. Opponents are restricted to baselines that don't depend on a checkpoint.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `player` | `"policy" \| "mcts"` | *(required)* | Whether to evaluate the raw policy or a search-augmented agent. |
+| `player` | `"policy" \| "alphazero_mcts" \| "traditional_mcts"` | *(required)* | Whether to evaluate the raw policy, a network-guided MCTS agent, or a traditional MCTS agent. |
+| `opponent` | `"random" \| "traditional_mcts"` | *(required)* | Baseline opponent. |
 | `games_per_player` | int | *(required)* | Games as P0 *and* as P1 (total = 2× this). |
 | `interval` | int | *(required)* | Fire every N iterations. |
-| `search_config_path` | str \| null | `null` | Required when `player: mcts`. Path to a search YAML. |
+| `search_config_path` | str \| null | `null` | Required when `player` or `opponent` is an mcts kind. Path to a search YAML. |
 
 ### `evaluation.checkpoint_eval`
 
-Fires on every checkpoint save. Current model plays vs `random`, the previous checkpoint's policy, or an MCTS-wrapped version of it.
+Fires on every checkpoint save. Current model plays vs `random`, `traditional_mcts`, the previous checkpoint's policy, or a network-guided MCTS wrapping the previous checkpoint.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `player` | `"policy" \| "mcts"` | *(required)* | See above. |
-| `opponent` | `"random" \| "policy" \| "mcts"` | *(required)* | Opponent type. `policy`/`mcts` use the most recent saved checkpoint. |
+| `player` | `"policy" \| "alphazero_mcts" \| "traditional_mcts"` | *(required)* | See above. |
+| `opponent` | `"random" \| "policy" \| "alphazero_mcts" \| "traditional_mcts"` | *(required)* | Opponent type. `policy` and `alphazero_mcts` use the most recent saved checkpoint. |
 | `games_per_player` | int | *(required)* | Games as P0 *and* as P1. |
-| `search_config_path` | str \| null | `null` | Required when `player: mcts` or `opponent: mcts`. |
+| `search_config_path` | str \| null | `null` | Required when `player` or `opponent` is an mcts kind. |
 
-Labels are auto-derived from `{player}_vs_{opponent}` (or `{player}_vs_random` for training entries). Duplicate labels across the two lists are a validation error.
+Labels are auto-derived from `{player}_vs_{opponent}`. Duplicate labels across the two lists are a validation error.
 
 ---
 

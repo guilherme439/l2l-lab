@@ -12,11 +12,12 @@ import torch
 from l2l_lab.agents import Agent, PolicyAgent, RandomAgent
 from l2l_lab.configs.common.EnvConfig import EnvConfig
 from l2l_lab.configs.testing.agents.AgentConfig import AgentConfig
-from l2l_lab.configs.testing.agents.MCTSAgentConfig import MCTSAgentConfig
+from l2l_lab.configs.testing.agents.AlphaZeroMCTSAgentConfig import AlphaZeroMCTSAgentConfig
 from l2l_lab.configs.testing.agents.PolicyAgentConfig import \
     PolicyAgentConfig
 from l2l_lab.configs.testing.agents.RandomAgentConfig import \
     RandomAgentConfig
+from l2l_lab.configs.testing.agents.TraditionalMCTSAgentConfig import TraditionalMCTSAgentConfig
 from l2l_lab.configs.testing.TestingConfig import TestingConfig
 from l2l_lab.configs.training.network import (MLPNetConfig, SNNetConfig,
                                                 network_config_from_dict)
@@ -202,21 +203,32 @@ class Tester:
             label = f"{agent_config.model_name}@{agent_config.checkpoint}"
             return PolicyAgent(backbone, self.config.env.obs_space_format, name=label)
 
-        if isinstance(agent_config, MCTSAgentConfig):
-            from l2l_lab.agents import MCTSAgent
+        if isinstance(agent_config, AlphaZeroMCTSAgentConfig):
+            from l2l_lab.agents import AlphaZeroMCTSAgent
             from l2l_lab.utils.search import load_search_config
 
             cp_path = self._get_checkpoint_path(agent_config.model_name, agent_config.checkpoint)
             checkpoint = load_checkpoint_file(cp_path)
             backbone = self._create_backbone(checkpoint)
             search_config = load_search_config(agent_config.search_config_path)
-            label = f"mcts[{agent_config.model_name}@{agent_config.checkpoint}]"
-            return MCTSAgent(
+            label = f"alphazero_mcts[{agent_config.model_name}@{agent_config.checkpoint}]"
+            return AlphaZeroMCTSAgent(
                 model=backbone,
                 is_recurrent=agent_config.is_recurrent,
                 search_config=search_config,
                 obs_space_format=self.config.env.obs_space_format,
                 name=label,
+            )
+
+        if isinstance(agent_config, TraditionalMCTSAgentConfig):
+            from l2l_lab.agents import TraditionalMCTSAgent
+            from l2l_lab.utils.search import load_search_config
+
+            search_config = load_search_config(agent_config.search_config_path)
+            return TraditionalMCTSAgent(
+                search_config=search_config,
+                obs_space_format=self.config.env.obs_space_format,
+                name="traditional_mcts",
             )
 
         raise ValueError(f"Unknown agent config type: {type(agent_config)}")

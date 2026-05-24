@@ -57,7 +57,7 @@ class Evaluator:
                 results[entry.label] = None
                 continue
             player = self._build_player_agent(entry)
-            opponent = RandomAgent()
+            opponent = self._build_baseline_opponent(entry.opponent, entry.search_config_path)
             results[entry.label] = self._play_balanced(
                 player, opponent, entry.games_per_player,
                 iteration=iteration, label=entry.label,
@@ -72,7 +72,7 @@ class Evaluator:
     ) -> Dict[str, Optional[GameResults]]:
         results: Dict[str, Optional[GameResults]] = {}
         for entry in self.eval_config.checkpoint_eval:
-            needs_previous = entry.opponent in ("policy", "mcts")
+            needs_previous = entry.opponent in ("policy", "alphazero_mcts")
             if needs_previous and previous_checkpoint is None:
                 results[entry.label] = None
                 continue
@@ -86,6 +86,8 @@ class Evaluator:
         return results
 
     def _build_player_agent(self, entry: EvalEntry) -> "Agent":
+        if entry.player == "traditional_mcts":
+            return self._build_traditional_mcts_agent(entry.search_config_path, name="current_traditional_mcts")
         model = self.backend.get_eval_model()
         return self._wrap_model(model, entry.player, entry.search_config_path, name_prefix="current")
 
@@ -94,11 +96,33 @@ class Evaluator:
         entry: CheckpointEvalEntry,
         previous_checkpoint: Optional[Path],
     ) -> "Agent":
-        if entry.opponent == "random":
-            return RandomAgent()
+        if entry.opponent in ("random", "traditional_mcts"):
+            return self._build_baseline_opponent(entry.opponent, entry.search_config_path)
         assert previous_checkpoint is not None
         model = self.backend.get_model_from_checkpoint(previous_checkpoint)
         return self._wrap_model(model, entry.opponent, entry.search_config_path, name_prefix="prev")
+
+    def _build_baseline_opponent(
+        self, opponent_type: str, search_config_path: Optional[str],
+    ) -> "Agent":
+        if opponent_type == "random":
+            return RandomAgent()
+        if opponent_type == "traditional_mcts":
+            return self._build_traditional_mcts_agent(search_config_path, name="traditional_mcts")
+        raise ValueError(f"Unsupported baseline opponent type: {opponent_type!r}")
+
+    def _build_traditional_mcts_agent(
+        self, search_config_path: Optional[str], name: str,
+    ) -> "Agent":
+        from l2l_lab.agents import TraditionalMCTSAgent
+        from l2l_lab.utils.search import load_search_config
+
+        search_config = load_search_config(search_config_path)
+        return TraditionalMCTSAgent(
+            search_config=search_config,
+            obs_space_format=self.env_config.obs_space_format,
+            name=name,
+        )
 
     def _wrap_model(
         self,
@@ -119,18 +143,18 @@ class Evaluator:
                 recurrent_iterations=recurrent_iterations,
                 name=f"{name_prefix}_policy",
             )
-        if agent_type == "mcts":
-            from l2l_lab.agents import MCTSAgent
+        if agent_type == "alphazero_mcts":
+            from l2l_lab.agents import AlphaZeroMCTSAgent
             from l2l_lab.utils.search import load_search_config
 
             search_config = load_search_config(search_config_path)
-            return MCTSAgent(
+            return AlphaZeroMCTSAgent(
                 model=model,
                 is_recurrent=is_recurrent,
                 recurrent_iterations=recurrent_iterations,
                 search_config=search_config,
                 obs_space_format=self.env_config.obs_space_format,
-                name=f"{name_prefix}_mcts",
+                name=f"{name_prefix}_alphazero_mcts",
             )
         raise ValueError(f"Unsupported agent type for eval: {agent_type!r}")
 

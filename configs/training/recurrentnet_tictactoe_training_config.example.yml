@@ -83,6 +83,7 @@ backend:
 evaluation:
   training_eval:
     - player: policy
+      opponent: random
       games_per_player: 50
       interval: 20
   checkpoint_eval:

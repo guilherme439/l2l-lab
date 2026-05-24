@@ -79,10 +79,11 @@ RLlib adapters in `rllib/modules/networks/` wrap these as `RLModule` instances.
 
 - `RandomAgent` — random valid action
 - `PolicyAgent` — wraps a `torch.nn.Module`, runs inference with action masking. Constructor takes `obs_space_format` so it can build the right obs-to-state conversion.
-- `MCTSAgent` (optional — only available when `alphazoo` is installed) — runs alphazoo's MCTS on top of a trained model. Each `choose_action` call runs a fresh search tree via `alphazoo.utils.select_action_with_mcts_for`. Configured via `MCTSAgentConfig` with:
+- `AlphaZeroMCTSAgent` (optional — only available when `alphazoo` is installed) — runs alphazoo's network-guided MCTS on top of a trained model. Each `choose_action` call runs a fresh search tree via `alphazoo.utils.select_action_with_alphazero_mcts`. Configured via `AlphaZeroMCTSAgentConfig` with:
   - `model_name`, `checkpoint` — same shape as `PolicyAgentConfig`
   - `is_recurrent` — whether the backbone is an `AlphaZooRecurrentNet`
   - `search_config_path` — path to a YAML understood by `alphazoo.SearchConfig.from_yaml`
+- `TraditionalMCTSAgent` (optional — only available when `alphazoo` is installed) — runs alphazoo's traditional MCTS (uniform priors, random rollouts to terminal — no neural network). Each `choose_action` call runs a fresh search tree via `alphazoo.utils.select_action_with_traditional_mcts`. Configured via `TraditionalMCTSAgentConfig` with only `search_config_path`.
 
   See [`configs/testing/testing_mcts_config.example.yml`](../configs/testing/testing_mcts_config.example.yml) and [`configs/search/default.yml`](../configs/search/default.yml) for an example.
 
@@ -97,10 +98,10 @@ All environments support action masking.
 ### Evaluation (`l2l_lab.training.evaluator`, `l2l_lab.configs.training.EvaluationConfig`)
 
 `EvaluationConfig` holds two lists of eval entries:
-- `training_eval` — fires every `interval` iterations during training; opponent is always `random`.
-- `checkpoint_eval` — fires at every checkpoint save; can pit the current model against `random`, the previous checkpoint (`opponent: policy`/`mcts`).
+- `training_eval` — fires every `interval` iterations during training. Allowed opponents are baselines that don't depend on a checkpoint: `random` or `traditional_mcts`.
+- `checkpoint_eval` — fires at every checkpoint save. Opponent may be `random`, `traditional_mcts`, or the previous checkpoint (`opponent: policy`/`alphazero_mcts`).
 
-Each entry declares a `player` (`policy` or `mcts`), a `games_per_player` count (games played with the player as p0 *and* as p1 — total 2N), and optionally a `search_config_path` (required for `mcts` entries).
+Each entry declares a `player` (`policy`, `alphazero_mcts`, or `traditional_mcts`), an `opponent`, a `games_per_player` count (games played with the player as p0 *and* as p1 — total 2N), and optionally a `search_config_path` (required whenever player or opponent is an mcts kind).
 
 `Evaluator` builds the player/opponent agents from the backend's `get_eval_model()` / `get_model_from_checkpoint()`, drives `Tester.play_games` twice per entry (to alternate positions), and aggregates into a `GameResults`. Results are stored under `metrics["evaluations"][label]` keyed by the auto-derived label (`{player}_vs_{opponent}`). Duplicate labels across both lists raise a config validation error.
 
