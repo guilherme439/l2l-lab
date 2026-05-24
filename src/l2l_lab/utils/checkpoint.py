@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import torch
+
+from l2l_lab.utils.common import find_paths_with_iteration_past
+
+_CHECKPOINT_DIR_PATTERN = re.compile(r"^(\d+)$")
 
 
 @dataclass
@@ -97,6 +103,36 @@ def load_checkpoint_data(model_dir: Path, iteration: Optional[int] = None) -> Op
             metrics=cp_data.get("metrics", {}),
         )
     return None
+
+
+def list_checkpoint_iterations_past(model_dir: Path, iteration: int) -> list[int]:
+    """Return iteration numbers of checkpoint directories with iter > `iteration`, sorted ascending."""
+    matches = find_paths_with_iteration_past(
+        model_dir / "checkpoints", _CHECKPOINT_DIR_PATTERN, iteration,
+    )
+    return sorted(it for _, it in matches)
+
+
+def delete_checkpoint_dirs_past(model_dir: Path, iteration: int) -> None:
+    """Remove every ``models/<name>/checkpoints/<N>/`` directory with N > `iteration`."""
+    matches = find_paths_with_iteration_past(
+        model_dir / "checkpoints", _CHECKPOINT_DIR_PATTERN, iteration,
+    )
+    for path, _ in matches:
+        if path.is_dir():
+            shutil.rmtree(path)
+
+
+def is_rewind(model_dir: Path, start_iteration: int) -> bool:
+    """True when `start_iteration` falls behind the highest checkpoint on disk."""
+    latest_dir = get_latest_checkpoint_dir(model_dir)
+    if latest_dir is None:
+        return False
+    try:
+        latest_iter = int(latest_dir.name)
+    except ValueError:
+        return False
+    return start_iteration < latest_iter
 
 
 def trim_metrics_to_iteration(metrics: Dict[str, List], target_iteration: int) -> Dict[str, List]:

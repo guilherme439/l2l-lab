@@ -79,7 +79,7 @@ class RLlibBackend(AlgorithmBackend):
         self.algo_trainer.algo = self.algo
         print("\n✓ Algorithm built successfully!")
 
-    def restore(self, config: TrainingConfig, model_dir: Path, checkpoint_dir: Path) -> int:
+    def restore(self, config: TrainingConfig, model_dir: Path) -> int:
         import ray
         if not ray.is_initialized():
             print()

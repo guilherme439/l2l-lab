@@ -16,6 +16,25 @@ class MetricsCSVWriter:
     a one-time warning and are dropped; missing keys yield blank cells.
     """
 
+    @classmethod
+    def truncate_to_iteration(cls, path: Path, max_iteration: int) -> None:
+        """Rewrite the CSV at `path` keeping only rows whose `iteration` is <= `max_iteration`."""
+        if not path.exists():
+            return
+        with open(path, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+            all_rows = list(reader)
+
+        kept_rows = [row for row in all_rows if int(row.get("iteration", 0)) <= max_iteration]
+        if len(kept_rows) == len(all_rows):
+            return
+
+        with open(path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(kept_rows)
+
     def __init__(self, path: Path, resume: bool) -> None:
         self._path = path
         self._header: Optional[list[str]] = None

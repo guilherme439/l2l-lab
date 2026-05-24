@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 import math
 
 import torch
-from alphazoo import AlphaZooRecurrentNet
+from alphazoo import AlphaZooRecurrentNet, AlphaZooConfig
 from gymnasium.spaces.utils import flatdim
 
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
@@ -96,7 +96,7 @@ class AlphaZooBackend(AlgorithmBackend):
 
         game = make_wrapper(env, env_config.obs_space_format)
 
-        az_config = config.backend.algorithm.config
+        az_config: AlphaZooConfig = config.backend.algorithm.config
         az_config.data.observation_format = env_config.obs_space_format
         az_config.data.network_input_format = "channels_first"
 
@@ -108,7 +108,7 @@ class AlphaZooBackend(AlgorithmBackend):
 
         print(f"\n✓ AlphaZoo instance created successfully!")
 
-    def restore(self, config: TrainingConfig, model_dir: Path, checkpoint_dir: Path):
+    def restore(self, config: TrainingConfig, model_dir: Path):
         import ray
         from alphazoo import AlphaZoo
 
@@ -153,7 +153,7 @@ class AlphaZooBackend(AlgorithmBackend):
         else:
             print("No checkpoint found. Starting fresh.")
 
-        az_config = backend_cfg.algorithm.config
+        az_config: AlphaZooConfig = backend_cfg.algorithm.config
         az_config.data.observation_format = env_config.obs_space_format
         az_config.data.network_input_format = "channels_first"
 

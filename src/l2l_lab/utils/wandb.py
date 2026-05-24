@@ -10,7 +10,6 @@ import wandb as _wandb_pkg
 import yaml
 
 from l2l_lab.configs.training.TrainingConfig import TrainingConfig
-from l2l_lab.utils.checkpoint import get_checkpoint_dir
 
 _APPLICATION_CONFIG_PATH = Path("application.yml")
 _RUN_STATE_FILENAME = "run_state.json"
@@ -22,7 +21,7 @@ def init(
     training_config: TrainingConfig,
     model_dir: Path,
     resume: bool,
-    start_iteration: int,
+    is_rewind: bool,
 ) -> bool:
     try:
         print()
@@ -54,7 +53,7 @@ def init(
             "config": config_dict,
             "tags": wandb_settings.get("tags") or [],
         }
-        if resume and run_id is not None and not _is_rewind(model_dir, start_iteration):
+        if resume and run_id is not None and not is_rewind:
             init_kwargs["id"] = run_id
             init_kwargs["resume"] = "allow"
 
@@ -130,17 +129,6 @@ def _persist_run_id(model_dir: Path, run_id: str) -> None:
     state["wandb_run_id"] = run_id
     with open(state_path, "w") as f:
         json.dump(state, f, indent=2)
-
-
-def _is_rewind(model_dir: Path, start_iteration: int) -> bool:
-    latest_dir = get_checkpoint_dir(model_dir)
-    if latest_dir is None:
-        return False
-    try:
-        latest_iter = int(latest_dir.name)
-    except ValueError:
-        return False
-    return start_iteration < latest_iter
 
 
 def _flatten(metrics: dict[str, Any], prefix: str = "") -> dict[str, Any]:

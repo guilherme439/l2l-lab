@@ -7,6 +7,8 @@ from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
 
+from l2l_lab.utils.checkpoint import delete_checkpoint_dirs_past
+
 if TYPE_CHECKING:
     import torch
 
@@ -36,20 +38,6 @@ class AlgorithmBackend(ABC):
         if self._training_thread is not None:
             self._training_thread.join(timeout=timeout)
 
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        ...
-
-    @abstractmethod
-    def setup(self, config: TrainingConfig, model_dir: Path) -> None:
-        ...
-
-    @abstractmethod
-    def restore(self, config: TrainingConfig, model_dir: Path, checkpoint_dir: Path) -> Tuple[int, Optional[CheckpointData]]:
-        """Restore from checkpoint. Return (start_iteration, checkpoint_data)."""
-        ...
-
     def start_training(self, start_iteration: int, total_iterations: int) -> None:
         """Launch `_train` in a background thread."""
         self._stop_event.clear()
@@ -60,11 +48,19 @@ class AlgorithmBackend(ABC):
         )
         self._training_thread.start()
 
-    @abstractmethod
-    def _train(self, start_iteration: int, total_iterations: int) -> None:
-        """Run the training loop on the training thread. Push StepResult to
-        `step_queue` after each step; push None when done."""
-        ...
+    def delete_checkpoints_past(self, model_dir: Path, iteration: int) -> None:
+        """Remove every checkpoint on disk whose iteration is greater than `iteration`."""
+        delete_checkpoint_dirs_past(model_dir, iteration)
+
+    def get_reporter_csv_keys(self) -> List[str]:
+        """Return the step_metrics keys this backend wants written to the
+        per-iteration CSV. Default is no CSV columns; override per backend."""
+        return []
+
+    def on_checkpoint_saved(self, model_dir: Path, iteration: int) -> None:
+        """Post-save hook. Called by `Trainer` right after a checkpoint lands
+        on disk. Default is a no-op."""
+        pass
 
     def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
         """Per-step log. Called on the training thread at the end of each step.
@@ -76,15 +72,19 @@ class AlgorithmBackend(ABC):
         `info_interval` steps. Default is a no-op."""
         pass
 
-    def on_checkpoint_saved(self, model_dir: Path, iteration: int) -> None:
-        """Post-save hook. Called by `Trainer` right after a checkpoint lands
-        on disk. Default is a no-op."""
-        pass
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        ...
 
-    def get_reporter_csv_keys(self) -> List[str]:
-        """Return the step_metrics keys this backend wants written to the
-        per-iteration CSV. Default is no CSV columns; override per backend."""
-        return []
+    @abstractmethod
+    def setup(self, config: TrainingConfig, model_dir: Path) -> None:
+        ...
+
+    @abstractmethod
+    def restore(self, config: TrainingConfig, model_dir: Path) -> Tuple[int, Optional[CheckpointData]]:
+        """Restore from checkpoint. Return (start_iteration, checkpoint_data)."""
+        ...
 
     @abstractmethod
     def get_eval_model(self) -> "torch.nn.Module":
@@ -112,4 +112,10 @@ class AlgorithmBackend(ABC):
 
     @abstractmethod
     def shutdown(self) -> None:
+        ...
+
+    @abstractmethod
+    def _train(self, start_iteration: int, total_iterations: int) -> None:
+        """Run the training loop on the training thread. Push StepResult to
+        `step_queue` after each step; push None when done."""
         ...

@@ -10,13 +10,16 @@ import yaml
 
 from l2l_lab.configs.common.EnvConfig import EnvConfig
 from l2l_lab.configs.training.ReportingConfig import ReportingConfig
-from l2l_lab.utils.common import check_interval
+from l2l_lab.utils.common import check_interval, find_paths_with_iteration_past
 
 from .csv_writer import MetricsCSVWriter
 from .markdown import StampedReport, render_report
 from .probe_runner import run_probe_states
 from .probe_states import get_probe_states
 from .types import GameReport
+
+_REPORT_SNAPSHOT_PATTERN = re.compile(r"^report_(\d{6})\.md$")
+_ARCHIVED_CONFIG_PATTERN = re.compile(r"^config_(\d{6})\.yaml$")
 
 
 class Reporter:
@@ -54,6 +57,17 @@ class Reporter:
         self._metrics_getter: Optional[Callable[[], dict[str, Any]]] = None
         self._model_getter: Optional[Callable[[], Any]] = None
         self._start_iteration: int = 0
+
+    @classmethod
+    def clear_artifacts_past(cls, reports_dir: Path, iteration: int) -> None:
+        """Remove report snapshots, archived config snapshots, and CSV rows past `iteration`."""
+        if not reports_dir.exists():
+            return
+        for path, _ in find_paths_with_iteration_past(reports_dir, _REPORT_SNAPSHOT_PATTERN, iteration):
+            path.unlink()
+        for path, _ in find_paths_with_iteration_past(reports_dir, _ARCHIVED_CONFIG_PATTERN, iteration):
+            path.unlink()
+        MetricsCSVWriter.truncate_to_iteration(reports_dir / "training.csv", iteration)
 
     @property
     def enabled(self) -> bool:
@@ -168,10 +182,9 @@ class Reporter:
 
     def _latest_archived_config(self) -> Path:
         """Return the most recent config snapshot to compare against."""
-        iter_archives = []
-        pattern = re.compile(r"^config_(\d{6})\.yaml$")
+        iter_archives: list[tuple[int, Path]] = []
         for path in self._reports_dir.iterdir():
-            m = pattern.match(path.name)
+            m = _ARCHIVED_CONFIG_PATTERN.match(path.name)
             if m:
                 iter_archives.append((int(m.group(1)), path))
         if iter_archives:

@@ -6,7 +6,7 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 
@@ -18,7 +18,7 @@ from l2l_lab.testing.tester import GameResults
 from l2l_lab.training.evaluator import Evaluator
 from l2l_lab.utils import graphs
 from l2l_lab.utils import wandb as wandb_helper
-from l2l_lab.utils.checkpoint import get_latest_checkpoint_dir
+from l2l_lab.utils.checkpoint import is_rewind, list_checkpoint_iterations_past
 from l2l_lab.utils.common import check_interval
 from l2l_lab.utils.memory import MemorySampler
 
@@ -38,6 +38,7 @@ class Trainer:
         self._early_stop_requested = False
         self._memory_sampler: Optional[MemorySampler] = None
         self._wandb_enabled: bool = False
+        self._is_rewind: bool = False
 
     def train(self) -> None:
         cfg = self.config
@@ -71,23 +72,16 @@ class Trainer:
 
         if backend_cfg.continue_training:
             self._setup_model_dir(model_dir)
-            start_iteration, cp_data = self.backend.restore(
-                cfg, self.current_model_dir, self.current_model_dir
-            )
+            start_iteration, cp_data = self.backend.restore(cfg, self.current_model_dir)
+            self._is_rewind = is_rewind(self.current_model_dir, start_iteration)
+            if self._is_rewind:
+                self._clear_rewinded_iterations(start_iteration, wait_seconds=30)
             if cp_data and cp_data.metrics:
                 self._load_metrics(cp_data.metrics)
                 print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint\n")
         else:
             if model_dir.exists():
-                red_color_tags = "\033[31m", "\033[0m"
-                start, end = red_color_tags
-                print(
-                    f"{start}\nModel directory {model_dir} already exists.\n"
-                    "!! Directory will be cleared before starting a fresh training run !!\n"
-                    f" - Press Ctrl+C within 20s to abort.\n\n{end}"
-                )
-                time.sleep(20)
-                shutil.rmtree(model_dir)
+                self._clear_existing_model_dir(model_dir, wait_seconds=30)
 
             self._setup_model_dir(model_dir)
             start_iteration = 0
@@ -95,13 +89,13 @@ class Trainer:
             self._log_network_summary()
 
         self._setup_reporter(cfg, start_iteration)
-        
+
         self._wandb_enabled = wandb_helper.init(
             run_name=cfg.name,
             training_config=cfg,
             model_dir=self.current_model_dir,
             resume=backend_cfg.continue_training,
-            start_iteration=start_iteration,
+            is_rewind=self._is_rewind,
         )
 
         previous_checkpoint: Optional[Path] = None
@@ -123,7 +117,6 @@ class Trainer:
 
         self._early_stop_requested = False
         original_sigint = signal.signal(signal.SIGINT, self._handle_sigint)
-
         try:
             while True:
                 try:
@@ -217,9 +210,6 @@ class Trainer:
 
         print(f"\n  [Checkpoint saved: iter {iteration}]\n")
         return checkpoint_dir
-
-    def get_latest_checkpoint(self, model_dir: Path) -> Optional[Path]:
-        return get_latest_checkpoint_dir(model_dir)
 
     def plot_progress(self, plot_memory: bool = True) -> None:
         if not self.metrics.get("iteration"):
@@ -402,6 +392,34 @@ class Trainer:
         step_metrics["evaluations"] = eval_buckets
         return "\n".join(formatted)
     
+    def _clear_existing_model_dir(self, model_dir: Path, wait_seconds: int) -> None:
+        red_color_tags = "\033[31m", "\033[0m"
+        start, end = red_color_tags
+        print(
+            f"{start}\nModel directory {model_dir} already exists.\n"
+            "!! Directory will be cleared before starting a fresh training run !!\n"
+            f" - Press Ctrl+C within {wait_seconds}s to abort.\n\n{end}"
+        )
+        time.sleep(wait_seconds)
+        shutil.rmtree(model_dir)
+
+    def _clear_rewinded_iterations(self, start_iteration: int, wait_seconds: int) -> None:
+        stale_iters = list_checkpoint_iterations_past(self.current_model_dir, start_iteration)
+        reports_dir = self.current_model_dir / "reports"
+
+        red_color_tags = "\033[31m", "\033[0m"
+        start, end = red_color_tags
+        print(
+            f"{start}\nRewind requested to iteration {start_iteration} "
+            f"while later iterations exist on disk: {stale_iters}.\n"
+            f"!! Checkpoints past {start_iteration} and any report data will be removed !!\n"
+            f" - Press Ctrl+C within {wait_seconds}s to abort.\n\n{end}"
+        )
+        time.sleep(wait_seconds)
+
+        self.backend.delete_checkpoints_past(self.current_model_dir, start_iteration)
+        Reporter.clear_artifacts_past(reports_dir, start_iteration)
+
     def _handle_sigint(self, signum, frame):
         if self._early_stop_requested:
             print("\nForce stopping...")

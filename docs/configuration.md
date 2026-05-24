@@ -136,7 +136,7 @@ Shared fields on every backend:
 |---|---|---|---|
 | `name` | `"rllib" \| "alphazoo"` | *(required)* | Dispatch key — selects which backend class is used. |
 | `continue_training` | bool | `false` | When `true`, the run resumes from an existing checkpoint at `models/<name>/` instead of starting fresh. |
-| `continue_from_iteration` | int \| null | `null` | Specific iteration to resume from. `null` = latest checkpoint. |
+| `continue_from_iteration` | int \| null | `null` | Specific iteration to resume from. `null` = latest checkpoint. Setting this below the latest existing checkpoint triggers a rewind: checkpoint dirs, report snapshots, archived configs, and CSV rows past this iteration are deleted (after a 30s Ctrl+C grace period) before training resumes. |
 | `algorithm` | object | *(required)* | See [Algorithm](#algorithm) below. Its shape must match the backend. |
 
 ### Rllib Backend
