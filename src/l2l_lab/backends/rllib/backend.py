@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import math
+import io
 from copy import deepcopy
-from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 
@@ -11,15 +10,28 @@ from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from ray.tune.registry import register_env
 
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
-from l2l_lab.configs.training.network import MLPNetConfig, SNNetConfig
+from l2l_lab.backends.checkpoint_writer import CheckpointWriter
 from l2l_lab.envs.registry import create_env
-from l2l_lab.neural_networks.utils.builders import build_network
 from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
 from l2l_lab.utils.common import check_interval
 
 if TYPE_CHECKING:
     from l2l_lab.configs.training.TrainingConfig import TrainingConfig
     from l2l_lab.rllib.algorithms.base import BaseAlgorithmTrainer
+
+
+class _CheckpointWriter(CheckpointWriter):
+
+    def __init__(self, backend: "RLlibBackend") -> None:
+        self._backend = backend
+        super().__init__()
+
+    def write(self, snapshot: Dict[str, Any], path: Path) -> None:
+        model_dir = path / "model"
+        model_dir.mkdir(exist_ok=True)
+        torch.save(snapshot["model_state_dict"], model_dir / "weights.cp")
+        (model_dir / "base_class.pkl").write_bytes(snapshot["network_template_bytes"])
+        self._backend.algo.save_to_path(str((path / "algo").absolute()))
 
 
 class RLlibBackend(AlgorithmBackend):
@@ -31,6 +43,8 @@ class RLlibBackend(AlgorithmBackend):
         self._config: Optional[TrainingConfig] = None
         self._input_shape: Optional[tuple] = None
         self._num_actions: Optional[int] = None
+        self._network_template_bytes: Optional[bytes] = None
+        self._writer = _CheckpointWriter(self)
 
     @property
     def name(self) -> str:
@@ -77,6 +91,7 @@ class RLlibBackend(AlgorithmBackend):
         print(f"\nBuilding {config.backend.algorithm.name.upper()} algorithm...\n")
         self.algo = rllib_config.build_algo()
         self.algo_trainer.algo = self.algo
+        self._network_template_bytes = self._pickle_network(self._get_backbone())
         print("\n✓ Algorithm built successfully!")
 
     def restore(self, config: TrainingConfig, model_dir: Path) -> int:
@@ -116,11 +131,12 @@ class RLlibBackend(AlgorithmBackend):
             config.env.name, config.env.obs_space_format, obs_space, act_space
         )
 
-        start_iteration, cp_data = self.algo_trainer.load_checkpoint_for_continue(
+        start_iteration = self.algo_trainer.load_checkpoint_for_continue(
             rllib_config, model_dir, target_iteration=config.backend.continue_from_iteration
         )
         self.algo = self.algo_trainer.algo
-        return start_iteration, cp_data
+        self._network_template_bytes = self._pickle_network(self._get_backbone())
+        return start_iteration
 
     def _train(self, start_iteration: int, total_iterations: int) -> None:
         info_interval = self._config.common.info_interval
@@ -135,7 +151,19 @@ class RLlibBackend(AlgorithmBackend):
                 self._print_step_info(step, metrics)
                 if check_interval(step, info_interval):
                     self._print_training_info(step, metrics)
-                self.step_queue.put(StepResult(iteration=step, metrics=metrics))
+
+                checkpoint_path: Optional[Path] = None
+                if check_interval(step, self._checkpoint_interval):
+                    snapshot = self._capture_snapshot()
+                    checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(step)
+                    checkpoint_path.mkdir(exist_ok=True)
+                    self._writer.enqueue(snapshot, checkpoint_path)
+
+                self.step_queue.put(StepResult(
+                    iteration=step,
+                    metrics=metrics,
+                    checkpoint_path=checkpoint_path,
+                ))
         finally:
             self.step_queue.put(None)
 
@@ -146,65 +174,31 @@ class RLlibBackend(AlgorithmBackend):
         return backbone
 
     def get_model_from_checkpoint(self, checkpoint_dir: Path) -> torch.nn.Module:
-        cp = load_checkpoint_file(checkpoint_dir / "training" / "data.pt")
-        cfg = self._config
-
-        cfg.network.validate_for_env(self._input_shape, self._num_actions)
-
-        if isinstance(cfg.network, (MLPNetConfig, SNNetConfig)):
-            input_features = int(math.prod(self._input_shape))
-            backbone = build_network(
-                cfg.network,
-                input_features=input_features,
-                num_actions=self._num_actions,
-            )
-        else:
-            in_channels = self._input_shape[0]
-            backbone = build_network(
-                cfg.network,
-                in_channels=in_channels,
-                num_actions=self._num_actions,
-            )
-
-        load_model_state_dict(backbone, cp["backbone_state_dict"])
+        model_dir = checkpoint_dir / "model"
+        backbone = torch.load(model_dir / "base_class.pkl", weights_only=False)
+        state_dict = load_checkpoint_file(model_dir / "weights.cp")
+        load_model_state_dict(backbone, state_dict)
         backbone.eval()
         return backbone
-
-    def get_checkpoint_data(self) -> Dict[str, Any]:
-        rl_module = self.algo.get_module(self._get_policy_name())
-        return {
-            "backbone_state_dict": deepcopy(rl_module.backbone.state_dict()),
-        }
 
     def get_weight_parameters(self) -> Optional[Iterator]:
         rl_module = self.algo.get_module(self._get_policy_name())
         return rl_module.parameters()
 
-    def save_checkpoint(self, checkpoint_dir: Path, iteration: int,
-                        metrics: Dict[str, List], checkpoint_data: Dict[str, Any]) -> None:
-        cfg = self._config
+    def save_final_checkpoint(self, iteration: int) -> Optional[Path]:
+        if self._checkpoint_interval <= 0 or self._checkpoint_base_dir is None:
+            return None
+        snapshot = self._capture_snapshot()
+        checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(iteration)
+        checkpoint_path.mkdir(exist_ok=True)
+        self._writer.write(snapshot, checkpoint_path)
+        return checkpoint_path
 
-        model_dir = checkpoint_dir / "model"
-        model_dir.mkdir(exist_ok=True)
-        torch.save({
-            "state_dict": checkpoint_data["backbone_state_dict"],
-            "network_config": asdict(cfg.network),
-            "obs_space_format": cfg.env.obs_space_format,
-            "input_shape": self._input_shape,
-            "num_actions": self._num_actions,
-        }, model_dir / "checkpoint.pt")
-
-        training_dir = checkpoint_dir / "training"
-        training_dir.mkdir(exist_ok=True)
-        torch.save({
-            "backbone_state_dict": checkpoint_data["backbone_state_dict"],
-            "iteration": iteration,
-            "metrics": metrics,
-            "backend": self.name,
-        }, training_dir / "data.pt")
-        self.algo.save_to_path(str((training_dir / "algo_checkpoint").absolute()))
+    def wait_for_pending_checkpoints(self) -> None:
+        self._writer.wait_for_idle()
 
     def shutdown(self) -> None:
+        self._writer.stop()
         if self.algo is not None:
             self.algo.stop()
         import ray
@@ -226,6 +220,21 @@ class RLlibBackend(AlgorithmBackend):
             "vf_explained_var",
             "learning_rate",
         ]
+
+    def _capture_snapshot(self) -> Dict[str, Any]:
+        return {
+            "model_state_dict": deepcopy(self._get_backbone().state_dict()),
+            "network_template_bytes": self._network_template_bytes,
+        }
+
+    def _get_backbone(self) -> torch.nn.Module:
+        return self.algo.get_module(self._get_policy_name()).backbone
+
+    @staticmethod
+    def _pickle_network(model: torch.nn.Module) -> bytes:
+        buf = io.BytesIO()
+        torch.save(model, buf)
+        return buf.getvalue()
 
     def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
@@ -274,7 +283,7 @@ class RLlibBackend(AlgorithmBackend):
         if policy_cfg and policy_cfg.use_multiple_policies:
             return "main_policy"
         return "shared_policy"
-    
+
     def _set_module_training(self) -> None:
         try:
             self.algo.get_module(self._get_policy_name()).train()

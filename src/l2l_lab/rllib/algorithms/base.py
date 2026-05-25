@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
@@ -13,7 +13,7 @@ from l2l_lab.configs.training.network import (BaseNetworkConfig, MLPNetConfig,
                                                 SNNetConfig)
 from l2l_lab.rllib.modules.networks.conv import ConvDualHeadRLModule
 from l2l_lab.rllib.modules.networks.mlp import MLPDualHeadRLModule
-from l2l_lab.utils.checkpoint import CheckpointData, load_checkpoint_data, trim_metrics_to_iteration, get_algo_checkpoint_path
+from l2l_lab.utils.checkpoint import get_algo_checkpoint_path
 
 if TYPE_CHECKING:
     from l2l_lab.configs.training.TrainingConfig import TrainingConfig
@@ -80,14 +80,14 @@ class BaseAlgorithmTrainer(ABC):
         rllib_config,
         model_dir: Path,
         target_iteration: Optional[int] = None,
-    ) -> Tuple[int, Optional[CheckpointData]]:
+    ) -> int:
         algo_checkpoint_path = get_algo_checkpoint_path(model_dir, target_iteration)
         if algo_checkpoint_path is None or not algo_checkpoint_path.exists():
             print("\nNo existing checkpoint found. Starting fresh training...")
             print(f"\nBuilding {self.algorithm_name.upper()} algorithm...\n")
             self.algo = rllib_config.build_algo()
             print("\n✓ Algorithm built successfully!")
-            return 0, None
+            return 0
 
         print("\nContinuing training with current config...")
         print(f"Building {self.algorithm_name.upper()} algorithm with new config...\n")
@@ -98,13 +98,11 @@ class BaseAlgorithmTrainer(ABC):
         self.algo.restore_from_path(str(algo_checkpoint_path.absolute()))
         print("\n✓ Weights restored from checkpoint")
 
-        cp_data = load_checkpoint_data(model_dir, iteration=target_iteration)
-        start_iteration = cp_data.iteration if cp_data else 0
+        start_iteration = int(algo_checkpoint_path.parent.name)
 
-        if target_iteration is not None and cp_data and cp_data.metrics:
-            cp_data.metrics = trim_metrics_to_iteration(cp_data.metrics, start_iteration)
+        if target_iteration is not None:
             print(f"✓ Loaded checkpoint from iteration {start_iteration} (requested: {target_iteration})")
         else:
             print(f"✓ Resuming from iteration {start_iteration}")
 
-        return start_iteration, cp_data
+        return start_iteration

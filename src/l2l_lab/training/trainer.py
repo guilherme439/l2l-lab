@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
+import torch
 
 from l2l_lab.backends import get_backend
 from l2l_lab.backends.backend_base import StepResult
@@ -18,7 +19,10 @@ from l2l_lab.testing.tester import GameResults
 from l2l_lab.training.evaluator import Evaluator
 from l2l_lab.utils import graphs
 from l2l_lab.utils import wandb as wandb_helper
-from l2l_lab.utils.checkpoint import is_rewind, list_checkpoint_iterations_past
+from l2l_lab.utils.checkpoint import (is_rewind, list_checkpoint_iterations_past,
+                                      load_checkpoint_file,
+                                      get_training_checkpoint_path,
+                                      trim_metrics_to_iteration)
 from l2l_lab.utils.common import check_interval
 from l2l_lab.utils.memory import MemorySampler
 
@@ -69,16 +73,13 @@ class Trainer:
             self._memory_sampler = MemorySampler()
 
         model_dir = MODELS_DIR / cfg.name
-
         if backend_cfg.continue_training:
             self._setup_model_dir(model_dir)
-            start_iteration, cp_data = self.backend.restore(cfg, self.current_model_dir)
+            start_iteration = self.backend.restore(cfg, self.current_model_dir)
             self._is_rewind = is_rewind(self.current_model_dir, start_iteration)
             if self._is_rewind:
                 self._clear_rewinded_iterations(start_iteration, wait_seconds=30)
-            if cp_data and cp_data.metrics:
-                self._load_metrics(cp_data.metrics)
-                print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint\n")
+            self._load_trainer_checkpoint(self.current_model_dir, start_iteration, backend_cfg.continue_from_iteration)
         else:
             if model_dir.exists():
                 self._clear_existing_model_dir(model_dir, wait_seconds=30)
@@ -87,6 +88,8 @@ class Trainer:
             start_iteration = 0
             self.backend.setup(cfg, self.current_model_dir)
             self._log_network_summary()
+
+        self.backend.configure_checkpointing(cfg.common.checkpoint_interval, self.current_model_dir)
 
         self._setup_reporter(cfg, start_iteration)
 
@@ -98,8 +101,6 @@ class Trainer:
             is_rewind=self._is_rewind,
         )
 
-        previous_checkpoint: Optional[Path] = None
-
         remaining_iterations = total_iterations - start_iteration
         if remaining_iterations <= 0:
             print(f"\nAlready completed {start_iteration} iterations (target: {total_iterations}). Nothing to do.")
@@ -110,10 +111,9 @@ class Trainer:
         print(f"\n\nStarting training for {remaining_iterations} iterations (from {start_iteration} to {total_iterations})...")
         print("Press Ctrl+C to stop early.")
         print("-" * 70)
-
-        self.backend.start_training(start_iteration, total_iterations)
-
         i = start_iteration
+        previous_checkpoint: Optional[Path] = None
+        self.backend.start_training(start_iteration, total_iterations)
 
         self._early_stop_requested = False
         original_sigint = signal.signal(signal.SIGINT, self._handle_sigint)
@@ -138,7 +138,9 @@ class Trainer:
 
                 training_results = self.evaluator.run_training_evals(i)
                 checkpoint_results: Dict[str, Optional[GameResults]] = {}
-                if check_interval(i, cfg.common.checkpoint_interval):
+                if step_result.checkpoint_path is not None:
+                    self.backend.wait_for_pending_checkpoints()
+                    self._save_trainer_checkpoint(step_result.checkpoint_path, i)
                     checkpoint_results = self.evaluator.run_checkpoint_evals(previous_checkpoint, iteration=i)
                 eval_str = self._collect_eval_metrics({**training_results, **checkpoint_results}, step_metrics)
 
@@ -151,9 +153,8 @@ class Trainer:
                 if self._wandb_enabled:
                     wandb_helper.log(step_metrics, i)
 
-                if check_interval(i, cfg.common.checkpoint_interval):
-                    checkpoint_dir = self.save_checkpoint(i, self.backend.get_checkpoint_data())
-                    previous_checkpoint = checkpoint_dir
+                if step_result.checkpoint_path is not None:
+                    previous_checkpoint = step_result.checkpoint_path
                     self.backend.on_checkpoint_saved(self.current_model_dir, i)
 
                 if eval_str:
@@ -178,10 +179,10 @@ class Trainer:
                 if last_step is not None:
                     i = last_step.iteration
 
-                print()   
+                print()
                 print("-" * 70)
                 print(f"Training stopped early at iteration {i}/{total_iterations}.")
-                self.save_checkpoint(i, self.backend.get_checkpoint_data())
+                self._save_final_checkpoint(i)
                 self.plot_progress(plot_memory=False)
                 self.backend.shutdown()
                 return
@@ -189,7 +190,7 @@ class Trainer:
             print()
             print("-" * 70)
             print(f"✓ {algo_cfg.name.upper()} Training completed!")
-            self.save_checkpoint(total_iterations, self.backend.get_checkpoint_data())
+            self._save_final_checkpoint(total_iterations)
             self.plot_progress()
             self.backend.shutdown()
         finally:
@@ -198,18 +199,6 @@ class Trainer:
             if self._wandb_enabled:
                 wandb_helper.finish()
             signal.signal(signal.SIGINT, original_sigint)
-
-    def save_checkpoint(self, iteration: int, checkpoint_data: Dict[str, Any]) -> Path:
-        if self.current_model_dir is None:
-            raise RuntimeError("No model directory.")
-
-        checkpoint_dir = self.current_model_dir / "checkpoints" / str(iteration)
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
-        self.backend.save_checkpoint(checkpoint_dir, iteration, self.metrics, checkpoint_data)
-
-        print(f"\n  [Checkpoint saved: iter {iteration}]\n")
-        return checkpoint_dir
 
     def plot_progress(self, plot_memory: bool = True) -> None:
         if not self.metrics.get("iteration"):
@@ -222,6 +211,33 @@ class Trainer:
         graphs_dir = self.current_model_dir / "graphs"
         graphs.plot_metrics(graphs_dir, self.metrics, self.config.common.eval_graph_split, plot_memory=plot_memory)
         print(f"\n\n📊 Graphs saved to: {graphs_dir}\n\n")
+
+    def _save_trainer_checkpoint(self, checkpoint_dir: Path, iteration: int) -> None:
+        torch.save({
+            "iteration": iteration,
+            "metrics": self.metrics,
+            "backend": self.backend.name,
+        }, checkpoint_dir / "training.cp")
+        print(f"\n  [Checkpoint saved: iter {iteration}]\n")
+
+    def _load_trainer_checkpoint(self, model_dir: Path, start_iteration: int,
+                                 target_iteration: Optional[int]) -> None:
+        cp_path = get_training_checkpoint_path(model_dir, target_iteration)
+        if cp_path is None or not cp_path.exists():
+            return
+        data = load_checkpoint_file(cp_path)
+        metrics = data.get("metrics") or {}
+        if target_iteration is not None:
+            metrics = trim_metrics_to_iteration(metrics, start_iteration)
+        if metrics:
+            for key, values in metrics.items():
+                self.metrics[key] = values
+            print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint\n")
+
+    def _save_final_checkpoint(self, iteration: int) -> None:
+        final_path = self.backend.save_final_checkpoint(iteration)
+        if final_path is not None:
+            self._save_trainer_checkpoint(final_path, iteration)
 
     def _skip_to_end_of_queue(self) -> Optional[StepResult]:
         """Drain the backend step queue, returning the most recent StepResult."""
@@ -238,6 +254,7 @@ class Trainer:
 
     def _setup_model_dir(self, model_dir: Path) -> None:
         model_dir.mkdir(parents=True, exist_ok=True)
+        (model_dir / "checkpoints").mkdir(exist_ok=True)
         (model_dir / "graphs").mkdir(exist_ok=True)
         (model_dir / "graphs" / "evaluations").mkdir(exist_ok=True)
         self.current_model_dir = model_dir
@@ -284,10 +301,6 @@ class Trainer:
                 "total_pss_mb": [],
             }
 
-    def _load_metrics(self, checkpoint_metrics: Dict[str, Any]) -> None:
-        for key, values in checkpoint_metrics.items():
-            self.metrics[key] = values
-
     def _collect_memory_metrics(self, step_metrics: Dict[str, Any]) -> None:
         sample = self._memory_sampler.sample()
         step_metrics["memory"] = {
@@ -310,7 +323,7 @@ class Trainer:
                 self._update_into(target.setdefault(key, {}), value, target_len)
             else:
                 self._append_to_series(target.setdefault(key, []), value, target_len)
-        
+
     def _align_metrics(self, metrics: dict, target_len: int) -> None:
         '''
         Append None to all metrics that are shorter than the number of interations
@@ -391,7 +404,7 @@ class Trainer:
                 formatted.append(self._format_eval_line(label, result))
         step_metrics["evaluations"] = eval_buckets
         return "\n".join(formatted)
-    
+
     def _clear_existing_model_dir(self, model_dir: Path, wait_seconds: int) -> None:
         red_color_tags = "\033[31m", "\033[0m"
         start, end = red_color_tags

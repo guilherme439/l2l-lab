@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 
 from l2l_lab.utils.checkpoint import delete_checkpoint_dirs_past
 
@@ -13,13 +13,13 @@ if TYPE_CHECKING:
     import torch
 
     from l2l_lab.configs.training.TrainingConfig import TrainingConfig
-    from l2l_lab.utils.checkpoint import CheckpointData
 
 
 @dataclass
 class StepResult:
     iteration: int
     metrics: Dict[str, Any] = field(default_factory=dict)
+    checkpoint_path: Optional[Path] = None
 
 
 class AlgorithmBackend(ABC):
@@ -28,6 +28,12 @@ class AlgorithmBackend(ABC):
         self.step_queue: Queue[Optional[StepResult]] = Queue()
         self._stop_event = threading.Event()
         self._training_thread: Optional[threading.Thread] = None
+        self._checkpoint_interval: int = 0
+        self._checkpoint_base_dir: Optional[Path] = None
+
+    def configure_checkpointing(self, interval: int, base_dir: Path) -> None:
+        self._checkpoint_interval = interval
+        self._checkpoint_base_dir = base_dir
 
     def request_stop(self) -> None:
         """Signal the training thread to stop after the current step."""
@@ -82,8 +88,8 @@ class AlgorithmBackend(ABC):
         ...
 
     @abstractmethod
-    def restore(self, config: TrainingConfig, model_dir: Path) -> Tuple[int, Optional[CheckpointData]]:
-        """Restore from checkpoint. Return (start_iteration, checkpoint_data)."""
+    def restore(self, config: TrainingConfig, model_dir: Path) -> int:
+        """Restore backend state from checkpoint. Return start_iteration."""
         ...
 
     @abstractmethod
@@ -97,17 +103,19 @@ class AlgorithmBackend(ABC):
         ...
 
     @abstractmethod
-    def get_checkpoint_data(self) -> Dict[str, Any]:
-        """Return current training state for checkpointing."""
-        ...
-
-    @abstractmethod
     def get_weight_parameters(self) -> Optional[Iterator]:
         ...
 
     @abstractmethod
-    def save_checkpoint(self, checkpoint_dir: Path, iteration: int,
-                        metrics: Dict[str, List], checkpoint_data: Dict[str, Any]) -> None:
+    def save_final_checkpoint(self, iteration: int) -> Optional[Path]:
+        """Capture and write a final checkpoint synchronously. Called after the
+        training thread has been joined. Return the checkpoint directory, or
+        None if checkpointing is disabled."""
+        ...
+
+    @abstractmethod
+    def wait_for_pending_checkpoints(self) -> None:
+        """Block until queued checkpoint writes have been flushed to disk."""
         ...
 
     @abstractmethod

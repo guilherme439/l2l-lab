@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,9 +18,6 @@ from l2l_lab.configs.testing.agents.RandomAgentConfig import \
     RandomAgentConfig
 from l2l_lab.configs.testing.agents.TraditionalMCTSAgentConfig import TraditionalMCTSAgentConfig
 from l2l_lab.configs.testing.TestingConfig import TestingConfig
-from l2l_lab.configs.training.network import (MLPNetConfig, SNNetConfig,
-                                                network_config_from_dict)
-from l2l_lab.neural_networks.utils.builders import build_network
 from l2l_lab.envs.registry import create_env
 from l2l_lab.reporting.types import GameReport
 from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
@@ -168,9 +164,9 @@ class Tester:
         return results
 
     @staticmethod
-    def _get_checkpoint_path(model_name: str, checkpoint: int) -> Path:
+    def _get_checkpoint_dir(model_name: str, checkpoint: int) -> Path:
         model_dir = MODELS_DIR / f"{model_name}"
-        return model_dir / "checkpoints" / str(checkpoint) / "model" / "checkpoint.pt"
+        return model_dir / "checkpoints" / str(checkpoint)
 
     @staticmethod
     def _is_env_done(env) -> bool:
@@ -197,9 +193,8 @@ class Tester:
             return RandomAgent()
 
         if isinstance(agent_config, PolicyAgentConfig):
-            cp_path = self._get_checkpoint_path(agent_config.model_name, agent_config.checkpoint)
-            checkpoint = load_checkpoint_file(cp_path)
-            backbone = self._create_backbone(checkpoint)
+            cp_dir = self._get_checkpoint_dir(agent_config.model_name, agent_config.checkpoint)
+            backbone = self._create_backbone(cp_dir)
             label = f"{agent_config.model_name}@{agent_config.checkpoint}"
             return PolicyAgent(backbone, self.config.env.obs_space_format, name=label)
 
@@ -207,9 +202,8 @@ class Tester:
             from l2l_lab.agents import AlphaZeroMCTSAgent
             from l2l_lab.utils.search import load_search_config
 
-            cp_path = self._get_checkpoint_path(agent_config.model_name, agent_config.checkpoint)
-            checkpoint = load_checkpoint_file(cp_path)
-            backbone = self._create_backbone(checkpoint)
+            cp_dir = self._get_checkpoint_dir(agent_config.model_name, agent_config.checkpoint)
+            backbone = self._create_backbone(cp_dir)
             search_config = load_search_config(agent_config.search_config_path)
             label = f"alphazero_mcts[{agent_config.model_name}@{agent_config.checkpoint}]"
             return AlphaZeroMCTSAgent(
@@ -233,24 +227,10 @@ class Tester:
 
         raise ValueError(f"Unknown agent config type: {type(agent_config)}")
 
-    def _create_backbone(self, checkpoint: Dict[str, Any]) -> torch.nn.Module:
-        network_cfg = network_config_from_dict(checkpoint["network_config"])
-        input_shape = tuple(checkpoint["input_shape"])
-        num_actions = checkpoint["num_actions"]
-
-        network_cfg.validate_for_env(input_shape, num_actions)
-
-        if isinstance(network_cfg, (MLPNetConfig, SNNetConfig)):
-            input_features = int(math.prod(input_shape))
-            backbone = build_network(
-                network_cfg, input_features=input_features, num_actions=num_actions,
-            )
-        else:
-            in_channels = input_shape[0]
-            backbone = build_network(
-                network_cfg, in_channels=in_channels, num_actions=num_actions,
-            )
-
-        load_model_state_dict(backbone, checkpoint["state_dict"])
+    def _create_backbone(self, checkpoint_dir: Path) -> torch.nn.Module:
+        model_dir = checkpoint_dir / "model"
+        backbone = torch.load(model_dir / "base_class.pkl", weights_only=False)
+        state_dict = load_checkpoint_file(model_dir / "weights.cp")
+        load_model_state_dict(backbone, state_dict)
         backbone.eval()
         return backbone

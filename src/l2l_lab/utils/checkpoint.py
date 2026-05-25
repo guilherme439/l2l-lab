@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import shutil
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -11,12 +10,6 @@ import torch
 from l2l_lab.utils.common import find_paths_with_iteration_past
 
 _CHECKPOINT_DIR_PATTERN = re.compile(r"^(\d+)$")
-
-
-@dataclass
-class CheckpointData:
-    iteration: int
-    metrics: Dict[str, List]
 
 
 def load_checkpoint_file(path: Path) -> dict:
@@ -63,46 +56,29 @@ def get_checkpoint_dir(model_dir: Path, iteration: Optional[int] = None) -> Opti
     return max(checkpoint_dirs, key=lambda d: int(d.name))
 
 
-def _find_checkpoint_file(checkpoint_dir: Path) -> Optional[Path]:
-    training_dir = checkpoint_dir / "training"
-    for name in ("checkpoint.pt", "data.pt"):
-        p = training_dir / name
-        if p.exists():
-            return p
-    return None
-
-
-def get_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
-    checkpoint_dir = get_checkpoint_dir(model_dir, iteration)
-    if checkpoint_dir:
-        return _find_checkpoint_file(checkpoint_dir)
-    return None
-
-
 def get_algo_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
     checkpoint_dir = get_checkpoint_dir(model_dir, iteration)
     if checkpoint_dir is None:
         return None
-    return checkpoint_dir / "training" / "algo_checkpoint"
+    return checkpoint_dir / "algo"
 
 
-def get_latest_checkpoint_path(model_dir: Path) -> Optional[Path]:
-    return get_checkpoint_path(model_dir, iteration=None)
+def get_training_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
+    checkpoint_dir = get_checkpoint_dir(model_dir, iteration)
+    if checkpoint_dir is None:
+        return None
+    return checkpoint_dir / "training.cp"
 
 
 def get_latest_checkpoint_dir(model_dir: Path) -> Optional[Path]:
     return get_checkpoint_dir(model_dir, iteration=None)
 
 
-def load_checkpoint_data(model_dir: Path, iteration: Optional[int] = None) -> Optional[CheckpointData]:
-    cp_path = get_checkpoint_path(model_dir, iteration)
-    if cp_path and cp_path.exists():
-        cp_data = load_checkpoint_file(cp_path)
-        return CheckpointData(
-            iteration=cp_data.get("iteration", 0),
-            metrics=cp_data.get("metrics", {}),
-        )
-    return None
+def load_trainer_checkpoint(model_dir: Path, iteration: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    cp_path = get_training_checkpoint_path(model_dir, iteration)
+    if cp_path is None or not cp_path.exists():
+        return None
+    return load_checkpoint_file(cp_path)
 
 
 def list_checkpoint_iterations_past(model_dir: Path, iteration: int) -> list[int]:
