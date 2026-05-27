@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import asdict
 from pathlib import Path
@@ -12,16 +11,12 @@ import yaml
 from l2l_lab.configs.training.TrainingConfig import TrainingConfig
 
 _APPLICATION_CONFIG_PATH = Path("application.yml")
-_RUN_STATE_FILENAME = "run_state.json"
 _API_KEY_PLACEHOLDER = "your-wandb-api-key-here"
 
 
 def init(
     run_name: str,
     training_config: TrainingConfig,
-    model_dir: Path,
-    resume: bool,
-    is_rewind: bool,
 ) -> bool:
     try:
         print()
@@ -38,10 +33,7 @@ def init(
             return False
 
         os.environ["WANDB_API_KEY"] = api_key
-
-        run_id: Optional[str] = None
-        if resume:
-            run_id = _read_persisted_run_id(model_dir)
+        os.environ.setdefault("WANDB_HTTP_TIMEOUT", "60")
 
         config_dict = extract_hyperparameters(training_config)
 
@@ -52,17 +44,17 @@ def init(
             "group": run_name,
             "config": config_dict,
             "tags": wandb_settings.get("tags") or [],
+            "settings": _wandb_pkg.Settings(
+                init_timeout=180,
+                _service_wait=300,
+            ),
         }
-        if resume and run_id is not None and not is_rewind:
-            init_kwargs["id"] = run_id
-            init_kwargs["resume"] = "allow"
 
         run = _wandb_pkg.init(**init_kwargs)
         if run is None:
             print("WARNING: wandb: init returned None; skipping")
             return False
 
-        _persist_run_id(model_dir, run.id)
         print(f"wandb: run started (id={run.id}, project={wandb_settings.get('project')})")
         return True
     except Exception as e:
@@ -102,33 +94,6 @@ def _load_wandb_settings() -> Optional[dict[str, Any]]:
     with open(_APPLICATION_CONFIG_PATH, "r") as f:
         data = yaml.safe_load(f) or {}
     return data.get("wandb")
-
-
-def _read_persisted_run_id(model_dir: Path) -> Optional[str]:
-    state_path = model_dir / _RUN_STATE_FILENAME
-    if not state_path.exists():
-        return None
-    try:
-        with open(state_path, "r") as f:
-            data = json.load(f)
-        return data.get("wandb_run_id")
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"WARNING: wandb: failed to read {state_path} ({e}); starting fresh run")
-        return None
-
-
-def _persist_run_id(model_dir: Path, run_id: str) -> None:
-    state_path = model_dir / _RUN_STATE_FILENAME
-    state: dict[str, Any] = {}
-    if state_path.exists():
-        try:
-            with open(state_path, "r") as f:
-                state = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            state = {}
-    state["wandb_run_id"] = run_id
-    with open(state_path, "w") as f:
-        json.dump(state, f, indent=2)
 
 
 def _flatten(metrics: dict[str, Any], prefix: str = "") -> dict[str, Any]:

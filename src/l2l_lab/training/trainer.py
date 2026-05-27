@@ -96,9 +96,6 @@ class Trainer:
         self._wandb_enabled = wandb_helper.init(
             run_name=cfg.name,
             training_config=cfg,
-            model_dir=self.current_model_dir,
-            resume=backend_cfg.continue_training,
-            is_rewind=self._is_rewind,
         )
 
         remaining_iterations = total_iterations - start_iteration
