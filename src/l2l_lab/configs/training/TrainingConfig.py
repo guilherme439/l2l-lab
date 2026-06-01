@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Union
 
-import yaml
+from omegaconf import OmegaConf
 
 from l2l_lab.configs.common.EnvConfig import EnvConfig
 
@@ -26,8 +26,7 @@ class TrainingConfig:
 
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "TrainingConfig":
-        with open(path, "r") as f:
-            data = yaml.safe_load(f)
+        data = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
 
         if "common" not in data:
             raise ValueError("training config is missing required 'common' section")

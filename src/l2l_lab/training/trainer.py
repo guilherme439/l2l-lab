@@ -73,6 +73,9 @@ class Trainer:
             self._memory_sampler = MemorySampler()
 
         model_dir = MODELS_DIR / cfg.name
+
+        self.backend.init()
+
         if backend_cfg.continue_training:
             self._setup_model_dir(model_dir)
             start_iteration = self.backend.restore(cfg, self.current_model_dir)
@@ -110,7 +113,7 @@ class Trainer:
         print("-" * 70)
         i = start_iteration
         previous_checkpoint: Optional[Path] = None
-        self.backend.start_training(start_iteration, total_iterations)
+        self.backend.start_training()
 
         self._early_stop_requested = False
         original_sigint = signal.signal(signal.SIGINT, self._handle_sigint)
@@ -215,7 +218,7 @@ class Trainer:
             "metrics": self.metrics,
             "backend": self.backend.name,
         }, checkpoint_dir / "training.cp")
-        print(f"\n  [Checkpoint saved: iter {iteration}]\n")
+        print(f"\n  [Trainer checkpoint saved: iter {iteration}]\n")
 
     def _load_trainer_checkpoint(self, model_dir: Path, start_iteration: int,
                                  target_iteration: Optional[int]) -> None:

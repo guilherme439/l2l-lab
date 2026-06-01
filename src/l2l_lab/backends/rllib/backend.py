@@ -52,9 +52,10 @@ class RLlibBackend(AlgorithmBackend):
             return f"rllib_{self._config.backend.algorithm.name}"
         return "rllib"
 
-    def setup(self, config: TrainingConfig, model_dir: Path) -> None:
+    def init(self) -> None:
         import ray
         if not ray.is_initialized():
+            print()
             ray.init(
                 ignore_reinit_error=True,
                 _system_config={
@@ -66,6 +67,7 @@ class RLlibBackend(AlgorithmBackend):
             )
             print()
 
+    def setup(self, config: TrainingConfig, model_dir: Path) -> None:
         self._config = config
         self._register_env(config.env)
         obs_space, act_space = self._get_spaces(config.env)
@@ -92,23 +94,13 @@ class RLlibBackend(AlgorithmBackend):
         self.algo = rllib_config.build_algo()
         self.algo_trainer.algo = self.algo
         self._network_template_bytes = self._pickle_network(self._get_backbone())
+
+        self._start_iteration = 0
+        self._total_iterations = config.backend.algorithm.total_iterations
+
         print("\n✓ Algorithm built successfully!")
 
     def restore(self, config: TrainingConfig, model_dir: Path) -> int:
-        import ray
-        if not ray.is_initialized():
-            print()
-            ray.init(
-                ignore_reinit_error=True,
-                _system_config={
-                    "gcs_rpc_server_reconnect_timeout_s": 120,
-                    "gcs_server_request_timeout_seconds": 120,
-                    "local_fs_capacity_threshold": 0.99
-                },
-                object_store_memory=2 * 1024 * 1024 * 1024,
-            )
-            print()
-
         self._config = config
         self._register_env(config.env)
         obs_space, act_space = self._get_spaces(config.env)
@@ -131,29 +123,33 @@ class RLlibBackend(AlgorithmBackend):
             config.env.name, config.env.obs_space_format, obs_space, act_space
         )
 
-        start_iteration = self.algo_trainer.load_checkpoint_for_continue(
+        loaded_iteration = self.algo_trainer.load_checkpoint_for_continue(
             rllib_config, model_dir, target_iteration=config.backend.continue_from_iteration
         )
         self.algo = self.algo_trainer.algo
         self._network_template_bytes = self._pickle_network(self._get_backbone())
-        return start_iteration
 
-    def _train(self, start_iteration: int, total_iterations: int) -> None:
+        self._start_iteration = loaded_iteration + 1
+        self._total_iterations = config.backend.algorithm.total_iterations
+
+        return loaded_iteration
+
+    def _train(self) -> None:
         info_interval = self._config.common.info_interval
         try:
-            for i in range(start_iteration, total_iterations):
+            for step in range(self._start_iteration, self._total_iterations):
                 if self._stop_event.is_set():
                     break
                 result = self.algo.train()
                 metrics = self.algo_trainer.extract_metrics(result)
 
-                step = i + 1
                 self._print_step_info(step, metrics)
                 if check_interval(step, info_interval):
                     self._print_training_info(step, metrics)
 
                 checkpoint_path: Optional[Path] = None
                 if check_interval(step, self._checkpoint_interval):
+                    print(f"\nSaving {self.name} checkpoint for iteration {step}")
                     snapshot = self._capture_snapshot()
                     checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(step)
                     checkpoint_path.mkdir(exist_ok=True)
@@ -168,10 +164,11 @@ class RLlibBackend(AlgorithmBackend):
             self.step_queue.put(None)
 
     def get_eval_model(self) -> torch.nn.Module:
-        rl_module = self.algo.get_module(self._get_policy_name())
-        backbone = rl_module.backbone
-        backbone.eval()
-        return backbone
+        # this reads the model in a different thread while writes are happening,
+        # it should be a race condition but it never crashed so...
+        model_copy = deepcopy(self._get_backbone()).cpu() 
+        model_copy.eval()
+        return model_copy
 
     def get_model_from_checkpoint(self, checkpoint_dir: Path) -> torch.nn.Module:
         model_dir = checkpoint_dir / "model"
@@ -279,13 +276,7 @@ class RLlibBackend(AlgorithmBackend):
             raise ValueError(f"Unsupported algorithm: {algo_name}. Supported: ppo, impala")
 
     def _get_policy_name(self) -> str:
-        policy_cfg = self._config.backend.algorithm.config.policy
+        policy_cfg = getattr(self._config.backend.algorithm.config, "policy", None)
         if policy_cfg and policy_cfg.use_multiple_policies:
             return "main_policy"
         return "shared_policy"
-
-    def _set_module_training(self) -> None:
-        try:
-            self.algo.get_module(self._get_policy_name()).train()
-        except Exception:
-            pass

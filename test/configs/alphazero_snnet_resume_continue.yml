@@ -1,10 +1,10 @@
-name: "_test_alphazoo_tictactoe_resume"
+name: "_test_alphazero_snnet_resume"
 
 common:
-  plot_interval: 1000
-  info_interval: 1000
-  eval_graph_split: 100
-  checkpoint_interval: 5
+  plot_interval: 2
+  info_interval: 5
+  eval_graph_split: 7
+  checkpoint_interval: 3
 
 env:
   name: "tictactoe"
@@ -12,15 +12,11 @@ env:
   kwargs: {}
 
 network:
-  architecture: "MLPNet"
+  architecture: "SNNet"
   hidden_layers: 2
   neurons_per_layer: 16
-  policy_head:
-    name: "linear_reduce"
-    num_layers: 1
-  value_head:
-    name: "linear_reduce"
-    num_layers: 1
+  head_layers: 1
+  dropout: 0.0
 
 backend:
   name: "alphazoo"
@@ -31,25 +27,25 @@ backend:
       verbose: false
       running:
         running_mode: "sequential"
-        num_gamers: 1
-        training_steps: 10
+        num_gamers: 3
+        training_steps: 8
         sequential:
-          num_games_per_step: 2
+          num_games_per_step: 3
       data:
         player_dependent_value: true
       cache:
         enabled: true
         max_size: 500
       learning:
-        learning_method: "samples"
+        learning_method: "epochs"
         replay_buffer:
           window_size: 300
           leak_chance: 0.0
         value_loss: "SE"
         policy_loss: "CE"
-        samples:
-          batch_size: 16
-          num_samples: 48
+        epochs:
+          batch_size: 32
+          learning_epochs: 1
       search:
         simulation:
           mcts_simulations: 8
@@ -66,12 +62,16 @@ backend:
           root_exploration_fraction: 0.25
           root_dist_alpha: 0.3
       optimizer:
-        optimizer_choice: "Adam"
+        optimizer_choice: "SGD"
       scheduler:
-        starting_lr: 0.001
+        starting_lr: 0.01
         boundaries: [1000]
         gamma: 0.1
 
 evaluation:
-  training_eval: []
+  training_eval:
+    - player: policy
+      opponent: random
+      games_per_player: 2
+      interval: 2
   checkpoint_eval: []

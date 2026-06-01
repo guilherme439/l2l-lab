@@ -30,8 +30,8 @@ application.yml
 # vscode
 .vscode/
 
-# windsurf
-.windsurf/
+# claude code
+.claude
 
 ########################################################################
 

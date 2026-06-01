@@ -1,0 +1,48 @@
+name: "_test_impala_mlpnet"
+
+common:
+  plot_interval: 4
+  info_interval: 3
+  eval_graph_split: 100
+  checkpoint_interval: 2
+
+env:
+  name: "tictactoe"
+  obs_space_format: "channels_last"
+  kwargs: {}
+
+network:
+  architecture: "MLPNet"
+  hidden_layers: 2
+  neurons_per_layer: 16
+  policy_head:
+    name: "linear_reduce"
+    num_layers: 1
+  value_head:
+    name: "linear_reduce"
+    num_layers: 1
+
+backend:
+  name: "rllib"
+  continue_training: false
+  algorithm:
+    name: "impala"
+    iterations: 8
+    config:
+      num_env_runners: 1
+      rollout_fragment_length: 16
+      num_learners: 0
+      lr: 0.0005
+      gamma: 0.99
+      entropy_coeff: 0.01
+      vf_loss_coeff: 0.5
+      grad_clip: 40.0
+      vtrace: true
+
+evaluation:
+  training_eval:
+    - player: policy
+      opponent: random
+      games_per_player: 3
+      interval: 2
+  checkpoint_eval: []

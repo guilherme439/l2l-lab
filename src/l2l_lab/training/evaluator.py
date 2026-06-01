@@ -56,13 +56,13 @@ class Evaluator:
             if iteration % entry.interval != 0:
                 results[entry.label] = None
                 continue
+            print(f"\nRunning training eval for iteration {iteration}...\n")
             player = self._build_player_agent(entry)
             opponent = self._build_baseline_opponent(entry.opponent, entry.search_config_path)
             results[entry.label] = self._play_balanced(
                 player, opponent, entry.games_per_player,
                 iteration=iteration, label=entry.label,
             )
-            self._restore_training_mode()
         return results
 
     def run_checkpoint_evals(
@@ -76,13 +76,13 @@ class Evaluator:
             if needs_previous and previous_checkpoint is None:
                 results[entry.label] = None
                 continue
+            print(f"\nRunning checkpoint eval for iteration {iteration}...\n")
             player = self._build_player_agent(entry)
             opponent = self._build_opponent_agent(entry, previous_checkpoint)
             results[entry.label] = self._play_balanced(
                 player, opponent, entry.games_per_player,
                 iteration=iteration, label=entry.label,
             )
-            self._restore_training_mode()
         return results
 
     def _build_player_agent(self, entry: EvalEntry) -> "Agent":
@@ -211,9 +211,3 @@ class Evaluator:
             as_p0=as_p0,
             as_p1=as_p1,
         )
-
-    def _restore_training_mode(self) -> None:
-        # Some backends (e.g. RLlib) require flipping the module back to train mode
-        # after we grab it for inference.
-        if hasattr(self.backend, "_set_module_training"):
-            self.backend._set_module_training()

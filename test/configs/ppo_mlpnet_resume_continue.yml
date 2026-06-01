@@ -1,10 +1,10 @@
-name: "_test_rllib_resnet_tictactoe"
+name: "_test_ppo_mlpnet_resume"
 
 common:
-  plot_interval: 1000
-  info_interval: 1000
+  plot_interval: 3
+  info_interval: 5
   eval_graph_split: 100
-  checkpoint_interval: 2
+  checkpoint_interval: 4
 
 env:
   name: "tictactoe"
@@ -12,17 +12,22 @@ env:
   kwargs: {}
 
 network:
-  architecture: "ResNet"
-  num_filters: 8
-  num_blocks: 2
-  hex: false
+  architecture: "MLPNet"
+  hidden_layers: 2
+  neurons_per_layer: 16
+  policy_head:
+    name: "linear_reduce"
+    num_layers: 1
+  value_head:
+    name: "linear_reduce"
+    num_layers: 1
 
 backend:
   name: "rllib"
-  continue_training: false
+  continue_training: true
   algorithm:
     name: "ppo"
-    iterations: 3
+    iterations: 10
     config:
       use_curiosity: false
       num_env_runners: 0
@@ -45,9 +50,6 @@ evaluation:
   training_eval:
     - player: policy
       opponent: random
-      games_per_player: 2
-      interval: 1
-  checkpoint_eval:
-    - player: policy
-      opponent: policy
-      games_per_player: 2
+      games_per_player: 1
+      interval: 2
+  checkpoint_eval: []

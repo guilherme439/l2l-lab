@@ -30,6 +30,8 @@ class AlgorithmBackend(ABC):
         self._training_thread: Optional[threading.Thread] = None
         self._checkpoint_interval: int = 0
         self._checkpoint_base_dir: Optional[Path] = None
+        self._start_iteration: int = 0
+        self._total_iterations: int = 0
 
     def configure_checkpointing(self, interval: int, base_dir: Path) -> None:
         self._checkpoint_interval = interval
@@ -44,12 +46,12 @@ class AlgorithmBackend(ABC):
         if self._training_thread is not None:
             self._training_thread.join(timeout=timeout)
 
-    def start_training(self, start_iteration: int, total_iterations: int) -> None:
-        """Launch `_train` in a background thread."""
+    def start_training(self) -> None:
+        """Launch `_train` in a background thread. The iteration range is read
+        from the state stored during `setup`/`restore`."""
         self._stop_event.clear()
         self._training_thread = threading.Thread(
             target=self._train,
-            args=(start_iteration, total_iterations),
             daemon=True,
         )
         self._training_thread.start()
@@ -81,6 +83,10 @@ class AlgorithmBackend(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
+        ...
+
+    @abstractmethod
+    def init(self) -> None:
         ...
 
     @abstractmethod
@@ -123,7 +129,7 @@ class AlgorithmBackend(ABC):
         ...
 
     @abstractmethod
-    def _train(self, start_iteration: int, total_iterations: int) -> None:
+    def _train(self) -> None:
         """Run the training loop on the training thread. Push StepResult to
         `step_queue` after each step; push None when done."""
         ...

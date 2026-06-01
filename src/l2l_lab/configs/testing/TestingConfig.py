@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Union
 
-import yaml
+from omegaconf import OmegaConf
 
 from l2l_lab.configs.common.EnvConfig import EnvConfig
 from l2l_lab.configs.testing.agents.AgentConfig import AgentConfig
@@ -35,8 +35,7 @@ class TestingConfig:
 
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "TestingConfig":
-        with open(path, "r") as f:
-            data = yaml.safe_load(f)
+        data = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
 
         agents_data = data.pop("agents", {})
         p1_config = parse_agent_config(agents_data.get("p1", {}))
