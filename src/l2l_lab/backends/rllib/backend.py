@@ -14,6 +14,9 @@ from l2l_lab.backends.checkpoint_writer import CheckpointWriter
 from l2l_lab.envs.registry import create_env
 from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
 from l2l_lab.utils.common import check_interval
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 if TYPE_CHECKING:
     from l2l_lab.configs.training.TrainingConfig import TrainingConfig
@@ -55,7 +58,7 @@ class RLlibBackend(AlgorithmBackend):
     def init(self) -> None:
         import ray
         if not ray.is_initialized():
-            print()
+            logger.info("")
             ray.init(
                 ignore_reinit_error=True,
                 _system_config={
@@ -65,7 +68,15 @@ class RLlibBackend(AlgorithmBackend):
                 },
                 object_store_memory=2 * 1024 * 1024 * 1024,
             )
-            print()
+            logger.info("")
+    
+    def shutdown(self) -> None:
+        self._writer.stop()
+        if self.algo is not None:
+            self.algo.stop()
+        import ray
+        if ray.is_initialized():
+            ray.shutdown()
 
     def setup(self, config: TrainingConfig, model_dir: Path) -> None:
         self._config = config
@@ -74,23 +85,23 @@ class RLlibBackend(AlgorithmBackend):
         self._input_shape = obs_space["observation"].shape
         self._num_actions = act_space.n
 
-        print(f"\nEnvironment Info:")
-        print("  Observation space:")
+        logger.info(f"\nEnvironment Info:")
+        logger.info("  Observation space:")
         for key, space in obs_space.spaces.items():
             if hasattr(space, 'shape'):
-                print(f"    {key}: shape={space.shape}, dtype={space.dtype}")
+                logger.info(f"    {key}: shape={space.shape}, dtype={space.dtype}")
             else:
-                print(f"    {key}: {space}")
-        print(f"  Action space: {act_space}")
-        print()
-        print("=" * 70)
+                logger.info(f"    {key}: {space}")
+        logger.info(f"  Action space: {act_space}")
+        logger.info("")
+        logger.info("=" * 70)
 
         self.algo_trainer = self._get_algorithm_trainer()
         rllib_config = self.algo_trainer.build_config(
             config.env.name, config.env.obs_space_format, obs_space, act_space
         )
 
-        print(f"\nBuilding {config.backend.algorithm.name.upper()} algorithm...\n")
+        logger.info(f"\nBuilding {config.backend.algorithm.name.upper()} algorithm...\n")
         self.algo = rllib_config.build_algo()
         self.algo_trainer.algo = self.algo
         self._network_template_bytes = self._pickle_network(self._get_backbone())
@@ -98,7 +109,7 @@ class RLlibBackend(AlgorithmBackend):
         self._start_iteration = 0
         self._total_iterations = config.backend.algorithm.total_iterations
 
-        print("\n✓ Algorithm built successfully!")
+        logger.info("\n✓ Algorithm built successfully!")
 
     def restore(self, config: TrainingConfig, model_dir: Path) -> int:
         self._config = config
@@ -107,16 +118,16 @@ class RLlibBackend(AlgorithmBackend):
         self._input_shape = obs_space["observation"].shape
         self._num_actions = act_space.n
 
-        print(f"\nEnvironment Info:")
-        print("  Observation space:")
+        logger.info(f"\nEnvironment Info:")
+        logger.info("  Observation space:")
         for key, space in obs_space.spaces.items():
             if hasattr(space, 'shape'):
-                print(f"    {key}: shape={space.shape}, dtype={space.dtype}")
+                logger.info(f"    {key}: shape={space.shape}, dtype={space.dtype}")
             else:
-                print(f"    {key}: {space}")
-        print(f"  Action space: {act_space}")
-        print()
-        print("=" * 70)
+                logger.info(f"    {key}: {space}")
+        logger.info(f"  Action space: {act_space}")
+        logger.info("")
+        logger.info("=" * 70)
 
         self.algo_trainer = self._get_algorithm_trainer()
         rllib_config = self.algo_trainer.build_config(
@@ -134,39 +145,8 @@ class RLlibBackend(AlgorithmBackend):
 
         return loaded_iteration
 
-    def _train(self) -> None:
-        info_interval = self._config.common.info_interval
-        try:
-            for step in range(self._start_iteration, self._total_iterations):
-                if self._stop_event.is_set():
-                    break
-                result = self.algo.train()
-                metrics = self.algo_trainer.extract_metrics(result)
-
-                self._print_step_info(step, metrics)
-                if check_interval(step, info_interval):
-                    self._print_training_info(step, metrics)
-
-                checkpoint_path: Optional[Path] = None
-                if check_interval(step, self._checkpoint_interval):
-                    print(f"\nSaving {self.name} checkpoint for iteration {step}")
-                    snapshot = self._capture_snapshot()
-                    checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(step)
-                    checkpoint_path.mkdir(exist_ok=True)
-                    self._writer.enqueue(snapshot, checkpoint_path)
-
-                self.step_queue.put(StepResult(
-                    iteration=step,
-                    metrics=metrics,
-                    checkpoint_path=checkpoint_path,
-                ))
-        finally:
-            self.step_queue.put(None)
-
     def get_eval_model(self) -> torch.nn.Module:
-        # this reads the model in a different thread while writes are happening,
-        # it should be a race condition but it never crashed so...
-        model_copy = deepcopy(self._get_backbone()).cpu() 
+        model_copy = deepcopy(self._get_backbone()).cpu()
         model_copy.eval()
         return model_copy
 
@@ -194,14 +174,6 @@ class RLlibBackend(AlgorithmBackend):
     def wait_for_pending_checkpoints(self) -> None:
         self._writer.wait_for_idle()
 
-    def shutdown(self) -> None:
-        self._writer.stop()
-        if self.algo is not None:
-            self.algo.stop()
-        import ray
-        if ray.is_initialized():
-            ray.shutdown()
-
     def on_checkpoint_saved(self, model_dir: Path, iteration: int) -> None:
         self.algo_trainer.update_opponent_policies(model_dir, iteration)
 
@@ -217,6 +189,38 @@ class RLlibBackend(AlgorithmBackend):
             "vf_explained_var",
             "learning_rate",
         ]
+
+    def _train(self) -> None:
+        info_interval = self._config.common.info_interval
+        try:
+            for step in range(self._start_iteration, self._total_iterations):
+                if self._stop_event.is_set():
+                    break
+                result = self.algo.train()
+                metrics = self.algo_trainer.extract_metrics(result)
+
+                self._print_step_info(step, metrics)
+                if check_interval(step, info_interval):
+                    self._print_training_info(step, metrics)
+
+                checkpoint_path: Optional[Path] = None
+                if check_interval(step, self._checkpoint_interval):
+                    logger.info(f"\nSaving {self.name} checkpoint for iteration {step}")
+                    snapshot = self._capture_snapshot()
+                    checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(step)
+                    checkpoint_path.mkdir(exist_ok=True)
+                    self._writer.enqueue(snapshot, checkpoint_path)
+
+                eval_model = self.get_eval_model() if self._needs_snapshot(step) else None
+
+                self.step_queue.put(StepResult(
+                    iteration=step,
+                    metrics=metrics,
+                    checkpoint_path=checkpoint_path,
+                    eval_model=eval_model,
+                ))
+        finally:
+            self.step_queue.put(None)
 
     def _capture_snapshot(self) -> Dict[str, Any]:
         return {
@@ -236,19 +240,19 @@ class RLlibBackend(AlgorithmBackend):
     def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
         total = self._config.backend.algorithm.total_iterations
-        print(f"\n{iteration}/{total} | EpLen: {ep_len:6.1f}\n")
+        logger.info(f"\n{iteration}/{total} | EpLen: {ep_len:6.1f}\n")
 
     def _print_training_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
         timesteps = metrics.get("timesteps_lifetime", 0)
         curr_lr = metrics.get("learning_rate")
 
-        print()
-        print("  ┌─ Training Info ─────────────────────────────")
-        print(f"  │ Timesteps: {timesteps:,}")
+        logger.info("")
+        logger.info("  ┌─ Training Info ─────────────────────────────")
+        logger.info(f"  │ Timesteps: {timesteps:,}")
         if curr_lr is not None:
-            print(f"  │ Learning Rate: {curr_lr:.2e}")
-        print("  └──────────────────────────────────────────────")
-        print()
+            logger.info(f"  │ Learning Rate: {curr_lr:.2e}")
+        logger.info("  └──────────────────────────────────────────────")
+        logger.info("")
 
     def _register_env(self, env_config) -> None:
         def env_creator(config: Dict):

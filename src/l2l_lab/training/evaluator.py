@@ -1,23 +1,24 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Union
+from typing import TYPE_CHECKING, Callable, Dict, Optional
 
 from l2l_lab.agents import PolicyAgent, RandomAgent
-from l2l_lab.configs.training.EvaluationConfig import (CheckpointEvalEntry,
-                                                       EvaluationConfig,
-                                                       TrainingEvalEntry)
+from l2l_lab.configs.training.EvaluationConfig import EvaluationConfig
 from l2l_lab.testing.tester import GameResults, Tester
+from l2l_lab.utils.common import check_interval
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 if TYPE_CHECKING:
+    import torch
+
     from l2l_lab.agents.agent import Agent
     from l2l_lab.backends.backend_base import AlgorithmBackend
     from l2l_lab.configs.common.EnvConfig import EnvConfig
     from l2l_lab.configs.training.network import BaseNetworkConfig
     from l2l_lab.reporting import Reporter
-
-
-EvalEntry = Union[TrainingEvalEntry, CheckpointEvalEntry]
 
 
 class Evaluator:
@@ -50,113 +51,130 @@ class Evaluator:
             mapping[entry.label] = "checkpoint"
         return mapping
 
-    def run_training_evals(self, iteration: int) -> Dict[str, Optional[GameResults]]:
+    def training_eval_intervals(self) -> list[int]:
+        """Intervals at which training evals run, for the backend to schedule
+        the weight snapshots those evals consume."""
+        return [entry.interval for entry in self.eval_config.training_eval]
+
+    def run_training_evals(
+        self, iteration: int, eval_model: Optional["torch.nn.Module"]
+    ) -> Dict[str, Optional[GameResults]]:
+        logger.info("")
+        current_model = self._model_provider(eval_model)
         results: Dict[str, Optional[GameResults]] = {}
         for entry in self.eval_config.training_eval:
-            if iteration % entry.interval != 0:
+            if not check_interval(iteration, entry.interval):
                 results[entry.label] = None
                 continue
-            print(f"\nRunning training eval for iteration {iteration}...\n")
-            player = self._build_player_agent(entry)
-            opponent = self._build_baseline_opponent(entry.opponent, entry.search_config_path)
+            logger.info(f"Starting training eval [{entry.player} x {entry.opponent}] for iteration {iteration}...")
+            player = self._build_agent(
+                entry.player, current_model, entry.search_config_path, f"current_{entry.player}"
+            )
+            opponent = self._build_agent(
+                entry.opponent, self._no_model, entry.search_config_path, entry.opponent
+            )
             results[entry.label] = self._play_balanced(
                 player, opponent, entry.games_per_player,
                 iteration=iteration, label=entry.label,
             )
+        logger.info("")
         return results
 
     def run_checkpoint_evals(
         self,
         previous_checkpoint: Optional[Path],
         iteration: int = 0,
+        eval_model: Optional["torch.nn.Module"] = None,
     ) -> Dict[str, Optional[GameResults]]:
+        logger.info("")
+        current_model = self._model_provider(eval_model)
+
+        def previous_model() -> "torch.nn.Module":
+            assert previous_checkpoint is not None
+            return self.backend.get_model_from_checkpoint(previous_checkpoint)
+
         results: Dict[str, Optional[GameResults]] = {}
         for entry in self.eval_config.checkpoint_eval:
             needs_previous = entry.opponent in ("policy", "alphazero_mcts")
             if needs_previous and previous_checkpoint is None:
                 results[entry.label] = None
                 continue
-            print(f"\nRunning checkpoint eval for iteration {iteration}...\n")
-            player = self._build_player_agent(entry)
-            opponent = self._build_opponent_agent(entry, previous_checkpoint)
+            logger.info(f"Starting checkpoint eval [{entry.player} x {entry.opponent}] for iteration {iteration}...")
+            player = self._build_agent(
+                entry.player, current_model, entry.search_config_path, f"current_{entry.player}"
+            )
+            opponent_name = f"prev_{entry.opponent}" if needs_previous else entry.opponent
+            opponent = self._build_agent(
+                entry.opponent, previous_model, entry.search_config_path, opponent_name
+            )
             results[entry.label] = self._play_balanced(
                 player, opponent, entry.games_per_player,
                 iteration=iteration, label=entry.label,
             )
+        logger.info("")
         return results
 
-    def _build_player_agent(self, entry: EvalEntry) -> "Agent":
-        if entry.player == "traditional_mcts":
-            return self._build_traditional_mcts_agent(entry.search_config_path, name="current_traditional_mcts")
-        model = self.backend.get_eval_model()
-        return self._wrap_model(model, entry.player, entry.search_config_path, name_prefix="current")
+    @staticmethod
+    def _no_model() -> "torch.nn.Module":
+        raise RuntimeError("A model-backed agent was requested for an eval role that supplies no model.")
 
-    def _build_opponent_agent(
+    @staticmethod
+    def _model_provider(model: Optional["torch.nn.Module"]) -> Callable[[], "torch.nn.Module"]:
+        """Wrap an optional in-memory model as a provider that fails loudly if the
+        model is missing when a model-backed agent actually needs it."""
+        def provide() -> "torch.nn.Module":
+            if model is None:
+                raise RuntimeError(
+                    "Eval requested the current model, but no weight snapshot was captured for this step."
+                )
+            return model
+        return provide
+
+    def _build_agent(
         self,
-        entry: CheckpointEvalEntry,
-        previous_checkpoint: Optional[Path],
-    ) -> "Agent":
-        if entry.opponent in ("random", "traditional_mcts"):
-            return self._build_baseline_opponent(entry.opponent, entry.search_config_path)
-        assert previous_checkpoint is not None
-        model = self.backend.get_model_from_checkpoint(previous_checkpoint)
-        return self._wrap_model(model, entry.opponent, entry.search_config_path, name_prefix="prev")
-
-    def _build_baseline_opponent(
-        self, opponent_type: str, search_config_path: Optional[str],
-    ) -> "Agent":
-        if opponent_type == "random":
-            return RandomAgent()
-        if opponent_type == "traditional_mcts":
-            return self._build_traditional_mcts_agent(search_config_path, name="traditional_mcts")
-        raise ValueError(f"Unsupported baseline opponent type: {opponent_type!r}")
-
-    def _build_traditional_mcts_agent(
-        self, search_config_path: Optional[str], name: str,
-    ) -> "Agent":
-        from l2l_lab.agents import TraditionalMCTSAgent
-        from l2l_lab.utils.search import load_search_config
-
-        search_config = load_search_config(search_config_path)
-        return TraditionalMCTSAgent(
-            search_config=search_config,
-            obs_space_format=self.env_config.obs_space_format,
-            name=name,
-        )
-
-    def _wrap_model(
-        self,
-        model,
         agent_type: str,
+        model_provider: Callable[[], "torch.nn.Module"],
         search_config_path: Optional[str],
-        name_prefix: str,
+        name: str,
     ) -> "Agent":
         is_recurrent = self.network_config.is_recurrent()
-        recurrent_iterations = (
-            self.network_config.recurrent_iterations if is_recurrent else 1
-        )
-        if agent_type == "policy":
-            return PolicyAgent(
-                model,
-                self.env_config.obs_space_format,
-                is_recurrent=is_recurrent,
-                recurrent_iterations=recurrent_iterations,
-                name=f"{name_prefix}_policy",
-            )
-        if agent_type == "alphazero_mcts":
-            from l2l_lab.agents import AlphaZeroMCTSAgent
-            from l2l_lab.utils.search import load_search_config
+        recurrent_iterations = self.network_config.recurrent_iterations if is_recurrent else 1
+        match agent_type:
+            case "random":
+                return RandomAgent()
+            case "traditional_mcts":
+                from l2l_lab.agents import TraditionalMCTSAgent
+                from l2l_lab.utils.search import load_search_config
 
-            search_config = load_search_config(search_config_path)
-            return AlphaZeroMCTSAgent(
-                model=model,
-                is_recurrent=is_recurrent,
-                recurrent_iterations=recurrent_iterations,
-                search_config=search_config,
-                obs_space_format=self.env_config.obs_space_format,
-                name=f"{name_prefix}_alphazero_mcts",
-            )
-        raise ValueError(f"Unsupported agent type for eval: {agent_type!r}")
+                search_config = load_search_config(search_config_path)
+                return TraditionalMCTSAgent(
+                    search_config=search_config,
+                    obs_space_format=self.env_config.obs_space_format,
+                    name=name,
+                )
+            case "policy":
+                return PolicyAgent(
+                    model_provider(),
+                    self.env_config.obs_space_format,
+                    is_recurrent=is_recurrent,
+                    recurrent_iterations=recurrent_iterations,
+                    name=name,
+                )
+            case "alphazero_mcts":
+                from l2l_lab.agents import AlphaZeroMCTSAgent
+                from l2l_lab.utils.search import load_search_config
+
+                search_config = load_search_config(search_config_path)
+                return AlphaZeroMCTSAgent(
+                    model=model_provider(),
+                    is_recurrent=is_recurrent,
+                    recurrent_iterations=recurrent_iterations,
+                    search_config=search_config,
+                    obs_space_format=self.env_config.obs_space_format,
+                    name=name,
+                )
+            case _:
+                raise ValueError(f"Unsupported agent type for eval: {agent_type!r}")
 
     def _play_balanced(
         self,

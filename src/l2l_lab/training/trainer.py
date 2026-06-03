@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import queue
 import shutil
-import signal
-import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -24,7 +22,11 @@ from l2l_lab.utils.checkpoint import (is_rewind, list_checkpoint_iterations_past
                                       get_training_checkpoint_path,
                                       trim_metrics_to_iteration)
 from l2l_lab.utils.common import check_interval
+from l2l_lab.utils.exception_handler import ExceptionHandler
 from l2l_lab.utils.memory import MemorySampler
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 MODELS_DIR = Path("models")
 
@@ -39,7 +41,7 @@ class Trainer:
         self.metrics: Dict[str, Any] = {}
         self.current_model_dir: Optional[Path] = None
         self.reporter: Optional[Reporter] = None
-        self._early_stop_requested = False
+        self._completed = False
         self._memory_sampler: Optional[MemorySampler] = None
         self._wandb_enabled: bool = False
         self._is_rewind: bool = False
@@ -50,17 +52,17 @@ class Trainer:
         algo_cfg = backend_cfg.algorithm
         total_iterations = algo_cfg.total_iterations
 
-        print("\n" * 3)
-        print("=" * 70)
-        print(f"\nTraining {cfg.env.name.upper()} with {algo_cfg.name.upper()} (backend: {backend_cfg.name})\n")
-        print(f"  Name: {cfg.name}")
-        print()
-        print("=" * 70)
+        logger.info("\n" * 3)
+        logger.info("=" * 70)
+        logger.info(f"\nTraining {cfg.env.name.upper()} with {algo_cfg.name.upper()} (backend: {backend_cfg.name})\n")
+        logger.info(f"  Name: {cfg.name}")
+        logger.info("")
+        logger.info("=" * 70)
 
         if cfg.common.checkpoint_interval <= 0:
             yellow_color_tags = "\033[33m", "\033[0m"
             start, end = yellow_color_tags
-            print(
+            logger.warning(
                 f"{start}\n"
                 "⚠ Checkpointing is disabled - "
                 "'checkpoint_interval' was set to 0 or not set at all ⚠\n"
@@ -92,7 +94,11 @@ class Trainer:
             self.backend.setup(cfg, self.current_model_dir)
             self._log_network_summary()
 
-        self.backend.configure_checkpointing(cfg.common.checkpoint_interval, self.current_model_dir)
+        self.backend.configure_checkpointing(
+            self.current_model_dir,
+            cfg.common.checkpoint_interval,
+            self.evaluator.training_eval_intervals(),
+        )
 
         self._setup_reporter(cfg, start_iteration)
 
@@ -103,106 +109,24 @@ class Trainer:
 
         remaining_iterations = total_iterations - start_iteration
         if remaining_iterations <= 0:
-            print(f"\nAlready completed {start_iteration} iterations (target: {total_iterations}). Nothing to do.")
+            logger.info(f"\nAlready completed {start_iteration} iterations (target: {total_iterations}). Nothing to do.")
             return
 
-        print()
-        print("=" * 70)
-        print(f"\n\nStarting training for {remaining_iterations} iterations (from {start_iteration} to {total_iterations})...")
-        print("Press Ctrl+C to stop early.")
-        print("-" * 70)
-        i = start_iteration
-        previous_checkpoint: Optional[Path] = None
+        logger.info("")
+        logger.info("=" * 70)
+        logger.info(f"\n\nStarting training for {remaining_iterations} iterations (from {start_iteration} to {total_iterations})...")
+        logger.info("Press Ctrl+C to stop early.")
+        logger.info("-" * 70)
+        self._last_iteration = start_iteration
+        self._completed = False
         self.backend.start_training()
 
-        self._early_stop_requested = False
-        original_sigint = signal.signal(signal.SIGINT, self._handle_sigint)
-        try:
-            while True:
-                try:
-                    step_result = self.backend.step_queue.get(timeout=1)
-                except queue.Empty:
-                    if self._early_stop_requested:
-                        break
-                    continue
-
-                if step_result is None:
-                    break
-
-                i = step_result.iteration
-                step_metrics = step_result.metrics
-
-                self._collect_weight_metrics(step_metrics)
-                if self._memory_sampler is not None:
-                    self._collect_memory_metrics(step_metrics)
-
-                training_results = self.evaluator.run_training_evals(i)
-                checkpoint_results: Dict[str, Optional[GameResults]] = {}
-                if step_result.checkpoint_path is not None:
-                    self.backend.wait_for_pending_checkpoints()
-                    self._save_trainer_checkpoint(step_result.checkpoint_path, i)
-                    checkpoint_results = self.evaluator.run_checkpoint_evals(previous_checkpoint, iteration=i)
-                eval_str = self._collect_eval_metrics({**training_results, **checkpoint_results}, step_metrics)
-
-                self.metrics["iteration"].append(i)
-                self._update_metrics(step_metrics)
-
-                if self.reporter is not None:
-                    self.reporter.on_step(i, step_metrics)
-
-                if self._wandb_enabled:
-                    wandb_helper.log(step_metrics, i)
-
-                if step_result.checkpoint_path is not None:
-                    previous_checkpoint = step_result.checkpoint_path
-                    self.backend.on_checkpoint_saved(self.current_model_dir, i)
-
-                if eval_str:
-                    print("\n")
-                    print("  ┌─ Eval Results ──────────────────────────────")
-                    print(eval_str)
-                    print("  └──────────────────────────────────────────────")
-                    print()
-
-                if check_interval(i, cfg.common.plot_interval):
-                    self.plot_progress()
-
-                if self._early_stop_requested:
-                    break
-
-            self.backend.request_stop()
-            self.backend.wait_for_training()
-
-            if i < total_iterations or self._early_stop_requested:
-                # on early stop, the trainer thread queue might be delayed, so we skip to the end
-                last_step = self._skip_to_end_of_queue()
-                if last_step is not None:
-                    i = last_step.iteration
-
-                print()
-                print("-" * 70)
-                print(f"Training stopped early at iteration {i}/{total_iterations}.")
-                self._save_final_checkpoint(i)
-                self.plot_progress(plot_memory=False)
-                self.backend.shutdown()
-                return
-
-            print()
-            print("-" * 70)
-            print(f"✓ {algo_cfg.name.upper()} Training completed!")
-            self._save_final_checkpoint(total_iterations)
-            self.plot_progress()
-            self.backend.shutdown()
-        finally:
-            if self.reporter is not None:
-                self.reporter.on_shutdown()
-            if self._wandb_enabled:
-                wandb_helper.finish()
-            signal.signal(signal.SIGINT, original_sigint)
+        with ExceptionHandler(self._graceful_shutdown):
+            self._run_training_loop()
 
     def plot_progress(self, plot_memory: bool = True) -> None:
         if not self.metrics.get("iteration"):
-            print("No metrics to plot!")
+            logger.info("No metrics to plot!")
             return
 
         if self.current_model_dir is None:
@@ -210,7 +134,7 @@ class Trainer:
 
         graphs_dir = self.current_model_dir / "graphs"
         graphs.plot_metrics(graphs_dir, self.metrics, self.config.common.eval_graph_split, plot_memory=plot_memory)
-        print(f"\n\n📊 Graphs saved to: {graphs_dir}\n\n")
+        logger.info(f"\n\n📊 Graphs saved to: {graphs_dir}\n\n")
 
     def _save_trainer_checkpoint(self, checkpoint_dir: Path, iteration: int) -> None:
         torch.save({
@@ -218,7 +142,7 @@ class Trainer:
             "metrics": self.metrics,
             "backend": self.backend.name,
         }, checkpoint_dir / "training.cp")
-        print(f"\n  [Trainer checkpoint saved: iter {iteration}]\n")
+        logger.info(f"\n  [Trainer checkpoint saved: iter {iteration}]\n")
 
     def _load_trainer_checkpoint(self, model_dir: Path, start_iteration: int,
                                  target_iteration: Optional[int]) -> None:
@@ -232,7 +156,93 @@ class Trainer:
         if metrics:
             for key, values in metrics.items():
                 self.metrics[key] = values
-            print(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint\n")
+            logger.info(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint\n")
+
+    def _run_training_loop(self) -> None:
+        cfg = self.config
+        previous_checkpoint: Optional[Path] = None
+        while True:
+            try:
+                step_result = self.backend.step_queue.get(timeout=1)
+            except queue.Empty:
+                continue
+
+            if step_result is None:
+                self._completed = True
+                break
+
+            i = step_result.iteration
+            self._last_iteration = i
+            step_metrics = step_result.metrics
+
+            self._collect_weight_metrics(step_metrics)
+            if self._memory_sampler is not None:
+                self._collect_memory_metrics(step_metrics)
+
+            training_results = self.evaluator.run_training_evals(i, step_result.eval_model)
+
+            checkpoint_results: Dict[str, Optional[GameResults]] = {}
+            if step_result.checkpoint_path is not None:
+                self.backend.wait_for_pending_checkpoints()
+                self._save_trainer_checkpoint(step_result.checkpoint_path, i)
+                checkpoint_results = self.evaluator.run_checkpoint_evals(
+                    previous_checkpoint, iteration=i, eval_model=step_result.eval_model
+                )
+            eval_str = self._collect_eval_metrics({**training_results, **checkpoint_results}, step_metrics)
+
+            self.metrics["iteration"].append(i)
+            self._update_metrics(step_metrics)
+
+            if self.reporter is not None:
+                self.reporter.on_step(i, step_metrics)
+
+            if self._wandb_enabled:
+                wandb_helper.log(step_metrics, i)
+
+            if step_result.checkpoint_path is not None:
+                previous_checkpoint = step_result.checkpoint_path
+                self.backend.on_checkpoint_saved(self.current_model_dir, i)
+
+            if eval_str:
+                logger.info("\n")
+                logger.info("  ┌─ Eval Results ───────────────────────────────")
+                logger.info(eval_str)
+                logger.info("  └──────────────────────────────────────────────")
+                logger.info("")
+
+            if check_interval(i, cfg.common.plot_interval):
+                self.plot_progress()
+
+    def _graceful_shutdown(self) -> None:
+        cfg = self.config
+        total_iterations = cfg.backend.algorithm.total_iterations
+        algo_name = cfg.backend.algorithm.name.upper()
+
+        self.backend.request_stop()
+        self.backend.wait_for_training()
+
+        last_step = self._skip_to_end_of_queue()
+        if last_step is not None:
+            self._last_iteration = last_step.iteration
+        i = self._last_iteration
+
+        try:
+            logger.info("")
+            logger.info("-" * 70)
+            if self._completed:
+                logger.info(f"✓ {algo_name} Training completed!")
+            else:
+                logger.info(f"Training stopped early at iteration {i}/{total_iterations}.")
+            self._save_final_checkpoint(i)
+            self.plot_progress(plot_memory=False)
+        except Exception:
+            logger.exception("Error during shutdown while saving the final checkpoints and plots")
+
+        self.backend.shutdown()
+        if self.reporter is not None:
+            self.reporter.on_shutdown()
+        if self._wandb_enabled:
+            wandb_helper.finish()
 
     def _save_final_checkpoint(self, iteration: int) -> None:
         final_path = self.backend.save_final_checkpoint(iteration)
@@ -357,7 +367,7 @@ class Trainer:
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         bar = "=" * 70
         sep = "-" * 70
-        print(
+        logger.info(
             f"\n{bar}\n\nNetwork architecture\n{sep}\n{model}\n{sep}\n"
             f"Total parameters:     {total_params:,}\n"
             f"Trainable parameters: {trainable_params:,}\n{bar}\n"
@@ -408,7 +418,7 @@ class Trainer:
     def _clear_existing_model_dir(self, model_dir: Path, wait_seconds: int) -> None:
         red_color_tags = "\033[31m", "\033[0m"
         start, end = red_color_tags
-        print(
+        logger.warning(
             f"{start}\nModel directory {model_dir} already exists.\n"
             "!! Directory will be cleared before starting a fresh training run !!\n"
             f" - Press Ctrl+C within {wait_seconds}s to abort.\n\n{end}"
@@ -422,7 +432,7 @@ class Trainer:
 
         red_color_tags = "\033[31m", "\033[0m"
         start, end = red_color_tags
-        print(
+        logger.warning(
             f"{start}\nRewind requested to iteration {start_iteration} "
             f"while later iterations exist on disk: {stale_iters}.\n"
             f"!! Checkpoints past {start_iteration} and any report data will be removed !!\n"
@@ -432,13 +442,6 @@ class Trainer:
 
         self.backend.delete_checkpoints_past(self.current_model_dir, start_iteration)
         Reporter.clear_artifacts_past(reports_dir, start_iteration)
-
-    def _handle_sigint(self, signum, frame):
-        if self._early_stop_requested:
-            print("\nForce stopping...")
-            sys.exit(1)
-        self._early_stop_requested = True
-        print("\n\nStopping after current step completes... (Ctrl+C again to force quit)\n")
 
     @staticmethod
     def _format_eval_line(label: str, result: GameResults) -> str:

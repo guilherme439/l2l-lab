@@ -22,6 +22,9 @@ from l2l_lab.envs.registry import create_env
 from l2l_lab.reporting.types import GameReport
 from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
 from l2l_lab.utils.common import clone_observation
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 MODELS_DIR = Path("models")
 
@@ -96,7 +99,7 @@ class Tester:
                 action_mask = obs["action_mask"]
 
                 if np.sum(action_mask) == 0:
-                    print("\nno valid actions found")
+                    logger.info("\nno valid actions found")
                     env.step(None)
                     continue
 
@@ -134,18 +137,18 @@ class Tester:
         return GameResults(wins, losses, draws, num_games, avg_moves, elapsed, reports=captured_reports)
 
     def test(self) -> GameResults:
-        print("\n" + "=" * 70)
-        print("Testing Mode")
-        print(f"  Player 1: {self.config.p1.agent_type}")
-        print(f"  Player 2: {self.config.p2.agent_type}")
-        print(f"  Games: {self.config.num_games}")
-        print("=" * 70)
+        logger.info("\n" + "=" * 70)
+        logger.info("Testing Mode")
+        logger.info(f"  Player 1: {self.config.p1.agent_type}")
+        logger.info(f"  Player 2: {self.config.p2.agent_type}")
+        logger.info(f"  Games: {self.config.num_games}")
+        logger.info("=" * 70)
 
         agent_p1 = self._create_agent(self.config.p1)
         agent_p2 = self._create_agent(self.config.p2)
 
-        print(f"  P1 agent: {agent_p1.name}")
-        print(f"  P2 agent: {agent_p2.name}")
+        logger.info(f"  P1 agent: {agent_p1.name}")
+        logger.info(f"  P2 agent: {agent_p2.name}")
 
         results = Tester.play_games(
             p0=agent_p1,
@@ -154,12 +157,12 @@ class Tester:
             num_games=self.config.num_games,
         )
 
-        print(f"\nResults (P1 perspective):")
-        print(f"  Wins:   {results.wins} ({results.win_rate:.1%})")
-        print(f"  Losses: {results.losses} ({results.loss_rate:.1%})")
-        print(f"  Draws:  {results.draws} ({results.draw_rate:.1%})")
-        print(f"  Time:   {results.elapsed_time:.2f}s ({results.avg_time_per_game:.3f}s/game)")
-        print("\n✓ Testing complete!")
+        logger.info(f"\nResults (P1 perspective):")
+        logger.info(f"  Wins:   {results.wins} ({results.win_rate:.1%})")
+        logger.info(f"  Losses: {results.losses} ({results.loss_rate:.1%})")
+        logger.info(f"  Draws:  {results.draws} ({results.draw_rate:.1%})")
+        logger.info(f"  Time:   {results.elapsed_time:.2f}s ({results.avg_time_per_game:.3f}s/game)")
+        logger.info("\n✓ Testing complete!")
 
         return results
 

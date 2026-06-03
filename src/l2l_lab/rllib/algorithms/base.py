@@ -14,6 +14,9 @@ from l2l_lab.configs.training.network import (BaseNetworkConfig, MLPNetConfig,
 from l2l_lab.rllib.modules.networks.conv import ConvDualHeadRLModule
 from l2l_lab.rllib.modules.networks.mlp import MLPDualHeadRLModule
 from l2l_lab.utils.checkpoint import get_algo_checkpoint_path
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 if TYPE_CHECKING:
     from l2l_lab.configs.training.TrainingConfig import TrainingConfig
@@ -83,26 +86,26 @@ class BaseAlgorithmTrainer(ABC):
     ) -> int:
         algo_checkpoint_path = get_algo_checkpoint_path(model_dir, target_iteration)
         if algo_checkpoint_path is None or not algo_checkpoint_path.exists():
-            print("\nNo existing checkpoint found. Starting fresh training...")
-            print(f"\nBuilding {self.algorithm_name.upper()} algorithm...\n")
+            logger.info("\nNo existing checkpoint found. Starting fresh training...")
+            logger.info(f"\nBuilding {self.algorithm_name.upper()} algorithm...\n")
             self.algo = rllib_config.build_algo()
-            print("\n✓ Algorithm built successfully!")
+            logger.info("\n✓ Algorithm built successfully!")
             return 0
 
-        print("\nContinuing training with current config...")
-        print(f"Building {self.algorithm_name.upper()} algorithm with new config...\n")
+        logger.info("\nContinuing training with current config...")
+        logger.info(f"Building {self.algorithm_name.upper()} algorithm with new config...\n")
         self.algo = rllib_config.build_algo()
-        print("\n✓ Algorithm built successfully!")
+        logger.info("\n✓ Algorithm built successfully!")
 
-        print("Restoring weights from checkpoint...")
+        logger.info("Restoring weights from checkpoint...")
         self.algo.restore_from_path(str(algo_checkpoint_path.absolute()))
-        print("\n✓ Weights restored from checkpoint")
+        logger.info("\n✓ Weights restored from checkpoint")
 
         start_iteration = int(algo_checkpoint_path.parent.name)
 
         if target_iteration is not None:
-            print(f"✓ Loaded checkpoint from iteration {start_iteration} (requested: {target_iteration})")
+            logger.info(f"✓ Loaded checkpoint from iteration {start_iteration} (requested: {target_iteration})")
         else:
-            print(f"✓ Resuming from iteration {start_iteration}")
+            logger.info(f"✓ Resuming from iteration {start_iteration}")
 
         return start_iteration

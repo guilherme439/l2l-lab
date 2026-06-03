@@ -10,6 +10,9 @@ from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 
 from l2l_lab.rllib.modules.RandomRLModule import RandomRLModule
 from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 if TYPE_CHECKING:
     from l2l_lab.configs.training.PolicyConfig import PolicyConfig
@@ -74,28 +77,28 @@ def build_multi_policy_spec(
 
 def load_checkpoint_weights_into_policy(algo, policy_name: str, checkpoint_path: Path):
     if not checkpoint_path.exists():
-        print(f"Warning: Checkpoint not found: {checkpoint_path}")
+        logger.warning(f"Warning: Checkpoint not found: {checkpoint_path}")
         return False
     
     checkpoint = load_checkpoint_file(checkpoint_path)
     backbone_state_dict = checkpoint.get("backbone_state_dict")
     
     if backbone_state_dict is None:
-        print(f"Warning: No backbone_state_dict in checkpoint: {checkpoint_path}")
+        logger.warning(f"Warning: No backbone_state_dict in checkpoint: {checkpoint_path}")
         return False
     
     try:
         rl_module = algo.get_module(policy_name)
     except KeyError:
-        print(f"Warning: Policy {policy_name} not found in algorithm")
+        logger.warning(f"Warning: Policy {policy_name} not found in algorithm")
         return False
     
     if rl_module is None:
-        print(f"Warning: Policy {policy_name} returned None")
+        logger.warning(f"Warning: Policy {policy_name} returned None")
         return False
     
     if not hasattr(rl_module, 'backbone'):
-        print(f"Warning: Policy {policy_name} has no backbone attribute")
+        logger.warning(f"Warning: Policy {policy_name} has no backbone attribute")
         return False
     
     load_model_state_dict(rl_module.backbone, backbone_state_dict)

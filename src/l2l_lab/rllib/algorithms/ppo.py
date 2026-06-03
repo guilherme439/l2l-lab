@@ -16,6 +16,9 @@ from .multi_policy import (
     create_policy_mapping_fn,
     load_checkpoint_weights_into_policy,
 )
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 if TYPE_CHECKING:
     from l2l_lab.configs.training.TrainingConfig import TrainingConfig
@@ -179,7 +182,7 @@ class PPOTrainer(BaseAlgorithmTrainer):
                 if self.algo is not None:
                     load_checkpoint_weights_into_policy(self.algo, policy_name, cp_path)
             except Exception as e:
-                print(f"Warning: Could not load checkpoint {cp_iter} into {policy_name}: {e}")
+                logger.warning(f"Warning: Could not load checkpoint {cp_iter} into {policy_name}: {e}")
         
         policy_weights = policy_cfg.get_policy_weights(len(self.available_checkpoints))
         if self.policy_sampler:

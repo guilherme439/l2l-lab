@@ -11,6 +11,9 @@ import os
 from dataclasses import dataclass
 
 import psutil
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 _BYTES_PER_MB = 1024 * 1024
 
@@ -35,7 +38,7 @@ class MemorySampler:
         self._main = psutil.Process(os.getpid())
         self._pss_supported = self._detect_pss_support()
         if not self._pss_supported:
-            print(
+            logger.warning(
                 "WARNING: PSS not available on this platform — memory tracking will fall back "
                 "to RSS, which double-counts pages shared between forked workers."
             )

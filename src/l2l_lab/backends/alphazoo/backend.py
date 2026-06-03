@@ -19,14 +19,12 @@ from l2l_lab.neural_networks.utils.builders import build_network
 from l2l_lab.utils.checkpoint import (get_checkpoint_dir, load_checkpoint_file,
                                       load_model_state_dict)
 from l2l_lab.utils.common import check_interval
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 if TYPE_CHECKING:
     from l2l_lab.configs.training.TrainingConfig import TrainingConfig
-
-
-class _EarlyStopTrainingException(Exception):
-    """Raised inside the AlphaZoo callback to break out of az.train()."""
-    pass
 
 
 class _CheckpointWriter(CheckpointWriter):
@@ -64,12 +62,12 @@ class AlphaZooBackend(AlgorithmBackend):
     def init(self) -> None:
         import ray
         if not ray.is_initialized():
-            print()
+            logger.info("")
             ray.init(
                 ignore_reinit_error=True,
                 _system_config={"local_fs_capacity_threshold": 0.99},
             )
-            print()
+            logger.info("")
 
     def shutdown(self) -> None:
         import ray
@@ -92,11 +90,11 @@ class AlphaZooBackend(AlgorithmBackend):
         self._state_shape = state_shape
         self._action_space_shape = action_space_shape
 
-        print(f"\nEnvironment Info:")
-        print(f"  State shape: {state_shape}")
-        print(f"  Action space: {action_space_shape}")
-        print()
-        print("=" * 70)
+        logger.info(f"\nEnvironment Info:")
+        logger.info(f"  State shape: {state_shape}")
+        logger.info(f"  Action space: {action_space_shape}")
+        logger.info("")
+        logger.info("=" * 70)
 
         self._model = self._build_model(config, state_shape, action_space_shape)
         self._initialize_lazy_params(state_shape)
@@ -117,7 +115,7 @@ class AlphaZooBackend(AlgorithmBackend):
             model=self._model,
         )
 
-        print(f"\n✓ AlphaZoo instance created successfully!")
+        logger.info(f"\n✓ AlphaZoo instance created successfully!")
 
     def restore(self, config: TrainingConfig, model_dir: Path) -> int:
         from alphazoo import AlphaZoo
@@ -154,7 +152,7 @@ class AlphaZooBackend(AlgorithmBackend):
             model_state_dict = load_checkpoint_file(weights_path)
             load_model_state_dict(self._model, model_state_dict)
             loaded_iteration = int(checkpoint_dir.name)
-            print(f"\n✓ Model weights restored from {weights_path}")
+            logger.info(f"\n✓ Model weights restored from {weights_path}")
 
             algo_state_path = checkpoint_dir / "algo" / "state.cp"
             if algo_state_path.exists():
@@ -165,7 +163,7 @@ class AlphaZooBackend(AlgorithmBackend):
                     scheduler_state_dict = algo_state.get("scheduler_state_dict")
                 replay_buffer_state = algo_state.get("replay_buffer_state")
         else:
-            print("No checkpoint found. Starting fresh.")
+            logger.info("No checkpoint found. Starting fresh.")
 
         self._start_iteration = loaded_iteration + 1
         self._total_iterations = config.backend.algorithm.total_iterations
@@ -197,8 +195,6 @@ class AlphaZooBackend(AlgorithmBackend):
         ]
 
     def get_eval_model(self) -> torch.nn.Module:
-        # this reads the model in a different thread while writes are happening,
-        # it should be a race condition but it never crashed so...
         model_copy = deepcopy(self._model).cpu()
         model_copy.eval()
         return model_copy
@@ -256,17 +252,18 @@ class AlphaZooBackend(AlgorithmBackend):
                     checkpoint_path.mkdir(exist_ok=True)
                     self._writer.enqueue(snapshot, checkpoint_path)
 
+                eval_model = self.get_eval_model() if self._needs_snapshot(step) else None
+
                 self.step_queue.put(StepResult(
                     iteration=step,
                     metrics=public_metrics,
                     checkpoint_path=checkpoint_path,
+                    eval_model=eval_model,
                 ))
                 if self._stop_event.is_set():
-                    raise _EarlyStopTrainingException()
+                    return False
 
             az.train(on_step_end=_on_step_end)
-        except _EarlyStopTrainingException:
-            pass
         finally:
             self.step_queue.put(None)
 
@@ -291,7 +288,7 @@ class AlphaZooBackend(AlgorithmBackend):
     def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
         total = self._config.backend.algorithm.total_iterations
-        print(f"\nIteration {iteration}/{total} finished | EpLen: {ep_len:6.1f}\n")
+        logger.info(f"\nIteration {iteration}/{total} finished | EpLen: {ep_len:6.1f}\n")
         
     def _capture_snapshot(self) -> Dict[str, Any]:
         az = self._alphazoo

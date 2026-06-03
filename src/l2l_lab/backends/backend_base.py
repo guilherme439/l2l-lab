@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -8,6 +9,7 @@ from queue import Queue
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 
 from l2l_lab.utils.checkpoint import delete_checkpoint_dirs_past
+from l2l_lab.utils.common import check_interval
 
 if TYPE_CHECKING:
     import torch
@@ -15,11 +17,15 @@ if TYPE_CHECKING:
     from l2l_lab.configs.training.TrainingConfig import TrainingConfig
 
 
+logger = logging.getLogger("l2l_lab")
+
+
 @dataclass
 class StepResult:
     iteration: int
     metrics: Dict[str, Any] = field(default_factory=dict)
     checkpoint_path: Optional[Path] = None
+    eval_model: Optional["torch.nn.Module"] = None
 
 
 class AlgorithmBackend(ABC):
@@ -30,25 +36,39 @@ class AlgorithmBackend(ABC):
         self._training_thread: Optional[threading.Thread] = None
         self._checkpoint_interval: int = 0
         self._checkpoint_base_dir: Optional[Path] = None
+        self._snapshot_intervals: list[int] = []
         self._start_iteration: int = 0
         self._total_iterations: int = 0
 
-    def configure_checkpointing(self, interval: int, base_dir: Path) -> None:
-        self._checkpoint_interval = interval
+    def configure_checkpointing(
+        self, base_dir: Path, checkpoint_interval: int, eval_intervals: list[int]
+    ) -> None:
+        """Set up checkpoint writing and the cadence at which the training thread
+        must snapshot the model. A snapshot is captured on any step that a
+        checkpoint or a training eval will consume, so the consumer can build
+        eval agents from the weights as they were at that step."""
+        self._checkpoint_interval = checkpoint_interval
         self._checkpoint_base_dir = base_dir
+        self._snapshot_intervals = sorted({checkpoint_interval, *eval_intervals})
 
     def request_stop(self) -> None:
         """Signal the training thread to stop after the current step."""
         self._stop_event.set()
 
-    def wait_for_training(self, timeout: Optional[float] = 30) -> None:
-        """Wait for the training thread to finish."""
-        if self._training_thread is not None:
-            self._training_thread.join(timeout=timeout)
+    def wait_for_training(self, timeout: Optional[float] = 120) -> None:
+        """Wait for the training thread to gracefully finish, up to `timeout` seconds."""
+        if self._training_thread is None:
+            return
+        if timeout is not None:
+            logger.info(f"\nWaiting up to {int(timeout)}s for the training backend to finish...\n")
+        self._training_thread.join(timeout=timeout)
+        if self._training_thread.is_alive():
+            logger.warning(
+                f"WARNING: training backend still running after {int(timeout)}s; shutdown may be incomplete."
+            )
 
     def start_training(self) -> None:
-        """Launch `_train` in a background thread. The iteration range is read
-        from the state stored during `setup`/`restore`."""
+        """Launch `_train` in a background thread."""
         self._stop_event.clear()
         self._training_thread = threading.Thread(
             target=self._train,
@@ -79,6 +99,12 @@ class AlgorithmBackend(ABC):
         """Periodic backend-specific log. Called on the training thread every
         `info_interval` steps. Default is a no-op."""
         pass
+
+    def _needs_snapshot(self, step: int) -> bool:
+        """True when an eval or checkpoint at `step` will consume a model
+        snapshot. Evaluated on the training thread to decide whether to capture
+        the current weights for this step's `StepResult`."""
+        return any(check_interval(step, interval) for interval in self._snapshot_intervals)
 
     @property
     @abstractmethod

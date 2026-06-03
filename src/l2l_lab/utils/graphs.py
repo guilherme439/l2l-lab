@@ -5,6 +5,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 
 def _filter_none(iterations: List[int], values: List[Optional[float]]) -> Tuple[List[int], List[float]]:
@@ -457,7 +460,7 @@ def plot_metrics(graphs_dir: Path, metrics: Dict[str, Any], eval_graph_split: in
     if not iterations:
         return
 
-    print("\n\nPlotting...")
+    logger.info("\n\nPlotting...")
     plot_training_overview(graphs_dir, metrics)
     plot_loss_breakdown(graphs_dir, metrics)
     plot_policy_health(graphs_dir, metrics)

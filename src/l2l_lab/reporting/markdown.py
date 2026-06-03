@@ -41,7 +41,7 @@ def render_report(
     if scalar_section:
         parts.append(scalar_section)
 
-    eval_section = _render_evaluations(metrics, sparkline_window)
+    eval_section = _render_evaluations(metrics)
     if eval_section:
         parts.append(eval_section)
 
@@ -121,7 +121,7 @@ def _render_scalar_metrics(metrics: dict[str, Any], window: int) -> str:
     return "## Scalar metrics\n" + "\n".join(lines)
 
 
-def _render_evaluations(metrics: dict[str, Any], window: int) -> str:
+def _render_evaluations(metrics: dict[str, Any]) -> str:
     evaluations = metrics.get("evaluations")
     if not isinstance(evaluations, dict) or not evaluations:
         return ""
@@ -157,18 +157,9 @@ def _render_evaluations(metrics: dict[str, Any], window: int) -> str:
                 total = (latest_w or 0) + (latest_l or 0) + (latest_d or 0)
                 win_rate = (latest_w or 0) / total if total > 0 else 0.0
 
-                recent_rates: list[Optional[float]] = []
-                recent = list(zip(wins[-window:], losses[-window:], draws[-window:]))
-                for w, l, d in recent:
-                    if w is None or l is None or d is None:
-                        recent_rates.append(None)
-                        continue
-                    t = w + l + d
-                    recent_rates.append(w / t if t > 0 else 0.0)
-
                 eval_lines.append(
                     f"  - {position}: {latest_w or 0}W/{latest_l or 0}L/{latest_d or 0}D"
-                    f" (win_rate={win_rate:.1%}) spark={sparkline(recent_rates)}"
+                    f" (win_rate={win_rate:.1%})"
                 )
 
             if eval_lines:

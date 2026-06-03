@@ -64,7 +64,7 @@ backend:
       optimizer:
         optimizer_choice: "SGD"
       scheduler:
-        starting_lr: 0.01
+        starting_lr: 0.001
         boundaries: [1000]
         gamma: 0.1
 

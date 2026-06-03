@@ -3,6 +3,9 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 from typing import Any, Optional, Union
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 _SCALAR_TYPES = (int, float, bool, str)
 
@@ -73,7 +76,7 @@ class MetricsCSVWriter:
 
         for key in list(row.keys()):
             if key not in self._header and key not in self._warned_keys:
-                print(
+                logger.warning(
                     f"WARNING: MetricsCSVWriter: dropping new column '{key}' (header locked at first write)"
                 )
                 self._warned_keys.add(key)

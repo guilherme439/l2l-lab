@@ -12,7 +12,7 @@ def check_interval(iteration: int, interval: int) -> bool:
     A non-positive `interval` is treated as "never fire"."""
     if interval <= 0:
         return False
-    return iteration % interval == 0
+    return iteration > 0 and iteration % interval == 0
 
 
 def clone_observation(obs: dict[str, Any]) -> dict[str, Any]:

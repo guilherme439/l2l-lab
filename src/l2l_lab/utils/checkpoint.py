@@ -8,6 +8,9 @@ from typing import Any, Dict, List, Optional
 import torch
 
 from l2l_lab.utils.common import find_paths_with_iteration_past
+import logging
+
+logger = logging.getLogger("l2l_lab")
 
 _CHECKPOINT_DIR_PATTERN = re.compile(r"^(\d+)$")
 
@@ -25,7 +28,7 @@ def load_model_state_dict(model: torch.nn.Module, state_dict: dict[str, Any]) ->
     except RuntimeError as exc:
         yellow_color_tags = "\033[33m", "\033[0m"
         start_tag, end_tag = yellow_color_tags
-        print(
+        logger.warning(
             f"{start_tag}\n"
             "WARNING: Strict load_state_dict failed — network architecture has "
             "changed since this checkpoint was saved. Falling back to "

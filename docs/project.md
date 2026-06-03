@@ -126,7 +126,7 @@ Saved to `models/{name}/checkpoints/{iteration}/` containing model weights, RLli
 Opt-in diagnostic layer, enabled by setting `reporting.enabled: true` in the training YAML. When enabled, the trainer writes LLM-friendly artifacts to `models/{name}/reports/`:
 
 - `training.csv` — one row per iteration, appended live. Only flat scalars from `Trainer.metrics` are persisted; the header is locked at first write, so schema stays stable across resumes.
-- `report_{iter:06d}.md` — full Markdown snapshot every `reporting.interval` iterations. Sections (omitted entirely when empty): header, scalar metrics with sparklines, evaluations with per-position win-rate sparklines, env-registered probe states with policy distribution + value, and sample games.
+- `report_{iter:06d}.md` — full Markdown snapshot every `reporting.interval` iterations. Sections (omitted entirely when empty): header, scalar metrics with sparklines, evaluations with per-position win rates, env-registered probe states with policy distribution + value, and sample games.
 - `config.yaml` — verbatim copy of the originating training YAML. On resume, if the current YAML differs structurally (canonical-YAML SHA-256 diff), an additional `config_{iter:06d}.yaml` is written — `config.yaml` is never overwritten.
 
 **Probe states** are env-specific canonical observations registered via `l2l_lab.reporting.register_probe_states(env_name, provider)`. The provider returns `ProbeState` instances each carrying a pre-built observation dict (`{"observation", "action_mask"}`) so they're robust to non-deterministic envs. Only `connect_four` ships with probes in v1; the probes section is omitted from reports for other envs.
