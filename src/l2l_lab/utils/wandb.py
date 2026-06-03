@@ -54,6 +54,8 @@ def init(
         }
 
         run = _wandb_pkg.init(**init_kwargs)
+        
+        logger.info("")
         if run is None:
             logger.warning("WARNING: wandb: init returned None; skipping")
             return False

@@ -77,7 +77,7 @@ class Evaluator:
                 player, opponent, entry.games_per_player,
                 iteration=iteration, label=entry.label,
             )
-        logger.info("")
+        logger.info("\n")
         return results
 
     def run_checkpoint_evals(
@@ -111,7 +111,7 @@ class Evaluator:
                 player, opponent, entry.games_per_player,
                 iteration=iteration, label=entry.label,
             )
-        logger.info("")
+        logger.info("\n")
         return results
 
     @staticmethod
