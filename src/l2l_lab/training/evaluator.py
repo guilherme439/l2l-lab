@@ -77,6 +77,7 @@ class Evaluator:
                 player, opponent, entry.games_per_player,
                 iteration=iteration, label=entry.label,
             )
+            logger.info(f"Finished training eval [{entry.player} x {entry.opponent}]\n")
         logger.info("\n")
         return results
 
@@ -111,6 +112,7 @@ class Evaluator:
                 player, opponent, entry.games_per_player,
                 iteration=iteration, label=entry.label,
             )
+            logger.info(f"Finished checkpoint eval [{entry.player} x {entry.opponent}]\n")
         logger.info("\n")
         return results
 

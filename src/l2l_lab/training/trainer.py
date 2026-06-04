@@ -219,7 +219,7 @@ class Trainer:
         algo_name = cfg.backend.algorithm.name.upper()
 
         self.backend.request_stop()
-        self.backend.wait_for_training()
+        self.backend.wait_for_training(180)
 
         last_step = self._skip_to_end_of_queue()
         if last_step is not None:
