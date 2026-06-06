@@ -183,7 +183,7 @@ class AlphaZooBackend(AlgorithmBackend):
             model=self._model,
             optimizer_state_dict=optimizer_state_dict,
             scheduler_state_dict=scheduler_state_dict,
-            replay_buffer_state=replay_buffer_state,
+            replay_buffer_state_dict=replay_buffer_state,
             start_iteration=self._start_iteration,
         )
 
