@@ -1,10 +1,8 @@
-from __future__ import annotations
-
 import queue
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -33,12 +31,12 @@ MODELS_DIR = Path("models")
 
 class Trainer:
 
-    def __init__(self, config_path: Union[str, Path]):
+    def __init__(self, config_path: str | Path):
         self.config_path = Path(config_path)
         self.config = TrainingConfig.from_yaml(config_path)
         self.backend = get_backend(self.config.backend.name)()
         self.evaluator = Evaluator(self.config.evaluation, self.backend, self.config.env, self.config.network)
-        self.metrics: Dict[str, Any] = {}
+        self.metrics: dict[str, Any] = {}
         self.current_model_dir: Optional[Path] = None
         self.reporter: Optional[Reporter] = None
         self._completed = False
@@ -181,7 +179,7 @@ class Trainer:
 
             training_results = self.evaluator.run_training_evals(i, step_result.eval_model)
 
-            checkpoint_results: Dict[str, Optional[GameResults]] = {}
+            checkpoint_results: dict[str, Optional[GameResults]] = {}
             if step_result.checkpoint_path is not None:
                 self.backend.wait_for_pending_checkpoints()
                 self._save_trainer_checkpoint(step_result.checkpoint_path, i)
@@ -291,7 +289,7 @@ class Trainer:
         self.evaluator.reporter = self.reporter
 
     def _init_metrics(self) -> None:
-        evaluations: Dict[str, Dict[str, Any]] = {"training": {}, "checkpoint": {}}
+        evaluations: dict[str, dict[str, Any]] = {"training": {}, "checkpoint": {}}
         for label, label_type in self.evaluator.label_to_type_map().items():
             evaluations[label_type][label] = {
                 "as_p0": {"wins": [], "losses": [], "draws": []},
@@ -311,7 +309,7 @@ class Trainer:
                 "total_pss_mb": [],
             }
 
-    def _collect_memory_metrics(self, step_metrics: Dict[str, Any]) -> None:
+    def _collect_memory_metrics(self, step_metrics: dict[str, Any]) -> None:
         sample = self._memory_sampler.sample()
         step_metrics["memory"] = {
             "main_pss_mb": sample.main_pss_mb,
@@ -319,12 +317,12 @@ class Trainer:
             "total_pss_mb": sample.total_pss_mb,
         }
 
-    def _update_metrics(self, step_metrics: Dict[str, Any]) -> None:
+    def _update_metrics(self, step_metrics: dict[str, Any]) -> None:
         target_len = len(self.metrics["iteration"])
         self._update_into(self.metrics, step_metrics, target_len)
         self._align_metrics(self.metrics, target_len)
 
-    def _update_into(self, target: Dict[str, Any], source: Dict[str, Any], target_len: int) -> None:
+    def _update_into(self, target: dict[str, Any], source: dict[str, Any], target_len: int) -> None:
         '''
         Append source values into target (recursing into nested dicts).
         '''
@@ -373,7 +371,7 @@ class Trainer:
             f"Trainable parameters: {trainable_params:,}\n{bar}\n"
         )
 
-    def _collect_weight_metrics(self, step_metrics: Dict[str, Any]) -> None:
+    def _collect_weight_metrics(self, step_metrics: dict[str, Any]) -> None:
         parameters = self.backend.get_weight_parameters()
         if parameters is None:
             return
@@ -390,9 +388,9 @@ class Trainer:
         step_metrics["weight_min"] = float(np.min(np.abs(all_weights)))
         step_metrics["weight_avg"] = float(np.mean(np.abs(all_weights)))
 
-    def _collect_eval_metrics(self, results: Dict[str, Optional[GameResults]], step_metrics: Dict[str, Any]) -> str:
+    def _collect_eval_metrics(self, results: dict[str, Optional[GameResults]], step_metrics: dict[str, Any]) -> str:
         formatted: list[str] = []
-        eval_buckets: Dict[str, Dict[str, Any]] = {"training": {}, "checkpoint": {}}
+        eval_buckets: dict[str, dict[str, Any]] = {"training": {}, "checkpoint": {}}
         label_to_type = self.evaluator.label_to_type_map()
         for label in self.evaluator.labels():
             result = results.get(label)

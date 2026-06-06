@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 from types import TracebackType
 from typing import Callable, Optional
@@ -12,7 +10,7 @@ class ExceptionHandler:
     def __init__(self, on_exit: Callable[[], None]) -> None:
         self._on_exit = on_exit
 
-    def __enter__(self) -> "ExceptionHandler":
+    def __enter__(self) -> ExceptionHandler:
         return self
 
     def __exit__(

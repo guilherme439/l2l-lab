@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import Any, Dict, Type
+from typing import Any
 
 import torch
 from ray.rllib.core.columns import Columns
@@ -18,26 +16,26 @@ class RandomRLModule(TorchRLModule):
         self._dummy = torch.nn.Parameter(torch.zeros(1))
     
     @override(TorchRLModule)
-    def get_exploration_action_dist_cls(self) -> Type[Distribution]:
+    def get_exploration_action_dist_cls(self) -> type[Distribution]:
         return TorchCategorical
     
     @override(TorchRLModule)
-    def get_inference_action_dist_cls(self) -> Type[Distribution]:
+    def get_inference_action_dist_cls(self) -> type[Distribution]:
         return TorchCategorical
     
     @override(TorchRLModule)
-    def _forward_inference(self, batch: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    def _forward_inference(self, batch: dict[str, Any], **kwargs) -> dict[str, Any]:
         return self._uniform_logits(batch)
     
     @override(TorchRLModule)
-    def _forward_exploration(self, batch: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    def _forward_exploration(self, batch: dict[str, Any], **kwargs) -> dict[str, Any]:
         return self._uniform_logits(batch)
     
     @override(TorchRLModule)
-    def _forward_train(self, batch: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    def _forward_train(self, batch: dict[str, Any], **kwargs) -> dict[str, Any]:
         return self._uniform_logits(batch)
     
-    def _uniform_logits(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+    def _uniform_logits(self, batch: dict[str, Any]) -> dict[str, Any]:
         obs_dict = batch[Columns.OBS]
         action_mask = obs_dict["action_mask"]
         

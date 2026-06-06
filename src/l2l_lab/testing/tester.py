@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -61,7 +59,7 @@ class GameResults:
 
 class Tester:
 
-    def __init__(self, config_path: Union[str, Path]):
+    def __init__(self, config_path: str | Path):
         self.config = TestingConfig.from_yaml(config_path)
 
     @staticmethod
@@ -91,7 +89,7 @@ class Tester:
             env.reset()
             moves = 0
             capture = len(captured_reports) < reports_to_capture
-            recorded_moves: list[tuple[str, Optional[int], Dict[str, Any]]] = []
+            recorded_moves: list[tuple[str, Optional[int], dict[str, Any]]] = []
 
             while not Tester._is_env_done(env):
                 agent_id = env.agent_selection

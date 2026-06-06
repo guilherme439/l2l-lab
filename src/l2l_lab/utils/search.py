@@ -1,12 +1,10 @@
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from alphazoo import SearchConfig
 
 
-def load_search_config(path: str) -> "SearchConfig":
+def load_search_config(path: str) -> SearchConfig:
     """
     Load an alphazoo SearchConfig from YAML for inference-time MCTS.
 

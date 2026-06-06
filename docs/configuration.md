@@ -1,6 +1,6 @@
 # Training Configuration Reference
 
-All training runs are driven by a single YAML file parsed into `TrainingConfig`. Each top-level key maps to a dataclass in [`src/l2l_lab/configs/training/`](../src/l2l_lab/configs/training/). Most fields have defaults — you only specify what you want to override.
+All training runs are driven by a single YAML file parsed into `TrainingConfig`. Each top-level key maps to a dataclass in [`src/l2l_lab/configs/training/`](../src/l2l_lab/configs/training/). Most fields have defaults - you only specify what you want to override.
 
 Full examples live under [`configs/training/*.example.yml`](../configs/training/).
 
@@ -83,7 +83,7 @@ Interval knobs. Setting any to `0` disables the corresponding action.
 | `checkpoint_interval` | int | `0` | Save a checkpoint every N iterations. `0` disables and the trainer prints a warning at startup. |
 | `plot_memory` | bool | `false` | When `true`, sample RAM usage once per iteration and emit a `memory.png` graph alongside the other plots. Tracks system-wide used memory plus the trainer's whole process tree (main + Ray/AlphaZoo workers via PSS, falling back to RSS off Linux). Memory data is excluded from the reporting CSV/Markdown snapshots. |
 
-The `common:` section itself is required — parsing raises if it's missing, even though every field inside has a default.
+The `common:` section itself is required - parsing raises if it's missing, even though every field inside has a default.
 
 ---
 
@@ -107,7 +107,7 @@ Neural network architecture + its construction kwargs. `NetworkConfig` is define
 |---|---|---|---|
 | `architecture` | `"ResNet" \| "ConvNet" \| "MLPNet" \| "RecurrentNet"` | *(required)* | Which architecture class to instantiate. |
 | `recurrent_iterations` | int | `1` | Number of recurrent iterations to run during evaluation. Only used when `architecture: "RecurrentNet"`. |
-| *(remaining keys)* | varies | — | Architecture-specific kwargs (e.g. `num_filters`, `num_blocks`, `hidden_layers`, `neurons_per_layer`). Any unknown key under `network:` is treated as a constructor kwarg. |
+| *(remaining keys)* | varies | - | Architecture-specific kwargs (e.g. `num_filters`, `num_blocks`, `hidden_layers`, `neurons_per_layer`). Any unknown key under `network:` is treated as a constructor kwarg. |
 
 ### Conv-based architectures: head selection
 
@@ -134,14 +134,14 @@ Shared fields on every backend:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `name` | `"rllib" \| "alphazoo"` | *(required)* | Dispatch key — selects which backend class is used. |
+| `name` | `"rllib" \| "alphazoo"` | *(required)* | Dispatch key - selects which backend class is used. |
 | `continue_training` | bool | `false` | When `true`, the run resumes from an existing checkpoint at `models/<name>/` instead of starting fresh. |
 | `continue_from_iteration` | int \| null | `null` | Specific iteration to resume from. `null` = latest checkpoint. Setting this below the latest existing checkpoint triggers a rewind: checkpoint dirs, report snapshots, archived configs, and CSV rows past this iteration are deleted (after a 30s Ctrl+C grace period) before training resumes. |
 | `algorithm` | object | *(required)* | See [Algorithm](#algorithm) below. Its shape must match the backend. |
 
 ### Rllib Backend
 
-No extra fields beyond the shared ones above. `continue_training: true` here restores the full Learner state (weights + optimizer + Learner step counter). Changing `lr` in the config between runs is silently ignored when continuing — use a piecewise `lr: [[step, value], ...]` schedule if you need mid-training LR changes.
+No extra fields beyond the shared ones above. `continue_training: true` here restores the full Learner state (weights + optimizer + Learner step counter). Changing `lr` in the config between runs is silently ignored when continuing - use a piecewise `lr: [[step, value], ...]` schedule if you need mid-training LR changes.
 
 ### Alphazoo Backend
 
@@ -152,7 +152,7 @@ Adds fine-grained controls over what gets restored on resume:
 | `load_scheduler` | bool \| null | `null` → `continue_training` | When `false`, the LR scheduler is rebuilt fresh from config (resetting the schedule). |
 | `load_optimizer` | bool \| null | `null` → `continue_training` | When `false`, the optimizer is rebuilt fresh from config (losing Adam/SGD internal stats). |
 
-Setting either to `true` when `continue_training` is `false` is an error — there's no state to load from.
+Setting either to `true` when `continue_training` is `false` is an error - there's no state to load from.
 
 When `load_optimizer: true` **and** `load_scheduler: false` (with `continue_training: true`), the optimizer's per-param-group `lr` is synced to the fresh scheduler's `starting_lr`. This is how you bump the LR back up on resume while keeping Adam m/v stats.
 
@@ -205,7 +205,7 @@ Used with `backend.name: "rllib"` and `algorithm.name: "impala"`. Inner config: 
 
 ### AlphaZero
 
-Used with `backend.name: "alphazoo"` and `algorithm.name: "alphazero"`. The inner `config:` block is the full external [`AlphaZooConfig`](https://github.com/guilherme439/alphazoo/blob/main/src/alphazoo/configs/alphazoo_config.py) from the alphazoo package — **refer to [alphazoo's configuration reference](https://github.com/guilherme439/alphazoo/blob/master/docs/configuration.md) for every field under `config:`**.
+Used with `backend.name: "alphazoo"` and `algorithm.name: "alphazero"`. The inner `config:` block is the full external [`AlphaZooConfig`](https://github.com/guilherme439/alphazoo/blob/main/src/alphazoo/configs/alphazoo_config.py) from the alphazoo package - **refer to [alphazoo's configuration reference](https://github.com/guilherme439/alphazoo/blob/master/docs/configuration.md) for every field under `config:`**.
 
 Differences from `AlphaZooConfig` standalone:
 
@@ -257,14 +257,14 @@ Optional diagnostic layer. When enabled, writes structured artifacts to `models/
 
 ### Output files
 
-- `training.csv` — one row per iteration, flat scalars only. Header is locked at first write.
-- `report_{iter:06d}.md` — full snapshot every `interval` iterations. Older snapshots are kept so you can diff progress.
-- `config.yaml` — the originating training YAML, copied once at setup.
-- `config_{iter:06d}.yaml` — only if the YAML structurally changed since the last run.
+- `training.csv` - one row per iteration, flat scalars only. Header is locked at first write.
+- `report_{iter:06d}.md` - full snapshot every `interval` iterations. Older snapshots are kept so you can diff progress.
+- `config.yaml` - the originating training YAML, copied once at setup.
+- `config_{iter:06d}.yaml` - only if the YAML structurally changed since the last run.
 
 ### Probe states
 
-Snapshots include a **Probe states** section: fixed canonical observations fed through the current model to show its policy + value on known positions. Probe states are env-specific and registered in code, not YAML — only `connect_four` ships with built-in probes. For other envs the section is omitted. To add coverage, see [`reporting/probe_states.py`](../src/l2l_lab/reporting/probe_states.py).
+Snapshots include a **Probe states** section: fixed canonical observations fed through the current model to show its policy + value on known positions. Probe states are env-specific and registered in code, not YAML - only `connect_four` ships with built-in probes. For other envs the section is omitted. To add coverage, see [`reporting/probe_states.py`](../src/l2l_lab/reporting/probe_states.py).
 
 Example block:
 

@@ -4,8 +4,6 @@ The trunk uses SELU activations together with LeCun-normal weight init so
 activation statistics stay at the (mean=0, var=1) fixed point through depth
 without normalization layers or skip connections.
 """
-from __future__ import annotations
-
 import math
 
 from alphazoo import AlphaZooNet

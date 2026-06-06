@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Optional, override
 
 from .base import BaseNetworkConfig
 from .heads import (LinearReducePolicyHeadConfig, LinearReduceValueHeadConfig,
@@ -37,14 +35,15 @@ class MLPNetConfig(BaseNetworkConfig):
                 f"got {type(self.value_head).__name__}"
             )
 
+    @override
     def is_recurrent(self) -> bool:
         return False
 
     @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> "MLPNetConfig":
+    def _from_dict(cls, data: dict[str, Any]) -> MLPNetConfig:
         policy_head_data = data.get("policy_head")
         value_head_data = data.get("value_head")
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "architecture": data.get("architecture", "MLPNet"),
         }
         for key in ("hidden_layers", "neurons_per_layer", "highway_interval"):

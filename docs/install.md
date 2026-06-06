@@ -1,46 +1,70 @@
 # Installation
 
-## Setup
+## Prerequisites
+
+l2l-lab uses Python 3.14. The [uv](https://docs.astral.sh/uv/) package manager makes it easy to create a virtual environment with that version, independent of your system Python:
 
 ```bash
-# Create and activate a virtual environment
-python -m venv venv
-source venv/bin/activate          # Linux/macOS
-# venv\Scripts\activate           # Windows
-
-# (Optional, if you want the AlphaZoo backend) install alphazoo editable first
-pip install -e /path/to/alphazoo
-
-# (Optional, if you want the SCS env) install RL-SCS editable first
-pip install -e /path/to/RL-SCS
-
-# Install l2l-lab itself
-pip install -e .
-
-# To also pull in the optional groups:
-pip install -e . --group test      # pytest, yappi, snakeviz
-pip install -e . --group alphazoo  # marks alphazoo as a declared dep
-pip install -e . --group scs       # marks RL-SCS as a declared dep
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-## Running tests
+## Install
+
+### 1. Create and activate the virtual environment
 
 ```bash
-pytest -v
+uv venv --seed --python 3.14
+source .venv/bin/activate
 ```
 
-## Dependencies
+### 2. Install l2l-lab
 
-l2l-lab hard-depends on:
+On an AMD GPU, install the ROCm PyTorch build first (see [GPU acceleration](#gpu-acceleration-amd)) so the commands below don't pull the default wheel.
 
-- **PyTorch**, **NumPy**, **PettingZoo**, **Gymnasium** — core ML / env stack
-- **Ray (rllib)** — one of the training backends
-- **matplotlib**, **hexagdly**, **rlcard**, **pyyaml** — various utilities
+To use the package:
 
-Optional:
+```bash
+pip install .
+```
 
-- **alphazoo** — required for the AlphaZoo training backend and the `MCTSAgent`
-- **RL-SCS** — required if you want to use the SCS environment
+For development - editable install with test deps:
+
+```bash
+pip install -e . --group dev
+```
+
+## GPU acceleration (AMD)
+
+PyTorch is l2l-lab's compute layer, shared by both the RLlib and AlphaZoo backends. It is pulled in automatically, and on NVIDIA or CPU the default wheel is correct.
+
+AMD GPUs need the ROCm `amdgpu` driver and runtime ([ROCm install guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/)) plus the matching ROCm PyTorch build, installed before l2l-lab:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/rocm7.2
+```
+
+Match `rocmX.Y` to your installed ROCm version (`cat /opt/rocm/.info/version`); the [PyTorch install selector](https://pytorch.org/get-started/locally/) lists the available ROCm wheels.
+
+## Optional dependencies
+
+l2l-lab integrates two optional projects, each installed from a local clone.
+
+### AlphaZoo (backend)
+
+The AlphaZero training backend and the MCTS agents (`AlphaZeroMCTSAgent`, `TraditionalMCTSAgent`).
+
+```bash
+pip install /path/to/alphazoo
+```
+
+### RL-SCS (environment)
+
+The SCS game environment.
+
+```bash
+pip install /path/to/RL-SCS
+```
+
 
 ## Weights & Biases (optional)
 
@@ -48,8 +72,9 @@ Wandb logging is opt-in. To enable it:
 
 1. Sign up at https://wandb.ai.
 2. Copy the template and fill it in:
+
    ```bash
    cp application.example.yml application.yml
    ```
-   Set `enabled: true`, paste your `api_key`, and set `project` / `entity` / `tags` to taste.
 
+   Set `enabled: true`, paste your `api_key`, and set `project` / `entity` / `tags` to taste.

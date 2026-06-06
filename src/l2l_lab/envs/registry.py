@@ -1,10 +1,10 @@
-from typing import Any, Callable, Dict
+from typing import Any, Callable
 
 from pettingzoo import AECEnv
 
 EnvFactory = Callable[..., AECEnv]
 
-ENV_REGISTRY: Dict[str, EnvFactory] = {}
+ENV_REGISTRY: dict[str, EnvFactory] = {}
 
 
 def _register_builtin_envs() -> None:

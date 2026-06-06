@@ -10,5 +10,5 @@ class RandomAgentConfig(AgentConfig):
         self.agent_type = "random"
     
     @classmethod
-    def from_dict(cls) -> "RandomAgentConfig":
+    def from_dict(cls) -> RandomAgentConfig:
         return cls(agent_type="random")

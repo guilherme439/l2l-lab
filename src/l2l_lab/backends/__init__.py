@@ -1,10 +1,7 @@
-from __future__ import annotations
-
-from typing import Dict, Type
 
 from l2l_lab.backends.backend_base import AlgorithmBackend
 
-BACKEND_REGISTRY: Dict[str, Type[AlgorithmBackend]] = {}
+BACKEND_REGISTRY: dict[str, type[AlgorithmBackend]] = {}
 
 _builtins_registered = False
 
@@ -27,11 +24,11 @@ def _register_builtins() -> None:
         pass
 
 
-def register_backend(name: str, cls: Type[AlgorithmBackend]) -> None:
+def register_backend(name: str, cls: type[AlgorithmBackend]) -> None:
     BACKEND_REGISTRY[name] = cls
 
 
-def get_backend(name: str) -> Type[AlgorithmBackend]:
+def get_backend(name: str) -> type[AlgorithmBackend]:
     _register_builtins()
     if name not in BACKEND_REGISTRY:
         available = list(BACKEND_REGISTRY.keys())

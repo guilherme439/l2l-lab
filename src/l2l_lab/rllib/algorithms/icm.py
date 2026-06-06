@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import gymnasium as gym
 import torch
@@ -91,7 +89,7 @@ class ICMConnector(ConnectorV2):
         *,
         rl_module: RLModule,
         batch: Any,
-        episodes: List[EpisodeType],
+        episodes: list[EpisodeType],
         explore: Optional[bool] = None,
         shared_data: Optional[dict] = None,
         **kwargs,
@@ -184,9 +182,9 @@ class ConvICM(TorchRLModule, SelfSupervisedLossAPI):
         learner: TorchLearner,
         module_id: ModuleID,
         config: AlgorithmConfig,
-        batch: Dict[str, Any],
-        fwd_out: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        batch: dict[str, Any],
+        fwd_out: dict[str, Any],
+    ) -> dict[str, Any]:
         module = learner.module[module_id].unwrapped()
         
         forward_loss = torch.mean(fwd_out[Columns.INTRINSIC_REWARDS])
@@ -241,7 +239,7 @@ def build_icm_rl_module_spec(
     )
 
 
-def build_icm_training_kwargs(curiosity_coeff: float = INTRINSIC_REWARD_COEFF) -> Dict[str, Any]:
+def build_icm_training_kwargs(curiosity_coeff: float = INTRINSIC_REWARD_COEFF) -> dict[str, Any]:
     return {
         "learner_class": PPOLearnerWithICM,
         "learner_config_dict": {
@@ -251,7 +249,7 @@ def build_icm_training_kwargs(curiosity_coeff: float = INTRINSIC_REWARD_COEFF) -
     }
 
 
-def build_icm_rl_module_kwargs(base_spec: MultiRLModuleSpec, obs_space, act_space) -> Dict[str, Any]:
+def build_icm_rl_module_kwargs(base_spec: MultiRLModuleSpec, obs_space, act_space) -> dict[str, Any]:
     return {
         "rl_module_spec": build_icm_rl_module_spec(
             base_spec,

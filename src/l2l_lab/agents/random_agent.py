@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 import random
-from typing import Any
+from typing import Any, override
 
 import numpy as np
 
@@ -13,6 +11,7 @@ class RandomAgent(Agent):
     def __init__(self, name: str = "random") -> None:
         self.name = name
 
+    @override
     def choose_action(self, env: Any) -> int:
         obs = env.observe(env.agent_selection)
         action_mask = obs["action_mask"]

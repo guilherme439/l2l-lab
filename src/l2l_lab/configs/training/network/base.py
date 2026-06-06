@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Any, Tuple
+from typing import Any
 
 
 @dataclass
@@ -11,7 +9,7 @@ class BaseNetworkConfig:
     def is_recurrent(self) -> bool:
         raise NotImplementedError
 
-    def validate_for_env(self, state_shape: Tuple[int, ...], num_actions: int) -> None:
+    def validate_for_env(self, state_shape: tuple[int, ...], num_actions: int) -> None:
         return None
 
 

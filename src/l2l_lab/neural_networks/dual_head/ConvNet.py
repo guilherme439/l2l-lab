@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import hexagdly
 from alphazoo import AlphaZooNet
 from torch import nn

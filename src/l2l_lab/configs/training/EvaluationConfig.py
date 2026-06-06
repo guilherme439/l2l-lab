@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 PLAYER_TYPES = ("policy", "alphazero_mcts", "traditional_mcts")
@@ -37,11 +35,11 @@ class CheckpointEvalEntry:
 
 @dataclass
 class EvaluationConfig:
-    training_eval: List[TrainingEvalEntry] = field(default_factory=list)
-    checkpoint_eval: List[CheckpointEvalEntry] = field(default_factory=list)
+    training_eval: list[TrainingEvalEntry] = field(default_factory=list)
+    checkpoint_eval: list[CheckpointEvalEntry] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        labels: List[str] = []
+        labels: list[str] = []
 
         for entry in self.training_eval:
             self._validate_player(entry.player)
@@ -69,11 +67,11 @@ class EvaluationConfig:
                 f"combination may only appear once across training_eval and checkpoint_eval."
             )
 
-    def all_labels(self) -> List[str]:
+    def all_labels(self) -> list[str]:
         return [e.label for e in self.training_eval] + [e.label for e in self.checkpoint_eval]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "EvaluationConfig":
+    def from_dict(cls, data: dict[str, Any]) -> EvaluationConfig:
         training = [
             TrainingEvalEntry(
                 player=item["player"],

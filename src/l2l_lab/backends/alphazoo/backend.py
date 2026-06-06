@@ -1,10 +1,8 @@
-from __future__ import annotations
-
 import io
 import math
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, Iterator, Optional, override
 
 import torch
 from alphazoo import AlphaZooRecurrentNet, AlphaZooConfig
@@ -29,11 +27,12 @@ if TYPE_CHECKING:
 
 class _CheckpointWriter(CheckpointWriter):
 
-    def __init__(self, backend: "AlphaZooBackend") -> None:
+    def __init__(self, backend: AlphaZooBackend) -> None:
         self._backend = backend
         super().__init__()
 
-    def write(self, snapshot: Dict[str, Any], path: Path) -> None:
+    @override
+    def write(self, snapshot: dict[str, Any], path: Path) -> None:
         model_dir = path / "model"
         model_dir.mkdir(exist_ok=True)
         torch.save(snapshot["model_state_dict"], model_dir / "weights.cp")
@@ -56,9 +55,11 @@ class AlphaZooBackend(AlgorithmBackend):
         self._writer = _CheckpointWriter(self)
 
     @property
+    @override
     def name(self) -> str:
         return "alphazoo"
 
+    @override
     def init(self) -> None:
         import ray
         if not ray.is_initialized():
@@ -69,6 +70,7 @@ class AlphaZooBackend(AlgorithmBackend):
             )
             logger.info("")
 
+    @override
     def shutdown(self) -> None:
         import ray
 
@@ -76,6 +78,7 @@ class AlphaZooBackend(AlgorithmBackend):
         if ray.is_initialized():
             ray.shutdown()
 
+    @override
     def setup(self, config: TrainingConfig, model_dir: Path) -> None:
         from alphazoo import AlphaZoo
 
@@ -117,6 +120,7 @@ class AlphaZooBackend(AlgorithmBackend):
 
         logger.info(f"\n✓ AlphaZoo instance created successfully!")
 
+    @override
     def restore(self, config: TrainingConfig, model_dir: Path) -> int:
         from alphazoo import AlphaZoo
 
@@ -185,7 +189,8 @@ class AlphaZooBackend(AlgorithmBackend):
 
         return loaded_iteration
 
-    def get_reporter_csv_keys(self) -> List[str]:
+    @override
+    def get_reporter_csv_keys(self) -> list[str]:
         return [
             "episode_len_mean",
             "policy_loss",
@@ -194,11 +199,13 @@ class AlphaZooBackend(AlgorithmBackend):
             "learning_rate",
         ]
 
+    @override
     def get_eval_model(self) -> torch.nn.Module:
         model_copy = deepcopy(self._model).cpu()
         model_copy.eval()
         return model_copy
 
+    @override
     def get_model_from_checkpoint(self, checkpoint_dir: Path) -> torch.nn.Module:
         model_dir = checkpoint_dir / "model"
         model = torch.load(model_dir / "base_class.pkl", weights_only=False)
@@ -207,9 +214,11 @@ class AlphaZooBackend(AlgorithmBackend):
         model.eval()
         return model
 
+    @override
     def get_weight_parameters(self) -> Optional[Iterator]:
         return self._model.parameters()
 
+    @override
     def save_final_checkpoint(self, iteration: int) -> Optional[Path]:
         if self._checkpoint_interval <= 0 or self._checkpoint_base_dir is None:
             return None
@@ -219,10 +228,12 @@ class AlphaZooBackend(AlgorithmBackend):
         self._writer.write(snapshot, checkpoint_path)
         return checkpoint_path
 
+    @override
     def wait_for_pending_checkpoints(self) -> None:
         self._writer.wait_for_idle()
 
     
+    @override
     def _train(self) -> None:
         try:
             az = self._alphazoo
@@ -285,12 +296,13 @@ class AlphaZooBackend(AlgorithmBackend):
             num_actions=num_actions,
         )
     
-    def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
+    @override
+    def _print_step_info(self, iteration: int, metrics: dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
         total = self._config.backend.algorithm.total_iterations
         logger.info(f"\nIteration {iteration}/{total} finished | EpLen: {ep_len:6.1f}\n")
         
-    def _capture_snapshot(self) -> Dict[str, Any]:
+    def _capture_snapshot(self) -> dict[str, Any]:
         az = self._alphazoo
         return {
             "model_state_dict": deepcopy(self._model.state_dict()),

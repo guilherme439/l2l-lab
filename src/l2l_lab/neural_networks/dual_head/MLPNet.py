@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from alphazoo import AlphaZooNet
 from torch import nn
 

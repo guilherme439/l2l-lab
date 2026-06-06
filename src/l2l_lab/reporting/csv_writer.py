@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 import csv
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional
 import logging
 
 logger = logging.getLogger("l2l_lab")
@@ -90,7 +88,7 @@ class MetricsCSVWriter:
             self._file = None
             self._writer = None
 
-    def _coerce_scalar(self, value: Any) -> Optional[Union[str, int, float]]:
+    def _coerce_scalar(self, value: Any) -> Optional[str | int | float]:
         """Return a CSV-safe scalar, or ``None`` if the value is non-scalar."""
         if value is None:
             return ""

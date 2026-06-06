@@ -1,16 +1,14 @@
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Queue
 from threading import Thread
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
 @dataclass
 class CheckpointJob:
-    snapshot: Dict[str, Any]
+    snapshot: dict[str, Any]
     path: Path
 
 
@@ -21,7 +19,7 @@ class CheckpointWriter(ABC):
         self._thread = Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def enqueue(self, snapshot: Dict[str, Any], path: Path) -> None:
+    def enqueue(self, snapshot: dict[str, Any], path: Path) -> None:
         self._queue.put(CheckpointJob(snapshot=snapshot, path=path))
 
     def wait_for_idle(self) -> None:
@@ -32,7 +30,7 @@ class CheckpointWriter(ABC):
         self._thread.join()
 
     @abstractmethod
-    def write(self, snapshot: Dict[str, Any], path: Path) -> None:
+    def write(self, snapshot: dict[str, Any], path: Path) -> None:
         ...
 
     def _run(self) -> None:

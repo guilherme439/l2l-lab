@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 import random
 from pathlib import Path
-from typing import Dict, List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import torch
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
@@ -20,7 +18,7 @@ if TYPE_CHECKING:
 
 class PolicySampler:
     
-    def __init__(self, policy_weights: Dict[str, float]):
+    def __init__(self, policy_weights: dict[str, float]):
         self.policies = list(policy_weights.keys())
         self.weights = [policy_weights[p] for p in self.policies]
         self._normalize_weights()
@@ -33,7 +31,7 @@ class PolicySampler:
     def sample(self) -> str:
         return random.choices(self.policies, weights=self.weights, k=1)[0]
     
-    def update_weights(self, policy_weights: Dict[str, float]):
+    def update_weights(self, policy_weights: dict[str, float]):
         self.policies = list(policy_weights.keys())
         self.weights = [policy_weights[p] for p in self.policies]
         self._normalize_weights()

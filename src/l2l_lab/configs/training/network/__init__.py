@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from .base import BaseNetworkConfig, network_config_from_dict
 from .convnet import ConvNetConfig
 from .heads import (BasePolicyHeadConfig, BaseValueHeadConfig,

@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional
 
 
 @dataclass
@@ -10,5 +8,5 @@ class BasePolicyHeadConfig:
     activation: str = "relu"
     final_activation: Optional[str] = None
 
-    def validate_for_env(self, state_shape: Tuple[int, ...], num_actions: int) -> None:
+    def validate_for_env(self, state_shape: tuple[int, ...], num_actions: int) -> None:
         return None

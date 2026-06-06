@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import Any
+from typing import Any, override
 
 import torch
 
@@ -27,6 +25,7 @@ class AlphaZeroMCTSAgent(Agent):
         self._obs_space_format = obs_space_format
         self.name = name
 
+    @override
     def choose_action(self, env: Any) -> int:
         return select_action_with_alphazero_mcts(
             env=env,

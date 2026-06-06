@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -26,7 +26,7 @@ class PolicyConfig:
     def previous_policy_ratio(self) -> float:
         return 1.0 - self.main_policy_ratio - self.random_policy_ratio
     
-    def get_policy_weights(self, num_available_checkpoints: int) -> Dict[str, float]:
+    def get_policy_weights(self, num_available_checkpoints: int) -> dict[str, float]:
         prev_ratio = self.previous_policy_ratio
         
         if self.number_previous_policies > 0 and num_available_checkpoints > 0:
@@ -47,7 +47,7 @@ class PolicyConfig:
         return weights
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PolicyConfig":
+    def from_dict(cls, data: dict[str, Any]) -> PolicyConfig:
         return cls(
             use_multiple_policies=data.get("use_multiple_policies", False),
             number_previous_policies=data.get("number_previous_policies", 0),

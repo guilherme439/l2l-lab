@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,7 +18,7 @@ class RllibBackendConfig(BaseBackendConfig):
             )
 
     @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> "RllibBackendConfig":
+    def _from_dict(cls, data: dict[str, Any]) -> RllibBackendConfig:
         algorithm = algorithm_config_from_dict(data.get("algorithm", {}) or {}, "rllib")
         return cls(
             name=data["name"],

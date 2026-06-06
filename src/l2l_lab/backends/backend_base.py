@@ -1,12 +1,10 @@
-from __future__ import annotations
-
 import logging
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, Iterator, Optional
 
 from l2l_lab.utils.checkpoint import delete_checkpoint_dirs_past
 from l2l_lab.utils.common import check_interval
@@ -23,9 +21,9 @@ logger = logging.getLogger("l2l_lab")
 @dataclass
 class StepResult:
     iteration: int
-    metrics: Dict[str, Any] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
     checkpoint_path: Optional[Path] = None
-    eval_model: Optional["torch.nn.Module"] = None
+    eval_model: Optional[torch.nn.Module] = None
 
 
 class AlgorithmBackend(ABC):
@@ -80,7 +78,7 @@ class AlgorithmBackend(ABC):
         """Remove every checkpoint on disk whose iteration is greater than `iteration`."""
         delete_checkpoint_dirs_past(model_dir, iteration)
 
-    def get_reporter_csv_keys(self) -> List[str]:
+    def get_reporter_csv_keys(self) -> list[str]:
         """Return the step_metrics keys this backend wants written to the
         per-iteration CSV. Default is no CSV columns; override per backend."""
         return []
@@ -90,12 +88,12 @@ class AlgorithmBackend(ABC):
         on disk. Default is a no-op."""
         pass
 
-    def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
+    def _print_step_info(self, iteration: int, metrics: dict[str, Any]) -> None:
         """Per-step log. Called on the training thread at the end of each step.
         Default is a no-op; override in backends that want a step summary."""
         pass
 
-    def _print_training_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
+    def _print_training_info(self, iteration: int, metrics: dict[str, Any]) -> None:
         """Periodic backend-specific log. Called on the training thread every
         `info_interval` steps. Default is a no-op."""
         pass
@@ -125,12 +123,12 @@ class AlgorithmBackend(ABC):
         ...
 
     @abstractmethod
-    def get_eval_model(self) -> "torch.nn.Module":
+    def get_eval_model(self) -> torch.nn.Module:
         """Return an eval-mode snapshot of the currently-training model."""
         ...
 
     @abstractmethod
-    def get_model_from_checkpoint(self, checkpoint_dir: Path) -> "torch.nn.Module":
+    def get_model_from_checkpoint(self, checkpoint_dir: Path) -> torch.nn.Module:
         """Load and return an eval-mode model from a training checkpoint directory."""
         ...
 

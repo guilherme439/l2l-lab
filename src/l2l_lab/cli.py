@@ -1,4 +1,8 @@
 import argparse
+import os
+import shutil
+import signal
+import subprocess
 import sys
 import traceback
 import warnings
@@ -21,7 +25,7 @@ warnings.filterwarnings(
 
 DEFAULT_TRAINING_CONFIG_PATH = "configs/training/ppo_training_config.example.yml"
 DEFAULT_TESTING_CONFIG_PATH = "configs/testing/testing_config.example.yml"
-PROFILE_OUTPUT_PATH = Path("profiling/profile_output.prof")
+PROFILE_OUTPUT_PATH = Path("profiling/profile.speedscope.json")
 
 
 def main():
@@ -40,7 +44,7 @@ def main():
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="Enable yappi profiling (main process, all threads) and save results to profile_output.prof"
+        help="Profile the run with py-spy (main process, all threads) and write a speedscope file"
     )
 
     args = parser.parse_args()
@@ -83,30 +87,51 @@ def test(config_path: str):
 
 
 def run_with_profiling(func, *args):
-    import yappi
+    executable = shutil.which("py-spy")
+    if executable is None:
+        raise RuntimeError("py-spy not found on PATH. Install with `pip install py-spy`.")
 
-    yappi.set_clock_type("wall")
-    yappi.start()
+    PROFILE_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    stderr_path = PROFILE_OUTPUT_PATH.parent / "py-spy.log"
+
+    cmd = [
+        executable, "record",
+        "--pid", str(os.getpid()),
+        "--threads",
+        "--rate", "100",
+        "--format", "speedscope",
+        "--output", str(PROFILE_OUTPUT_PATH),
+    ]
+    with open(stderr_path, "w") as stderr_file:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=stderr_file)
+
+    try:
+        rc = proc.wait(timeout=0.5)
+    except subprocess.TimeoutExpired:
+        pass 
+    else:
+        stderr_content = stderr_path.read_text().strip()
+        raise RuntimeError(
+            f"py-spy exited immediately (code {rc}).\n"
+            f"stderr:\n{stderr_content}\n\n"
+            "On Linux, py-spy needs ptrace permissions:\n"
+            "  sudo setcap cap_sys_ptrace=eip $(readlink -f $(which py-spy))\n"
+            "  echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope"
+        )
 
     try:
         func(*args)
     finally:
-        yappi.stop()
-        stats = yappi.get_func_stats()
-        stats.save(str(PROFILE_OUTPUT_PATH), type="pstat")
+        proc.send_signal(signal.SIGINT)  # SIGINT makes py-spy flush the speedscope file to disk
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            proc.wait()
 
         logger.info("\n" + "=" * 70)
-        logger.info("PROFILING SUMMARY (top 20 by total time, all threads)")
-        logger.info("=" * 70)
-        stats.sort("ttot", "desc")
-        header = f"{'name':<50} {'ncall':>8} {'ttot':>8} {'tsub':>8} {'tavg':>8}"
-        logger.info(header)
-        for stat in stats[:20]:
-            logger.info(f"{stat.full_name[:50]:<50} {stat.ncall:>8} {stat.ttot:>8.4f} {stat.tsub:>8.4f} {stat.tavg:>8.4f}")
-
-        logger.info("=" * 70)
-        logger.info(f"Full profile saved to: {PROFILE_OUTPUT_PATH.absolute()}")
-        logger.info("View interactively with: snakeviz profiling/profile_output.prof")
+        logger.info(f"Profile saved to: {PROFILE_OUTPUT_PATH.absolute()}")
+        logger.info("Open it at https://www.speedscope.app/")
         logger.info("=" * 70)
 
 

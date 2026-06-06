@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
-from typing import Any, Dict, Tuple
+from typing import Any, override
 
 from .base import BaseNetworkConfig
 from .heads import (BasePolicyHeadConfig, BaseValueHeadConfig,
@@ -42,18 +40,20 @@ class ResNetConfig(BaseNetworkConfig):
             if head.hex is None:
                 head.hex = self.hex
 
+    @override
     def is_recurrent(self) -> bool:
         return False
 
-    def validate_for_env(self, state_shape: Tuple[int, ...], num_actions: int) -> None:
+    @override
+    def validate_for_env(self, state_shape: tuple[int, ...], num_actions: int) -> None:
         self.policy_head.validate_for_env(state_shape, num_actions)
         self.value_head.validate_for_env(state_shape, num_actions)
 
     @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> "ResNetConfig":
+    def _from_dict(cls, data: dict[str, Any]) -> ResNetConfig:
         policy_head_data = data.get("policy_head")
         value_head_data = data.get("value_head")
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "architecture": data.get("architecture", "ResNet"),
         }
         for key in ("num_filters", "num_blocks", "batch_norm", "hex"):

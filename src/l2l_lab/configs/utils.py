@@ -1,4 +1,5 @@
 import dataclasses
+import types
 from typing import Union, get_type_hints, get_origin, get_args
 
 
@@ -6,7 +7,7 @@ def _resolve_dataclass_type(tp):
     if dataclasses.is_dataclass(tp):
         return tp
 
-    if get_origin(tp) is Union:
+    if get_origin(tp) in (Union, types.UnionType):
         for arg in get_args(tp):
             if arg is not type(None) and dataclasses.is_dataclass(arg):
                 return arg

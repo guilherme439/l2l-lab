@@ -1,8 +1,6 @@
 """
 Adapted from the Deepthinking repository.
 """
-from __future__ import annotations
-
 import hexagdly
 import torch
 from alphazoo import AlphaZooRecurrentNet

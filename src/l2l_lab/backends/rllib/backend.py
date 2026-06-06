@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 import io
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, Iterator, Optional, override
 
 import torch
 from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
@@ -25,11 +23,12 @@ if TYPE_CHECKING:
 
 class _CheckpointWriter(CheckpointWriter):
 
-    def __init__(self, backend: "RLlibBackend") -> None:
+    def __init__(self, backend: RLlibBackend) -> None:
         self._backend = backend
         super().__init__()
 
-    def write(self, snapshot: Dict[str, Any], path: Path) -> None:
+    @override
+    def write(self, snapshot: dict[str, Any], path: Path) -> None:
         model_dir = path / "model"
         model_dir.mkdir(exist_ok=True)
         torch.save(snapshot["model_state_dict"], model_dir / "weights.cp")
@@ -50,11 +49,13 @@ class RLlibBackend(AlgorithmBackend):
         self._writer = _CheckpointWriter(self)
 
     @property
+    @override
     def name(self) -> str:
         if self._config:
             return f"rllib_{self._config.backend.algorithm.name}"
         return "rllib"
 
+    @override
     def init(self) -> None:
         import ray
         if not ray.is_initialized():
@@ -70,6 +71,7 @@ class RLlibBackend(AlgorithmBackend):
             )
             logger.info("")
     
+    @override
     def shutdown(self) -> None:
         self._writer.stop()
         if self.algo is not None:
@@ -78,6 +80,7 @@ class RLlibBackend(AlgorithmBackend):
         if ray.is_initialized():
             ray.shutdown()
 
+    @override
     def setup(self, config: TrainingConfig, model_dir: Path) -> None:
         self._config = config
         self._register_env(config.env)
@@ -111,6 +114,7 @@ class RLlibBackend(AlgorithmBackend):
 
         logger.info("\n✓ Algorithm built successfully!")
 
+    @override
     def restore(self, config: TrainingConfig, model_dir: Path) -> int:
         self._config = config
         self._register_env(config.env)
@@ -145,11 +149,13 @@ class RLlibBackend(AlgorithmBackend):
 
         return loaded_iteration
 
+    @override
     def get_eval_model(self) -> torch.nn.Module:
         model_copy = deepcopy(self._get_backbone()).cpu()
         model_copy.eval()
         return model_copy
 
+    @override
     def get_model_from_checkpoint(self, checkpoint_dir: Path) -> torch.nn.Module:
         model_dir = checkpoint_dir / "model"
         backbone = torch.load(model_dir / "base_class.pkl", weights_only=False)
@@ -158,10 +164,12 @@ class RLlibBackend(AlgorithmBackend):
         backbone.eval()
         return backbone
 
+    @override
     def get_weight_parameters(self) -> Optional[Iterator]:
         rl_module = self.algo.get_module(self._get_policy_name())
         return rl_module.parameters()
 
+    @override
     def save_final_checkpoint(self, iteration: int) -> Optional[Path]:
         if self._checkpoint_interval <= 0 or self._checkpoint_base_dir is None:
             return None
@@ -171,13 +179,16 @@ class RLlibBackend(AlgorithmBackend):
         self._writer.write(snapshot, checkpoint_path)
         return checkpoint_path
 
+    @override
     def wait_for_pending_checkpoints(self) -> None:
         self._writer.wait_for_idle()
 
+    @override
     def on_checkpoint_saved(self, model_dir: Path, iteration: int) -> None:
         self.algo_trainer.update_opponent_policies(model_dir, iteration)
 
-    def get_reporter_csv_keys(self) -> List[str]:
+    @override
+    def get_reporter_csv_keys(self) -> list[str]:
         return [
             "episode_len_mean",
             "episode_reward_mean",
@@ -190,6 +201,7 @@ class RLlibBackend(AlgorithmBackend):
             "learning_rate",
         ]
 
+    @override
     def _train(self) -> None:
         info_interval = self._config.common.info_interval
         try:
@@ -222,7 +234,7 @@ class RLlibBackend(AlgorithmBackend):
         finally:
             self.step_queue.put(None)
 
-    def _capture_snapshot(self) -> Dict[str, Any]:
+    def _capture_snapshot(self) -> dict[str, Any]:
         return {
             "model_state_dict": deepcopy(self._get_backbone().state_dict()),
             "network_template_bytes": self._network_template_bytes,
@@ -237,12 +249,14 @@ class RLlibBackend(AlgorithmBackend):
         torch.save(model, buf)
         return buf.getvalue()
 
-    def _print_step_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
+    @override
+    def _print_step_info(self, iteration: int, metrics: dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
         total = self._config.backend.algorithm.total_iterations
         logger.info(f"\n{iteration}/{total} | EpLen: {ep_len:6.1f}\n")
 
-    def _print_training_info(self, iteration: int, metrics: Dict[str, Any]) -> None:
+    @override
+    def _print_training_info(self, iteration: int, metrics: dict[str, Any]) -> None:
         timesteps = metrics.get("timesteps_lifetime", 0)
         curr_lr = metrics.get("learning_rate")
 
@@ -255,7 +269,7 @@ class RLlibBackend(AlgorithmBackend):
         logger.info("")
 
     def _register_env(self, env_config) -> None:
-        def env_creator(config: Dict):
+        def env_creator(config: dict):
             env = create_env(env_config.name, **env_config.kwargs)
             return PettingZooEnv(env)
         register_env(env_config.name, env_creator)

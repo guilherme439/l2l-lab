@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, override
 
 from .base import BasePolicyHeadConfig
 
@@ -20,7 +18,8 @@ class ConvReducePolicyHeadConfig(BasePolicyHeadConfig):
                 "ConvReducePolicyHeadConfig requires policy_channels > 0"
             )
 
-    def validate_for_env(self, state_shape: Tuple[int, ...], num_actions: int) -> None:
+    @override
+    def validate_for_env(self, state_shape: tuple[int, ...], num_actions: int) -> None:
         h, w = state_shape[1], state_shape[2]
         expected = self.policy_channels * h * w
         if expected != num_actions:

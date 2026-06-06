@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from pathlib import Path
-from typing import Any, Dict, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, override
 
 from ray.rllib.algorithms.impala import IMPALA, IMPALAConfig
 
@@ -17,13 +15,16 @@ class IMPALATrainer(BaseAlgorithmTrainer):
         super().__init__(config)
     
     @property
+    @override
     def algorithm_name(self) -> str:
         return "impala"
 
+    @override
     def load_from_checkpoint(self, checkpoint_path: Path):
         return IMPALA.from_checkpoint(str(checkpoint_path.absolute()))
     
-    def extract_metrics(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    @override
+    def extract_metrics(self, result: dict[str, Any]) -> dict[str, Any]:
         env_runners = result.get("env_runners", {})
         learner_stats = result.get("learners", {}).get("shared_policy", {})
         
@@ -37,6 +38,7 @@ class IMPALATrainer(BaseAlgorithmTrainer):
             "timesteps_lifetime": env_runners.get("num_env_steps_sampled_lifetime", 0),
         }
     
+    @override
     def build_config(self, env_name: str, obs_space_format, obs_space, act_space) -> IMPALAConfig:
         cfg = self.config.backend.algorithm.config
         

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any
 
 from omegaconf import OmegaConf
 
@@ -12,7 +12,7 @@ from l2l_lab.configs.testing.agents.RandomAgentConfig import RandomAgentConfig
 from l2l_lab.configs.testing.agents.TraditionalMCTSAgentConfig import TraditionalMCTSAgentConfig
 
 
-def parse_agent_config(data: Dict[str, Any]) -> AgentConfig:
+def parse_agent_config(data: dict[str, Any]) -> AgentConfig:
     agent_type = data.get("agent_type", "random")
     if agent_type == "policy":
         return PolicyAgentConfig.from_dict(data.get("policy", {}))
@@ -34,7 +34,7 @@ class TestingConfig:
     num_games: int = 1
 
     @classmethod
-    def from_yaml(cls, path: Union[str, Path]) -> "TestingConfig":
+    def from_yaml(cls, path: str | Path) -> TestingConfig:
         data = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
 
         agents_data = data.pop("agents", {})

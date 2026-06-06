@@ -1,5 +1,5 @@
 import math
-from typing import Any, Dict, TypedDict
+from typing import Any, TypedDict
 
 import gymnasium as gym
 from ray.rllib.core.columns import Columns
@@ -14,7 +14,7 @@ from l2l_lab.neural_networks.utils.builders import build_network
 
 
 class MLPDualHeadModelConfig(TypedDict):
-    network_config: Dict[str, Any]
+    network_config: dict[str, Any]
 
 
 class MLPDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
@@ -41,8 +41,8 @@ class MLPDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
             num_actions=num_actions,
         )
     
-    def _forward(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:
-        obs_dict: Dict[str, Any] = batch[Columns.OBS]
+    def _forward(self, batch: dict[str, Any], **kwargs) -> dict[str, TensorType]:
+        obs_dict: dict[str, Any] = batch[Columns.OBS]
         obs = obs_dict["observation"].float()
 
         action_mask = obs_dict["action_mask"]
@@ -55,8 +55,8 @@ class MLPDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
         
         return {Columns.ACTION_DIST_INPUTS: policy_logits, Columns.VF_PREDS: value}
 
-    def _forward_policy_only(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:
-        obs_dict: Dict[str, Any] = batch[Columns.OBS]
+    def _forward_policy_only(self, batch: dict[str, Any], **kwargs) -> dict[str, TensorType]:
+        obs_dict: dict[str, Any] = batch[Columns.OBS]
         obs = obs_dict["observation"].float()
         action_mask = obs_dict["action_mask"]
         invalid = (action_mask == 0)
@@ -71,23 +71,23 @@ class MLPDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
         }
     
     @override(TorchRLModule)
-    def _forward_inference(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:
+    def _forward_inference(self, batch: dict[str, Any], **kwargs) -> dict[str, TensorType]:
         return self._forward(batch, **kwargs)
     
     @override(TorchRLModule)
-    def _forward_exploration(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:
+    def _forward_exploration(self, batch: dict[str, Any], **kwargs) -> dict[str, TensorType]:
         return self._forward(batch, **kwargs)
     
     @override(TorchRLModule)
-    def _forward_train(self, batch: Dict[str, Any], **kwargs) -> Dict[str, TensorType]:
+    def _forward_train(self, batch: dict[str, Any], **kwargs) -> dict[str, TensorType]:
         return self._forward_policy_only(batch, **kwargs)
     
     @override(ValueFunctionAPI)
-    def compute_values(self, batch: Dict[str, Any], embeddings: Any = None) -> TensorType:
+    def compute_values(self, batch: dict[str, Any], embeddings: Any = None) -> TensorType:
         if embeddings is not None:
             value = self.backbone.value_head(embeddings)
         else:
-            obs_dict: Dict[str, Any] = batch[Columns.OBS]
+            obs_dict: dict[str, Any] = batch[Columns.OBS]
             obs = obs_dict["observation"].float()
             _, value = self.backbone(obs)
         

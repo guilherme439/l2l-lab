@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import Optional
 
 from ..PolicyConfig import PolicyConfig
 
@@ -14,7 +14,7 @@ class AlgoPPOConfig:
     train_batch_size_per_learner: int = 512
     minibatch_size: int = 64
     num_epochs: int = 3
-    lr: Union[float, List[Tuple[int, float]]] = 0.0001
+    lr: float | list[tuple[int, float]] = 0.0001
     gamma: float = 0.99
     entropy_coeff: float = 0.05
     vf_loss_coeff: float = 0.5

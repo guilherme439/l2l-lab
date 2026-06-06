@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from l2l_lab.agents import PolicyAgent, RandomAgent
 from l2l_lab.configs.training.EvaluationConfig import EvaluationConfig
@@ -26,9 +24,9 @@ class Evaluator:
     def __init__(
         self,
         eval_config: EvaluationConfig,
-        backend: "AlgorithmBackend",
-        env_config: "EnvConfig",
-        network_config: "BaseNetworkConfig",
+        backend: AlgorithmBackend,
+        env_config: EnvConfig,
+        network_config: BaseNetworkConfig,
     ) -> None:
         self.eval_config = eval_config
         self.backend = backend
@@ -42,9 +40,9 @@ class Evaluator:
     def is_reporter_enabled(self) -> bool:
         return self.reporter is not None and self.reporter.enabled
 
-    def label_to_type_map(self) -> Dict[str, str]:
+    def label_to_type_map(self) -> dict[str, str]:
         """{label -> 'training' | 'checkpoint'} for every configured entry."""
-        mapping: Dict[str, str] = {}
+        mapping: dict[str, str] = {}
         for entry in self.eval_config.training_eval:
             mapping[entry.label] = "training"
         for entry in self.eval_config.checkpoint_eval:
@@ -58,10 +56,10 @@ class Evaluator:
 
     def run_training_evals(
         self, iteration: int, eval_model: Optional["torch.nn.Module"]
-    ) -> Dict[str, Optional[GameResults]]:
+    ) -> dict[str, Optional[GameResults]]:
         logger.info("")
         current_model = self._model_provider(eval_model)
-        results: Dict[str, Optional[GameResults]] = {}
+        results: dict[str, Optional[GameResults]] = {}
         for entry in self.eval_config.training_eval:
             if not check_interval(iteration, entry.interval):
                 results[entry.label] = None
@@ -86,15 +84,15 @@ class Evaluator:
         previous_checkpoint: Optional[Path],
         iteration: int = 0,
         eval_model: Optional["torch.nn.Module"] = None,
-    ) -> Dict[str, Optional[GameResults]]:
+    ) -> dict[str, Optional[GameResults]]:
         logger.info("")
         current_model = self._model_provider(eval_model)
 
-        def previous_model() -> "torch.nn.Module":
+        def previous_model() -> torch.nn.Module:
             assert previous_checkpoint is not None
             return self.backend.get_model_from_checkpoint(previous_checkpoint)
 
-        results: Dict[str, Optional[GameResults]] = {}
+        results: dict[str, Optional[GameResults]] = {}
         for entry in self.eval_config.checkpoint_eval:
             needs_previous = entry.opponent in ("policy", "alphazero_mcts")
             if needs_previous and previous_checkpoint is None:
@@ -117,14 +115,14 @@ class Evaluator:
         return results
 
     @staticmethod
-    def _no_model() -> "torch.nn.Module":
+    def _no_model() -> torch.nn.Module:
         raise RuntimeError("A model-backed agent was requested for an eval role that supplies no model.")
 
     @staticmethod
     def _model_provider(model: Optional["torch.nn.Module"]) -> Callable[[], "torch.nn.Module"]:
         """Wrap an optional in-memory model as a provider that fails loudly if the
         model is missing when a model-backed agent actually needs it."""
-        def provide() -> "torch.nn.Module":
+        def provide() -> torch.nn.Module:
             if model is None:
                 raise RuntimeError(
                     "Eval requested the current model, but no weight snapshot was captured for this step."
@@ -138,7 +136,7 @@ class Evaluator:
         model_provider: Callable[[], "torch.nn.Module"],
         search_config_path: Optional[str],
         name: str,
-    ) -> "Agent":
+    ) -> Agent:
         is_recurrent = self.network_config.is_recurrent()
         recurrent_iterations = self.network_config.recurrent_iterations if is_recurrent else 1
         match agent_type:
@@ -180,8 +178,8 @@ class Evaluator:
 
     def _play_balanced(
         self,
-        player: "Agent",
-        opponent: "Agent",
+        player: Agent,
+        opponent: Agent,
         games_per_side: int,
         iteration: int = 0,
         label: str = "",

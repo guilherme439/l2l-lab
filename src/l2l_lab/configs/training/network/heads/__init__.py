@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from .policy import (BasePolicyHeadConfig, ConvProjectionPolicyHeadConfig,
                      ConvReducePolicyHeadConfig, LinearReducePolicyHeadConfig,
                      policy_head_from_dict)

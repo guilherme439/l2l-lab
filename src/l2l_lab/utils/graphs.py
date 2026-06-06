@@ -1,8 +1,8 @@
-from __future__ import annotations
-
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 import logging
@@ -10,26 +10,26 @@ import logging
 logger = logging.getLogger("l2l_lab")
 
 
-def _filter_none(iterations: List[int], values: List[Optional[float]]) -> Tuple[List[int], List[float]]:
+def _filter_none(iterations: list[int], values: list[Optional[float]]) -> tuple[list[int], list[float]]:
     filtered = [(i, v) for i, v in zip(iterations, values) if v is not None]
     if not filtered:
         return [], []
     return [x[0] for x in filtered], [x[1] for x in filtered]
 
 
-def _has_valid_data(values: List[Optional[float]]) -> bool:
+def _has_valid_data(values: list[Optional[float]]) -> bool:
     valid = [v for v in values if v is not None]
     return len(valid) >= 2
 
 
-def _has_variation(values: List[Optional[float]], threshold: float = 1e-9) -> bool:
+def _has_variation(values: list[Optional[float]], threshold: float = 1e-9) -> bool:
     valid = [v for v in values if v is not None]
     if len(valid) < 2:
         return False
     return (max(valid) - min(valid)) > threshold
 
 
-def _get_metric(metrics: Dict[str, List], *keys) -> List:
+def _get_metric(metrics: dict[str, list], *keys) -> list:
     """Get the first available metric from a list of candidate keys."""
     for key in keys:
         vals = metrics.get(key, [])
@@ -38,7 +38,7 @@ def _get_metric(metrics: Dict[str, List], *keys) -> List:
     return []
 
 
-def _rolling_mean(values: List[float], window: int = 10) -> List[float]:
+def _rolling_mean(values: list[float], window: int = 10) -> list[float]:
     if len(values) < window:
         return values
     result = []
@@ -55,13 +55,13 @@ def _scatter_marker_size(n: int) -> float:
 
 
 def _rolling_min_max(
-    iterations: List[int],
-    values: List[float],
+    iterations: list[int],
+    values: list[float],
     window: int = 5,
-) -> Tuple[List[float], List[float], List[float]]:
-    centers: List[float] = []
-    mins: List[float] = []
-    maxs: List[float] = []
+) -> tuple[list[float], list[float], list[float]]:
+    centers: list[float] = []
+    mins: list[float] = []
+    maxs: list[float] = []
     half = window // 2
     n = len(values)
     for i in range(n):
@@ -74,7 +74,7 @@ def _rolling_min_max(
     return centers, mins, maxs
 
 
-def plot_training_overview(graphs_dir: Path, metrics: Dict[str, List]) -> None:
+def plot_training_overview(graphs_dir: Path, metrics: dict[str, list]) -> None:
     iterations = metrics.get("iteration", [])
     ep_len = metrics.get("episode_len_mean", [])
     ep_reward = metrics.get("episode_reward_mean", [])
@@ -118,7 +118,7 @@ def plot_training_overview(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     plt.close(fig)
 
 
-def plot_loss_breakdown(graphs_dir: Path, metrics: Dict[str, List]) -> None:
+def plot_loss_breakdown(graphs_dir: Path, metrics: dict[str, list]) -> None:
     iterations = metrics.get("iteration", [])
     total_loss = _get_metric(metrics, "total_loss", "combined_loss")
     policy_loss = _get_metric(metrics, "policy_loss")
@@ -168,7 +168,7 @@ def plot_loss_breakdown(graphs_dir: Path, metrics: Dict[str, List]) -> None:
         plt.close(fig)
 
 
-def plot_policy_health(graphs_dir: Path, metrics: Dict[str, List]) -> None:
+def plot_policy_health(graphs_dir: Path, metrics: dict[str, list]) -> None:
     iterations = metrics.get("iteration", [])
     entropy = metrics.get("entropy", [])
     kl_div = metrics.get("kl_divergence", [])
@@ -221,7 +221,7 @@ def plot_policy_health(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     plt.close(fig)
 
 
-def plot_learning_rate(graphs_dir: Path, metrics: Dict[str, List]) -> None:
+def plot_learning_rate(graphs_dir: Path, metrics: dict[str, list]) -> None:
     iterations = metrics.get("iteration", [])
     lr = metrics.get("learning_rate", [])
     
@@ -247,7 +247,7 @@ def plot_learning_rate(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     plt.close(fig)
 
 
-def plot_icm_dashboard(graphs_dir: Path, metrics: Dict[str, List]) -> None:
+def plot_icm_dashboard(graphs_dir: Path, metrics: dict[str, list]) -> None:
     iterations = metrics.get("iteration", [])
     intrinsic = metrics.get("intrinsic_reward_mean", [])
     forward_loss = metrics.get("icm_forward_loss", [])
@@ -293,7 +293,7 @@ def plot_icm_dashboard(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     plt.close(fig)
 
 
-def plot_weight_stats(graphs_dir: Path, metrics: Dict[str, List]) -> None:
+def plot_weight_stats(graphs_dir: Path, metrics: dict[str, list]) -> None:
     iterations = metrics.get("iteration", [])
     weight_max = metrics.get("weight_max", [])
     weight_min = metrics.get("weight_min", [])
@@ -326,7 +326,7 @@ def plot_weight_stats(graphs_dir: Path, metrics: Dict[str, List]) -> None:
     plt.close(fig)
 
 
-def plot_memory_usage(graphs_dir: Path, metrics: Dict[str, Any]) -> None:
+def plot_memory_usage(graphs_dir: Path, metrics: dict[str, Any]) -> None:
     iterations = metrics.get("iteration", [])
     memory = metrics.get("memory") or {}
     total = memory.get("total_pss_mb", [])
@@ -362,10 +362,10 @@ def plot_memory_usage(graphs_dir: Path, metrics: Dict[str, Any]) -> None:
 
 def _plot_wld_stacked_split(
     graphs_dir: Path,
-    iterations: List[int],
-    wins: List[Optional[int]],
-    losses: List[Optional[int]],
-    draws: List[Optional[int]],
+    iterations: list[int],
+    wins: list[Optional[int]],
+    losses: list[Optional[int]],
+    draws: list[Optional[int]],
     title_base: str,
     filename_base: str,
     split_interval: int,
@@ -429,7 +429,7 @@ def _plot_wld_stacked_split(
         plt.close(fig)
 
 
-def plot_evaluations(eval_dir: Path, metrics: Dict[str, Any], split_interval: int) -> None:
+def plot_evaluations(eval_dir: Path, metrics: dict[str, Any], split_interval: int) -> None:
     iterations = metrics.get("iteration", [])
     evaluations = metrics.get("evaluations", {})
     titles_by_type = {
@@ -455,7 +455,7 @@ def plot_evaluations(eval_dir: Path, metrics: Dict[str, Any], split_interval: in
                 )
 
 
-def plot_metrics(graphs_dir: Path, metrics: Dict[str, Any], eval_graph_split: int = 500, plot_memory: bool = True) -> None:
+def plot_metrics(graphs_dir: Path, metrics: dict[str, Any], eval_graph_split: int = 500, plot_memory: bool = True) -> None:
     iterations = metrics.get("iteration", [])
     if not iterations:
         return

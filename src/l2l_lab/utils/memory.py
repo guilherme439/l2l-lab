@@ -5,8 +5,6 @@ and AlphaZoo (MCTS workers) spawn their workers as descendants of the Python
 process running the trainer, so a recursive child walk reaches them all.
 """
 
-from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 

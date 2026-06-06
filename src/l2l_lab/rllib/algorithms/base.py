@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
@@ -42,7 +40,7 @@ class BaseAlgorithmTrainer(ABC):
         pass
 
     @abstractmethod
-    def extract_metrics(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    def extract_metrics(self, result: dict[str, Any]) -> dict[str, Any]:
         pass
 
     def update_opponent_policies(self, model_dir: Path, new_checkpoint: int) -> None:

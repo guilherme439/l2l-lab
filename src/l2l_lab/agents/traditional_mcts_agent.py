@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import Any
+from typing import Any, override
 
 from l2l_lab.agents.agent import Agent
 from alphazoo import SearchConfig
@@ -19,6 +17,7 @@ class TraditionalMCTSAgent(Agent):
         self._obs_space_format = obs_space_format
         self.name = name
 
+    @override
     def choose_action(self, env: Any) -> int:
         return select_action_with_traditional_mcts(
             env=env,

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -36,7 +34,7 @@ class AlphazooBackendConfig(BaseBackendConfig):
             )
 
     @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> "AlphazooBackendConfig":
+    def _from_dict(cls, data: dict[str, Any]) -> AlphazooBackendConfig:
         algorithm = algorithm_config_from_dict(data.get("algorithm", {}) or {}, "alphazoo")
         return cls(
             name=data["name"],

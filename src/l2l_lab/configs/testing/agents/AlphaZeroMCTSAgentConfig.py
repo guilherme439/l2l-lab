@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 from .AgentConfig import AgentConfig
 
@@ -15,7 +15,7 @@ class AlphaZeroMCTSAgentConfig(AgentConfig):
         self.agent_type = "alphazero_mcts"
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AlphaZeroMCTSAgentConfig":
+    def from_dict(cls, data: dict[str, Any]) -> AlphaZeroMCTSAgentConfig:
         return cls(
             agent_type="alphazero_mcts",
             model_name=data.get("model_name", ""),

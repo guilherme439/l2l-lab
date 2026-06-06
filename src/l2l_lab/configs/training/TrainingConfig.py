@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Union
 
 from omegaconf import OmegaConf
 
@@ -25,7 +24,7 @@ class TrainingConfig:
     reporting: ReportingConfig = field(default_factory=ReportingConfig)
 
     @classmethod
-    def from_yaml(cls, path: Union[str, Path]) -> "TrainingConfig":
+    def from_yaml(cls, path: str | Path) -> TrainingConfig:
         data = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
 
         if "common" not in data:

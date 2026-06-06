@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 from .AgentConfig import AgentConfig
 
@@ -12,7 +12,7 @@ class TraditionalMCTSAgentConfig(AgentConfig):
         self.agent_type = "traditional_mcts"
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TraditionalMCTSAgentConfig":
+    def from_dict(cls, data: dict[str, Any]) -> TraditionalMCTSAgentConfig:
         return cls(
             agent_type="traditional_mcts",
             search_config_path=data.get("search_config_path", ""),

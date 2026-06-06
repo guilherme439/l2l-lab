@@ -29,7 +29,7 @@ backend:
     name: "impala"
     iterations: 8
     config:
-      num_env_runners: 1
+      num_env_runners: 2
       rollout_fragment_length: 16
       num_learners: 0
       lr: 0.0005

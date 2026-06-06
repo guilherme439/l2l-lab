@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import Any, Callable
+from typing import Any, Callable, override
 
 import torch
 
@@ -24,6 +22,7 @@ class PolicyAgent(Agent):
         self._recurrent_iterations = recurrent_iterations
         self.name = name
 
+    @override
     def choose_action(self, env: Any) -> int:
         agent_id = env.agent_selection
         obs = env.observe(agent_id)

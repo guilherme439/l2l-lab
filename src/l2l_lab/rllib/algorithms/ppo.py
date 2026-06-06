@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING, override
 
 from ray.rllib.algorithms.ppo import PPO, PPOConfig
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
@@ -29,16 +27,19 @@ class PPOTrainer(BaseAlgorithmTrainer):
     def __init__(self, config: TrainingConfig):
         super().__init__(config)
         self.policy_sampler: Optional[PolicySampler] = None
-        self.available_checkpoints: List[int] = []
+        self.available_checkpoints: list[int] = []
     
     @property
+    @override
     def algorithm_name(self) -> str:
         return "ppo"
 
+    @override
     def load_from_checkpoint(self, checkpoint_path: Path):
         return PPO.from_checkpoint(str(checkpoint_path.absolute()))
     
-    def extract_metrics(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    @override
+    def extract_metrics(self, result: dict[str, Any]) -> dict[str, Any]:
         env_runners = result.get("env_runners", {})
         policy_cfg = self.config.backend.algorithm.config.policy
         policy_name = "main_policy" if policy_cfg and policy_cfg.use_multiple_policies else "shared_policy"
@@ -66,6 +67,7 @@ class PPOTrainer(BaseAlgorithmTrainer):
         
         return metrics
     
+    @override
     def build_config(self, env_name: str, obs_space_format, obs_space, act_space) -> PPOConfig:
         cfg = self.config.backend.algorithm.config
         policy_cfg = self.config.backend.algorithm.config.policy
@@ -159,6 +161,7 @@ class PPOTrainer(BaseAlgorithmTrainer):
             model_config=model_config,
         )
     
+    @override
     def update_opponent_policies(self, model_dir: Path, new_checkpoint: int):
         policy_cfg = self.config.backend.algorithm.config.policy
         if not policy_cfg or not policy_cfg.use_multiple_policies:

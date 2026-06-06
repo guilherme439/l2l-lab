@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import torch
 
@@ -77,7 +75,7 @@ def get_latest_checkpoint_dir(model_dir: Path) -> Optional[Path]:
     return get_checkpoint_dir(model_dir, iteration=None)
 
 
-def load_trainer_checkpoint(model_dir: Path, iteration: Optional[int] = None) -> Optional[Dict[str, Any]]:
+def load_trainer_checkpoint(model_dir: Path, iteration: Optional[int] = None) -> Optional[dict[str, Any]]:
     cp_path = get_training_checkpoint_path(model_dir, iteration)
     if cp_path is None or not cp_path.exists():
         return None
@@ -114,7 +112,7 @@ def is_rewind(model_dir: Path, start_iteration: int) -> bool:
     return start_iteration < latest_iter
 
 
-def trim_metrics_to_iteration(metrics: Dict[str, List], target_iteration: int) -> Dict[str, List]:
+def trim_metrics_to_iteration(metrics: dict[str, list], target_iteration: int) -> dict[str, list]:
     iterations = metrics.get("iteration", [])
     if not iterations:
         return metrics

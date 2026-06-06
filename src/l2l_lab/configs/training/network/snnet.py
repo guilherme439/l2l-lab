@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, override
 
 from .base import BaseNetworkConfig
 
@@ -20,12 +18,13 @@ class SNNetConfig(BaseNetworkConfig):
                 f"SNNetConfig requires architecture='SNNet', got {self.architecture!r}"
             )
 
+    @override
     def is_recurrent(self) -> bool:
         return False
 
     @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> "SNNetConfig":
-        kwargs: Dict[str, Any] = {
+    def _from_dict(cls, data: dict[str, Any]) -> SNNetConfig:
+        kwargs: dict[str, Any] = {
             "architecture": data.get("architecture", "SNNet")
         }
         for key in ("hidden_layers", "neurons_per_layer", "head_layers", "dropout"):

@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
-from typing import Any, Union
+from typing import Any
 
 from alphazoo import AlphaZooConfig
 
@@ -27,7 +25,7 @@ class BaseAlgorithmConfig:
 @dataclass
 class RllibAlgorithmConfig(BaseAlgorithmConfig):
     iterations: int = 0
-    config: Union[AlgoPPOConfig, AlgoIMPALAConfig] = field(default_factory=AlgoPPOConfig)
+    config: AlgoPPOConfig | AlgoIMPALAConfig = field(default_factory=AlgoPPOConfig)
 
     def __post_init__(self) -> None:
         expected = _RLLIB_INNER_BY_NAME.get(self.name)

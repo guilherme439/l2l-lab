@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 from .AgentConfig import AgentConfig
 
@@ -13,7 +13,7 @@ class PolicyAgentConfig(AgentConfig):
         self.agent_type = "policy"
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PolicyAgentConfig":
+    def from_dict(cls, data: dict[str, Any]) -> PolicyAgentConfig:
         return cls(
             agent_type="policy",
             model_name=data.get("model_name", ""),
