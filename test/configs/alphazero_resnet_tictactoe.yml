@@ -72,6 +72,7 @@ backend:
       optimizer:
         type: "Adam"
       scheduler:
+        type: step
         starting_lr: 0.001
         boundaries: [1000]
         gamma: 0.1
