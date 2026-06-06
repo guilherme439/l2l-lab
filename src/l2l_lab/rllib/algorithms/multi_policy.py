@@ -13,7 +13,7 @@ import logging
 logger = logging.getLogger("l2l_lab")
 
 if TYPE_CHECKING:
-    from l2l_lab.configs.training.PolicyConfig import PolicyConfig
+    from l2l_lab.configs.training.policy_config import PolicyConfig
 
 
 class PolicySampler:

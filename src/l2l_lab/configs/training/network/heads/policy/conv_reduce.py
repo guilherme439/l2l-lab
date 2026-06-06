@@ -1,12 +1,12 @@
 from dataclasses import dataclass
-from typing import Optional, override
+from typing import Literal, Optional, override
 
 from .base import BasePolicyHeadConfig
 
 
 @dataclass
 class ConvReducePolicyHeadConfig(BasePolicyHeadConfig):
-    name: str = "conv_reduce"
+    name: Literal["conv_reduce"] = "conv_reduce"
     policy_channels: int = 0
     num_reduce_layers: int = 2
     batch_norm: Optional[bool] = None

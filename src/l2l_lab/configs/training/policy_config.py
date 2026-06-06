@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Optional
 
 
 @dataclass
@@ -43,14 +43,5 @@ class PolicyConfig:
         
         if self.random_policy_ratio > 0:
             weights["random_policy"] = self.random_policy_ratio
-        
+
         return weights
-    
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> PolicyConfig:
-        return cls(
-            use_multiple_policies=data.get("use_multiple_policies", False),
-            number_previous_policies=data.get("number_previous_policies", 0),
-            main_policy_ratio=data.get("main_policy_ratio", 1.0),
-            random_policy_ratio=data.get("random_policy_ratio", 0.0),
-        )

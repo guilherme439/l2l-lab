@@ -33,7 +33,6 @@ backend:
         running_mode: "sequential"
         num_gamers: 6
         training_steps: 500
-        early_fill_games: 100
         sequential:
           num_games_per_step: 12
       data:
@@ -43,7 +42,7 @@ backend:
         max_size: 8000
       recurrent:
         train_iterations: 3
-        pred_iterations: 3
+        inference_iterations: 3
         use_progressive_loss: true
         prog_alpha: 0.5
       learning:

@@ -1,20 +1,28 @@
-from .base import BaseNetworkConfig, network_config_from_dict
+from typing import Annotated, Union
+
+from pydantic import Field
+
+from .base import BaseNetworkConfig
 from .convnet import ConvNetConfig
 from .heads import (BasePolicyHeadConfig, BaseValueHeadConfig,
                     ConvProjectionPolicyHeadConfig,
-                    ConvProjectionValueHeadConfig,
-                    ConvReducePolicyHeadConfig, ConvReduceValueHeadConfig,
-                    LinearReducePolicyHeadConfig,
-                    LinearReduceValueHeadConfig, policy_head_from_dict,
-                    value_head_from_dict)
+                    ConvProjectionValueHeadConfig, ConvReducePolicyHeadConfig,
+                    ConvReduceValueHeadConfig, LinearReducePolicyHeadConfig,
+                    LinearReduceValueHeadConfig, PolicyHeadConfig,
+                    ValueHeadConfig)
 from .mlpnet import MLPNetConfig
 from .recurrentnet import RecurrentNetConfig
 from .resnet import ResNetConfig
 from .snnet import SNNetConfig
 
+NetworkConfig = Annotated[
+    Union[ResNetConfig, ConvNetConfig, RecurrentNetConfig, MLPNetConfig, SNNetConfig],
+    Field(discriminator="architecture"),
+]
+
 __all__ = [
     "BaseNetworkConfig",
-    "network_config_from_dict",
+    "NetworkConfig",
     "ResNetConfig",
     "ConvNetConfig",
     "RecurrentNetConfig",
@@ -24,10 +32,10 @@ __all__ = [
     "ConvProjectionPolicyHeadConfig",
     "ConvReducePolicyHeadConfig",
     "LinearReducePolicyHeadConfig",
-    "policy_head_from_dict",
+    "PolicyHeadConfig",
     "BaseValueHeadConfig",
     "ConvProjectionValueHeadConfig",
     "ConvReduceValueHeadConfig",
     "LinearReduceValueHeadConfig",
-    "value_head_from_dict",
+    "ValueHeadConfig",
 ]

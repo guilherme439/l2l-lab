@@ -1,10 +1,10 @@
 num_games: 2
 
-agents:
-  p1:
-    agent_type: "random"
-  p2:
-    agent_type: "random"
+p1:
+  agent_type: "random"
+
+p2:
+  agent_type: "random"
 
 env:
   name: "tictactoe"

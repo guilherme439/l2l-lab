@@ -1,19 +1,19 @@
 from .policy import (BasePolicyHeadConfig, ConvProjectionPolicyHeadConfig,
                      ConvReducePolicyHeadConfig, LinearReducePolicyHeadConfig,
-                     policy_head_from_dict)
+                     PolicyHeadConfig)
 from .value import (BaseValueHeadConfig, ConvProjectionValueHeadConfig,
                     ConvReduceValueHeadConfig, LinearReduceValueHeadConfig,
-                    value_head_from_dict)
+                    ValueHeadConfig)
 
 __all__ = [
     "BasePolicyHeadConfig",
     "ConvProjectionPolicyHeadConfig",
     "ConvReducePolicyHeadConfig",
     "LinearReducePolicyHeadConfig",
-    "policy_head_from_dict",
+    "PolicyHeadConfig",
     "BaseValueHeadConfig",
     "ConvProjectionValueHeadConfig",
     "ConvReduceValueHeadConfig",
     "LinearReduceValueHeadConfig",
-    "value_head_from_dict",
+    "ValueHeadConfig",
 ]

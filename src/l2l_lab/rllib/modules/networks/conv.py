@@ -9,7 +9,7 @@ from ray.rllib.utils.annotations import override
 from ray.rllib.utils.torch_utils import FLOAT_MIN
 from ray.rllib.utils.typing import TensorType
 
-from l2l_lab.configs.training.network import network_config_from_dict
+from l2l_lab.configs.training.network import BaseNetworkConfig
 from l2l_lab.neural_networks.utils.builders import build_network
 
 
@@ -33,7 +33,7 @@ class ConvDualHeadRLModule(TorchRLModule, ValueFunctionAPI):
         self.obs_space_format = self.model_config.get("obs_space_format")
         inner_obs_space = self.observation_space["observation"]
 
-        network_cfg = network_config_from_dict(self.model_config["network_config"])
+        network_cfg = BaseNetworkConfig.from_dict(self.model_config["network_config"])
 
         obs_shape = inner_obs_space.shape
         if self.obs_space_format == "channels_first":

@@ -6,8 +6,8 @@ from typing import Any, Callable, Optional
 
 import yaml
 
-from l2l_lab.configs.common.EnvConfig import EnvConfig
-from l2l_lab.configs.training.ReportingConfig import ReportingConfig
+from l2l_lab.configs.common.env_config import EnvConfig
+from l2l_lab.configs.training.reporting_config import ReportingConfig
 from l2l_lab.utils.common import check_interval, find_paths_with_iteration_past
 
 from .csv_writer import MetricsCSVWriter

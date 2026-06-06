@@ -109,13 +109,17 @@ Metrics and graphs are label-agnostic - `graphs.plot_metrics` iterates `metrics[
 
 ### Configuration
 
-Python dataclasses live in `src/l2l_lab/configs/`; YAML files live at the repo root in `configs/`.
+Python dataclasses live in `src/l2l_lab/configs/`; YAML files live at the repo root in `configs/`. `TrainingConfig.from_yaml` / `TestingConfig.from_yaml` load the YAML to a plain dict with OmegaConf, then build the dataclass tree through a Pydantic `TypeAdapter` (`from_dict`), which validates fields and dispatches the polymorphic sections.
 
-`TrainingConfig` is layered: `name` + `common: CommonConfig` + `env: EnvConfig` + `network: NetworkConfig` + `backend: {Rllib|Alphazoo}BackendConfig` + `evaluation: EvaluationConfig` + `reporting: ReportingConfig`. The backend wrapper owns `continue_training` / `continue_from_iteration` and, for alphazoo, `load_scheduler` / `load_optimizer`. The algorithm config is nested under `backend.algorithm` and holds the algorithm name plus an inner `config:` block (PPO/IMPALA: `AlgoPPOConfig` / `AlgoIMPALAConfig`; AlphaZero: the external `AlphaZooConfig`).
+Polymorphic configs are Pydantic **discriminated unions** - a `BaseXConfig` plus `Literal`-tagged variant dataclasses, exposed as a union alias and resolved on a discriminator field:
+- `NetworkConfig` on `architecture` (`ResNetConfig`, `ConvNetConfig`, `RecurrentNetConfig`, `MLPNetConfig`, `SNNetConfig`); conv-based nets carry a `PolicyHeadConfig` / `ValueHeadConfig`, each a union on `name`.
+- `BackendConfig` on `name` (`RllibBackendConfig`, `AlphazooBackendConfig`).
+- `AlgorithmConfig` on `name` (`PPOAlgorithmConfig`, `IMPALAAlgorithmConfig`, `AlphazooAlgorithmConfig`); the rllib variants share an `iterations` count and carry their inner hyperparameter config (`AlgoPPOConfig` / `AlgoIMPALAConfig`).
+- `AgentConfig` on `agent_type` (`PolicyAgentConfig`, `RandomAgentConfig`, `AlphaZeroMCTSAgentConfig`, `TraditionalMCTSAgentConfig`).
 
-See [`configuration.md`](configuration.md) for the full field-by-field reference.
+`TrainingConfig` is layered: `name` + `common` + `env` + `network` + `backend` + `evaluation` + `reporting`. The backend owns `continue_training` / `continue_from_iteration` and, for alphazoo, `load_scheduler` / `load_optimizer`. `AlphazooAlgorithmConfig.config` holds the external `AlphaZooConfig`, built through `AlphaZooConfig.from_dict` so its own OmegaConf merge runs. `BaseNetworkConfig.from_dict` rebuilds a network config from the dict RLlib round-trips through `model_config`.
 
-Testing uses a separate flat `TestingConfig` with agent configs.
+See [`configuration.md`](configuration.md) for the full field-by-field reference. Testing uses a flat `TestingConfig` (`p1`, `p2`, `env`, `num_games`) whose `p1` / `p2` are `AgentConfig`s.
 
 ### Checkpoints
 

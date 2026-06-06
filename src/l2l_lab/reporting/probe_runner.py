@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from l2l_lab.backends.obs_utils import obs_to_state_provider
-from l2l_lab.configs.common.EnvConfig import EnvConfig
+from l2l_lab.configs.common.env_config import EnvConfig
 
 from .types import ProbeState
 

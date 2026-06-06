@@ -6,7 +6,7 @@ from typing import Any, Optional
 import wandb as _wandb_pkg
 import yaml
 
-from l2l_lab.configs.training.TrainingConfig import TrainingConfig
+from l2l_lab.configs.training.training_config import TrainingConfig
 import logging
 
 logger = logging.getLogger("l2l_lab")

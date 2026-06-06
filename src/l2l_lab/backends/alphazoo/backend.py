@@ -22,7 +22,7 @@ import logging
 logger = logging.getLogger("l2l_lab")
 
 if TYPE_CHECKING:
-    from l2l_lab.configs.training.TrainingConfig import TrainingConfig
+    from l2l_lab.configs.training.training_config import TrainingConfig
 
 
 class _CheckpointWriter(CheckpointWriter):

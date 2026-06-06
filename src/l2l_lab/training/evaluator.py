@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
 from l2l_lab.agents import PolicyAgent, RandomAgent
-from l2l_lab.configs.training.EvaluationConfig import EvaluationConfig
+from l2l_lab.configs.training.evaluation_config import EvaluationConfig
 from l2l_lab.testing.tester import GameResults, Tester
 from l2l_lab.utils.common import check_interval
 import logging
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
     from l2l_lab.agents.agent import Agent
     from l2l_lab.backends.backend_base import AlgorithmBackend
-    from l2l_lab.configs.common.EnvConfig import EnvConfig
+    from l2l_lab.configs.common.env_config import EnvConfig
     from l2l_lab.configs.training.network import BaseNetworkConfig
     from l2l_lab.reporting import Reporter
 

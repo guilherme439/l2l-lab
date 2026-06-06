@@ -9,7 +9,7 @@ import torch
 
 from l2l_lab.backends import get_backend
 from l2l_lab.backends.backend_base import StepResult
-from l2l_lab.configs.training.TrainingConfig import TrainingConfig
+from l2l_lab.configs.training.training_config import TrainingConfig
 from l2l_lab.reporting import Reporter
 from l2l_lab.testing.tester import GameResults
 from l2l_lab.training.evaluator import Evaluator

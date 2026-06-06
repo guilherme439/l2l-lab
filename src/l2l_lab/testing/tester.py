@@ -7,15 +7,12 @@ import numpy as np
 import torch
 
 from l2l_lab.agents import Agent, PolicyAgent, RandomAgent
-from l2l_lab.configs.common.EnvConfig import EnvConfig
-from l2l_lab.configs.testing.agents.AgentConfig import AgentConfig
-from l2l_lab.configs.testing.agents.AlphaZeroMCTSAgentConfig import AlphaZeroMCTSAgentConfig
-from l2l_lab.configs.testing.agents.PolicyAgentConfig import \
-    PolicyAgentConfig
-from l2l_lab.configs.testing.agents.RandomAgentConfig import \
-    RandomAgentConfig
-from l2l_lab.configs.testing.agents.TraditionalMCTSAgentConfig import TraditionalMCTSAgentConfig
-from l2l_lab.configs.testing.TestingConfig import TestingConfig
+from l2l_lab.configs.common.env_config import EnvConfig
+from l2l_lab.configs.testing.agents import (AlphaZeroMCTSAgentConfig,
+                                            BaseAgentConfig, PolicyAgentConfig,
+                                            RandomAgentConfig,
+                                            TraditionalMCTSAgentConfig)
+from l2l_lab.configs.testing.testing_config import TestingConfig
 from l2l_lab.envs.registry import create_env
 from l2l_lab.reporting.types import GameReport
 from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
@@ -189,44 +186,46 @@ class Tester:
             return -1
         return 0
 
-    def _create_agent(self, agent_config: AgentConfig) -> Agent:
-        if isinstance(agent_config, RandomAgentConfig):
-            return RandomAgent()
+    def _create_agent(self, agent_config: BaseAgentConfig) -> Agent:
+        match agent_config:
+            case RandomAgentConfig():
+                return RandomAgent()
 
-        if isinstance(agent_config, PolicyAgentConfig):
-            cp_dir = self._get_checkpoint_dir(agent_config.model_name, agent_config.checkpoint)
-            backbone = self._create_backbone(cp_dir)
-            label = f"{agent_config.model_name}@{agent_config.checkpoint}"
-            return PolicyAgent(backbone, self.config.env.obs_space_format, name=label)
+            case PolicyAgentConfig():
+                cp_dir = self._get_checkpoint_dir(agent_config.model_name, agent_config.checkpoint)
+                backbone = self._create_backbone(cp_dir)
+                label = f"{agent_config.model_name}@{agent_config.checkpoint}"
+                return PolicyAgent(backbone, self.config.env.obs_space_format, name=label)
 
-        if isinstance(agent_config, AlphaZeroMCTSAgentConfig):
-            from l2l_lab.agents import AlphaZeroMCTSAgent
-            from l2l_lab.utils.search import load_search_config
+            case AlphaZeroMCTSAgentConfig():
+                from l2l_lab.agents import AlphaZeroMCTSAgent
+                from l2l_lab.utils.search import load_search_config
 
-            cp_dir = self._get_checkpoint_dir(agent_config.model_name, agent_config.checkpoint)
-            backbone = self._create_backbone(cp_dir)
-            search_config = load_search_config(agent_config.search_config_path)
-            label = f"alphazero_mcts[{agent_config.model_name}@{agent_config.checkpoint}]"
-            return AlphaZeroMCTSAgent(
-                model=backbone,
-                is_recurrent=agent_config.is_recurrent,
-                search_config=search_config,
-                obs_space_format=self.config.env.obs_space_format,
-                name=label,
-            )
+                cp_dir = self._get_checkpoint_dir(agent_config.model_name, agent_config.checkpoint)
+                backbone = self._create_backbone(cp_dir)
+                search_config = load_search_config(agent_config.search_config_path)
+                label = f"alphazero_mcts[{agent_config.model_name}@{agent_config.checkpoint}]"
+                return AlphaZeroMCTSAgent(
+                    model=backbone,
+                    is_recurrent=agent_config.is_recurrent,
+                    search_config=search_config,
+                    obs_space_format=self.config.env.obs_space_format,
+                    name=label,
+                )
 
-        if isinstance(agent_config, TraditionalMCTSAgentConfig):
-            from l2l_lab.agents import TraditionalMCTSAgent
-            from l2l_lab.utils.search import load_search_config
+            case TraditionalMCTSAgentConfig():
+                from l2l_lab.agents import TraditionalMCTSAgent
+                from l2l_lab.utils.search import load_search_config
 
-            search_config = load_search_config(agent_config.search_config_path)
-            return TraditionalMCTSAgent(
-                search_config=search_config,
-                obs_space_format=self.config.env.obs_space_format,
-                name="traditional_mcts",
-            )
+                search_config = load_search_config(agent_config.search_config_path)
+                return TraditionalMCTSAgent(
+                    search_config=search_config,
+                    obs_space_format=self.config.env.obs_space_format,
+                    name="traditional_mcts",
+                )
 
-        raise ValueError(f"Unknown agent config type: {type(agent_config)}")
+            case _:
+                raise ValueError(f"Unknown agent config type: {type(agent_config)}")
 
     def _create_backbone(self, checkpoint_dir: Path) -> torch.nn.Module:
         model_dir = checkpoint_dir / "model"

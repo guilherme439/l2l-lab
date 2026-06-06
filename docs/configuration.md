@@ -1,6 +1,6 @@
 # Training Configuration Reference
 
-All training runs are driven by a single YAML file parsed into `TrainingConfig`. Each top-level key maps to a dataclass in [`src/l2l_lab/configs/training/`](../src/l2l_lab/configs/training/). Most fields have defaults - you only specify what you want to override.
+All training runs are driven by a single YAML file parsed into `TrainingConfig`. Each top-level key maps to a dataclass in [`src/l2l_lab/configs/training/`](../src/l2l_lab/configs/training/). Most fields have defaults - you only specify what you want to override. The YAML is loaded with OmegaConf and validated into the dataclass tree by Pydantic; the `network`, `backend`, and `algorithm` sections are discriminated unions, selected by their `architecture` / `name` field.
 
 Full examples live under [`configs/training/*.example.yml`](../configs/training/).
 

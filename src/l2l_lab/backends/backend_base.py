@@ -12,7 +12,7 @@ from l2l_lab.utils.common import check_interval
 if TYPE_CHECKING:
     import torch
 
-    from l2l_lab.configs.training.TrainingConfig import TrainingConfig
+    from l2l_lab.configs.training.training_config import TrainingConfig
 
 
 logger = logging.getLogger("l2l_lab")

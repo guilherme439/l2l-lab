@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 
 
 PLAYER_TYPES = ("policy", "alphazero_mcts", "traditional_mcts")
@@ -69,29 +69,6 @@ class EvaluationConfig:
 
     def all_labels(self) -> list[str]:
         return [e.label for e in self.training_eval] + [e.label for e in self.checkpoint_eval]
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> EvaluationConfig:
-        training = [
-            TrainingEvalEntry(
-                player=item["player"],
-                opponent=item["opponent"],
-                games_per_player=item["games_per_player"],
-                interval=item["interval"],
-                search_config_path=item.get("search_config_path"),
-            )
-            for item in data.get("training_eval", [])
-        ]
-        checkpoint = [
-            CheckpointEvalEntry(
-                player=item["player"],
-                opponent=item["opponent"],
-                games_per_player=item["games_per_player"],
-                search_config_path=item.get("search_config_path"),
-            )
-            for item in data.get("checkpoint_eval", [])
-        ]
-        return cls(training_eval=training, checkpoint_eval=checkpoint)
 
     @staticmethod
     def _validate_player(player: str) -> None:

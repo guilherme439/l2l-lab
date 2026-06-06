@@ -1,16 +1,14 @@
 num_games: 100
 
-agents:
-  p1:
-    agent_type: "alphazero_mcts"
-    alphazero_mcts:
-      model_name: "trained_mcts"
-      checkpoint: 100
-      is_recurrent: false
-      search_config_path: "configs/search/complete_search_config.example.yml"
+p1:
+  agent_type: "alphazero_mcts"
+  model_name: "trained_mcts"
+  checkpoint: 100
+  is_recurrent: false
+  search_config_path: "configs/search/complete_search_config.example.yml"
 
-  p2:
-    agent_type: "random"
+p2:
+  agent_type: "random"
 
 env:
   name: "scs"

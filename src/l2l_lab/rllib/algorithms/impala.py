@@ -6,7 +6,7 @@ from ray.rllib.algorithms.impala import IMPALA, IMPALAConfig
 from .base import BaseAlgorithmTrainer
 
 if TYPE_CHECKING:
-    from l2l_lab.configs.training.TrainingConfig import TrainingConfig
+    from l2l_lab.configs.training.training_config import TrainingConfig
 
 
 class IMPALATrainer(BaseAlgorithmTrainer):

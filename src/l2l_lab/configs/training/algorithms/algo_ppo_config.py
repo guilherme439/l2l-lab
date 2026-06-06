@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from ..PolicyConfig import PolicyConfig
+from ..policy_config import PolicyConfig
 
 
 @dataclass
