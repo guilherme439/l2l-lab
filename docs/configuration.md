@@ -44,6 +44,7 @@ TrainingConfig
 │   ├── name
 │   ├── continue_training
 │   ├── continue_from_iteration
+│   ├── graceful_shutdown_period
 │   ├── load_scheduler              # alphazoo only
 │   ├── load_optimizer              # alphazoo only
 │   └── algorithm: {Rllib|Alphazoo}AlgorithmConfig
@@ -137,6 +138,7 @@ Shared fields on every backend:
 | `name` | `"rllib" \| "alphazoo"` | *(required)* | Dispatch key - selects which backend class is used. |
 | `continue_training` | bool | `false` | When `true`, the run resumes from an existing checkpoint at `models/<name>/` instead of starting fresh. |
 | `continue_from_iteration` | int \| null | `null` | Specific iteration to resume from. `null` = latest checkpoint. Setting this below the latest existing checkpoint triggers a rewind: checkpoint dirs, report snapshots, archived configs, and CSV rows past this iteration are deleted (after a 30s Ctrl+C grace period) before training resumes. |
+| `graceful_shutdown_period` | float | `180` | Seconds the trainer waits for the backend's training thread to finish after requesting a stop during shutdown. If the thread is still running past this window, shutdown proceeds with a warning. |
 | `algorithm` | object | *(required)* | See [Algorithm](#algorithm) below. Its shape must match the backend. |
 
 ### Rllib Backend

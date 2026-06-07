@@ -10,3 +10,4 @@ class BaseBackendConfig:
     algorithm: AlgorithmConfig
     continue_training: bool = False
     continue_from_iteration: Optional[int] = None
+    graceful_shutdown_period: float = 60
