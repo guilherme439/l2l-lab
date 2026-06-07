@@ -76,7 +76,6 @@ class Evaluator:
                 iteration=iteration, label=entry.label,
             )
             logger.info(f"Finished training eval [{entry.player} x {entry.opponent}]\n")
-        logger.info("\n")
         return results
 
     def run_checkpoint_evals(
@@ -111,7 +110,6 @@ class Evaluator:
                 iteration=iteration, label=entry.label,
             )
             logger.info(f"Finished checkpoint eval [{entry.player} x {entry.opponent}]\n")
-        logger.info("\n")
         return results
 
     @staticmethod
