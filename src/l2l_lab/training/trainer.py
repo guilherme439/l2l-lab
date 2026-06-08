@@ -172,6 +172,7 @@ class Trainer:
             i = step_result.iteration
             self._last_iteration = i
             step_metrics = step_result.metrics
+            logger.info(f"Processing step {i} result")
 
             self._collect_weight_metrics(step_metrics)
             if self._memory_sampler is not None:
