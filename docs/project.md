@@ -125,6 +125,10 @@ See [`configuration.md`](configuration.md) for the full field-by-field reference
 
 Saved to `models/{name}/checkpoints/{iteration}/` containing model weights, RLlib algorithm state, and metrics history. Checkpoints can be loaded as frozen opponent policies for multi-policy training or as agents for evaluation.
 
+The `model/` subdirectory (`weights.cp` state dict + `base_class.pkl` pickled architecture) is l2l-lab's own portable, shareable model artifact, written the same way by every backend: architecture plus weights, loadable on its own via `get_model_from_checkpoint` for evaluation or for handing a trained net to someone else, independent of any backend's resume state. (The pickle-based `model/` format is a stopgap; moving it to a portable format such as safetensors or TorchScript is a planned l2l-lab improvement.)
+
+Each backend writes its own resume state alongside `model/`: the RLlib algorithm state for the rllib backend, or for the `alphazoo` backend the flat `optimizer.pt` / `scheduler.pt` / `replay_buffer.pt` / `metadata.json` that `AlphaZoo.save(save_model=False)` produces. Those resume files exist only to continue training in place. `_CheckpointWriter` fills `model/weights.cp` from `AlphaZoo.get_model_state_dict()` and writes the resume state via `AlphaZoo.save`.
+
 ### Reporting (`l2l_lab.reporting`)
 
 Opt-in diagnostic layer, enabled by setting `reporting.enabled: true` in the training YAML. When enabled, the trainer writes LLM-friendly artifacts to `models/{name}/reports/`:

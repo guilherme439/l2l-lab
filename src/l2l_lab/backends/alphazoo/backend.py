@@ -33,14 +33,13 @@ class _CheckpointWriter(CheckpointWriter):
 
     @override
     def write(self, snapshot: dict[str, Any], path: Path) -> None:
+        az = self._backend._alphazoo
+        az.save(path, save_model=False)
+
         model_dir = path / "model"
         model_dir.mkdir(exist_ok=True)
-        torch.save(snapshot["model_state_dict"], model_dir / "weights.cp")
+        torch.save(az.get_model_state_dict(), model_dir / "weights.cp")
         (model_dir / "base_class.pkl").write_bytes(snapshot["network_template_bytes"])
-
-        algo_dir = path / "algo"
-        algo_dir.mkdir(exist_ok=True)
-        torch.save(snapshot["algo"], algo_dir / "state.cp")
 
 
 class AlphaZooBackend(AlgorithmBackend):
@@ -142,14 +141,14 @@ class AlphaZooBackend(AlgorithmBackend):
         game = make_wrapper(env, env_config.obs_space_format)
 
         backend_cfg = config.backend
-        target_iteration = backend_cfg.continue_from_iteration
+        checkpoint_dir = get_checkpoint_dir(model_dir, backend_cfg.continue_from_iteration)
 
-        checkpoint_dir = get_checkpoint_dir(model_dir, target_iteration)
+        self._total_iterations = config.backend.algorithm.total_iterations
 
-        optimizer_state_dict = None
-        scheduler_state_dict = None
-        replay_buffer_state = None
-        loaded_iteration = 0
+        az_config: AlphaZooConfig = backend_cfg.algorithm.config
+        az_config.data.observation_format = env_config.obs_space_format
+        az_config.data.network_input_format = "channels_first"
+        az_config.running.training_steps = self._total_iterations
 
         weights_path = checkpoint_dir / "model" / "weights.cp" if checkpoint_dir is not None else None
         if weights_path is not None and weights_path.exists():
@@ -158,34 +157,22 @@ class AlphaZooBackend(AlgorithmBackend):
             loaded_iteration = int(checkpoint_dir.name)
             logger.info(f"\n✓ Model weights restored from {weights_path}")
 
-            algo_state_path = checkpoint_dir / "algo" / "state.cp"
-            if algo_state_path.exists():
-                algo_state = load_checkpoint_file(algo_state_path)
-                if backend_cfg.load_optimizer:
-                    optimizer_state_dict = algo_state.get("optimizer_state_dict")
-                if backend_cfg.load_scheduler:
-                    scheduler_state_dict = algo_state.get("scheduler_state_dict")
-                replay_buffer_state = algo_state.get("replay_buffer_state")
+            self._alphazoo = AlphaZoo.from_checkpoint(
+                checkpoint_dir,
+                env=game,
+                config=az_config,
+                model=self._model,
+                load_model=False,
+                load_optimizer=backend_cfg.load_optimizer,
+                load_scheduler=backend_cfg.load_scheduler,
+                load_replay_buffer=backend_cfg.load_replay_buffer,
+            )
         else:
             logger.info("No checkpoint found. Starting fresh.")
+            loaded_iteration = 0
+            self._alphazoo = AlphaZoo(env=game, config=az_config, model=self._model)
 
         self._start_iteration = loaded_iteration + 1
-        self._total_iterations = config.backend.algorithm.total_iterations
-
-        az_config: AlphaZooConfig = backend_cfg.algorithm.config
-        az_config.data.observation_format = env_config.obs_space_format
-        az_config.data.network_input_format = "channels_first"
-        az_config.running.training_steps = self._total_iterations
-
-        self._alphazoo = AlphaZoo(
-            env=game,
-            config=az_config,
-            model=self._model,
-            optimizer_state_dict=optimizer_state_dict,
-            scheduler_state_dict=scheduler_state_dict,
-            replay_buffer_state_dict=replay_buffer_state,
-            start_iteration=self._start_iteration,
-        )
 
         return loaded_iteration
 
@@ -222,7 +209,7 @@ class AlphaZooBackend(AlgorithmBackend):
     def save_final_checkpoint(self, iteration: int) -> Optional[Path]:
         if self._checkpoint_interval <= 0 or self._checkpoint_base_dir is None:
             return None
-        snapshot = self._capture_snapshot()
+        snapshot = self._checkpoint_payload()
         checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(iteration)
         checkpoint_path.mkdir(exist_ok=True)
         self._writer.write(snapshot, checkpoint_path)
@@ -258,7 +245,7 @@ class AlphaZooBackend(AlgorithmBackend):
 
                 checkpoint_path: Optional[Path] = None
                 if check_interval(step, self._checkpoint_interval):
-                    snapshot = self._capture_snapshot()
+                    snapshot = self._checkpoint_payload()
                     checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(step)
                     checkpoint_path.mkdir(exist_ok=True)
                     self._writer.enqueue(snapshot, checkpoint_path)
@@ -302,17 +289,8 @@ class AlphaZooBackend(AlgorithmBackend):
         total = self._config.backend.algorithm.total_iterations
         logger.info(f"\nIteration {iteration}/{total} finished | EpLen: {ep_len:6.1f}\n")
         
-    def _capture_snapshot(self) -> dict[str, Any]:
-        az = self._alphazoo
-        return {
-            "model_state_dict": deepcopy(self._model.state_dict()),
-            "network_template_bytes": self._network_template_bytes,
-            "algo": {
-                "optimizer_state_dict": deepcopy(az.get_optimizer_state_dict()),
-                "scheduler_state_dict": deepcopy(az.get_scheduler_state_dict()),
-                "replay_buffer_state": deepcopy(az.get_replay_buffer_state_dict()),
-            },
-        }
+    def _checkpoint_payload(self) -> dict[str, Any]:
+        return {"network_template_bytes": self._network_template_bytes}
 
     def _pickle_network(self, model: torch.nn.Module) -> bytes:
         buf = io.BytesIO()
