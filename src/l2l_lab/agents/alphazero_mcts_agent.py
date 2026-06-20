@@ -4,7 +4,7 @@ import torch
 
 from l2l_lab.agents.agent import Agent
 from alphazoo import SearchConfig
-from alphazoo.utils import select_action_with_alphazero_mcts
+from alphazoo.utils.mcts import select_action_with_alphazero_mcts
 
 
 class AlphaZeroMCTSAgent(Agent):

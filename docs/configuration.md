@@ -156,7 +156,7 @@ Adds fine-grained controls over what gets restored on resume:
 
 Setting either to `true` when `continue_training` is `false` is an error - there's no state to load from.
 
-When `load_optimizer: true` **and** `load_scheduler: false` (with `continue_training: true`), the optimizer's per-param-group `lr` is synced to the fresh scheduler's `starting_lr`. This is how you bump the LR back up on resume while keeping Adam m/v stats.
+When `load_optimizer: true` **and** `load_scheduler: false` (with `continue_training: true`), the optimizer's per-param-group `lr` is synced to the fresh scheduler's initial learning rate. This is how you bump the LR back up on resume while keeping Adam m/v stats.
 
 ---
 

@@ -2,7 +2,7 @@ from typing import Any, override
 
 from l2l_lab.agents.agent import Agent
 from alphazoo import SearchConfig
-from alphazoo.utils import select_action_with_traditional_mcts
+from alphazoo.utils.mcts import select_action_with_traditional_mcts
 
 
 class TraditionalMCTSAgent(Agent):
