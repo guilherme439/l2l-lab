@@ -378,12 +378,17 @@ def _plot_wld_stacked_split(
         return
     
     max_iter = max(x[0] for x in valid_data)
-    num_splits = (max_iter // split_interval) + 1
-    
-    for split_idx in range(num_splits):
-        range_start = split_idx * split_interval
-        range_end = (split_idx + 1) * split_interval
-        
+    splitting_enabled = split_interval > 0
+    if not splitting_enabled:
+        splits = [(0, max_iter)]
+    else:
+        num_splits = (max_iter // split_interval) + 1
+        splits = [
+            (split_idx * split_interval, (split_idx + 1) * split_interval)
+            for split_idx in range(num_splits)
+        ]
+
+    for range_start, range_end in splits:
         split_data = [x for x in valid_data if range_start < x[0] <= range_end]
         if not split_data:
             continue
@@ -414,7 +419,8 @@ def _plot_wld_stacked_split(
         ax.set_ylim(0, 100)
         ax.yaxis.set_major_locator(MultipleLocator(10))
         ax.yaxis.set_minor_locator(MultipleLocator(5))
-        ax.set_title(f"{title_base} ({range_start}-{range_end})", fontsize=9)
+        title = f"{title_base} ({range_start}-{range_end})" if splitting_enabled else title_base
+        ax.set_title(title, fontsize=9)
         ax.legend(loc="upper right", fontsize=7)
         ax.grid(True, which="major", alpha=0.3, axis="y")
         ax.grid(True, which="minor", alpha=0.15, axis="y", linestyle=":")
@@ -423,8 +429,11 @@ def _plot_wld_stacked_split(
         
         plt.tight_layout(pad=0.5)
         
-        name, ext = filename_base.rsplit(".", 1)
-        filename = f"{name}_{range_start}_{range_end}.{ext}"
+        if splitting_enabled:
+            name, ext = filename_base.rsplit(".", 1)
+            filename = f"{name}_{range_start}_{range_end}.{ext}"
+        else:
+            filename = filename_base
         plt.savefig(graphs_dir / filename, dpi=150, bbox_inches="tight")
         plt.close(fig)
 

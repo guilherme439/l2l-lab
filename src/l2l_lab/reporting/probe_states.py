@@ -74,21 +74,41 @@ def _connect_four_probe_states() -> list[ProbeState]:
     probes.append(ProbeState(
         label="must_block_threat",
         observation=_cf_board([
-            (5, 1, 1), (5, 2, 1), (5, 3, 1),
-            (4, 2, 0), (4, 3, 0),
+            (5, 0, 1), (5, 1, 1), (5, 2, 1),
+            (5, 5, 0), (5, 6, 0),
         ]),
         current_player="player_0",
-        description="Opponent threatens four-in-a-row on bottom (cols 1-3). Must block column 0 or 4.",
+        description="Opponent has three on the bottom row (cols 0-2); column 3 is the only open end. Must block column 3.",
     ))
 
     probes.append(ProbeState(
-        label="diagonal_fork",
+        label="must_block_vertical",
         observation=_cf_board([
-            (5, 3, 0), (4, 4, 0),
-            (5, 4, 1), (5, 5, 1),
+            (5, 2, 1), (4, 2, 1), (3, 2, 1),
+            (5, 0, 0), (5, 4, 0), (5, 6, 0),
         ]),
         current_player="player_0",
-        description="Building a diagonal. Playing column 5 creates a double threat.",
+        description="Opponent has three stacked in column 2, threatening a vertical four. Must block by playing column 2.",
+    ))
+
+    probes.append(ProbeState(
+        label="vertical_win_available",
+        observation=_cf_board([
+            (5, 3, 0), (4, 3, 0), (3, 3, 0),
+            (5, 0, 1), (5, 1, 1), (5, 5, 1),
+        ]),
+        current_player="player_0",
+        description="Three stacked in column 3. Playing column 3 completes a vertical four and wins.",
+    ))
+
+    probes.append(ProbeState(
+        label="open_three_fork",
+        observation=_cf_board([
+            (5, 1, 0), (5, 3, 0),
+            (4, 1, 1), (4, 3, 1),
+        ]),
+        current_player="player_0",
+        description="Friendly stones on the bottom row at columns 1 and 3. Playing column 2 makes an open three with winning squares at both ends (columns 0 and 4), a double threat that forces a win.",
     ))
 
     return probes
