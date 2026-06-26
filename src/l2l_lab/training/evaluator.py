@@ -58,10 +58,11 @@ class Evaluator:
         self, iteration: int, eval_model: Optional["torch.nn.Module"]
     ) -> dict[str, Optional[GameResults]]:
         logger.info("")
+        iterations_completed = iteration + 1
         current_model = self._model_provider(eval_model)
         results: dict[str, Optional[GameResults]] = {}
         for entry in self.eval_config.training_eval:
-            if not check_interval(iteration, entry.interval):
+            if not check_interval(iterations_completed, entry.interval):
                 results[entry.label] = None
                 continue
             logger.info(f"Starting training eval [{entry.player} x {entry.opponent}] for iteration {iteration}...")

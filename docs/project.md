@@ -46,6 +46,18 @@ Key interface: `setup()`, `start_training()`, `get_eval_model()`, `get_model_fro
 
 Training runs in a daemon thread pushing `StepResult` objects to a metrics queue. The main thread consumes metrics, runs evaluations, saves checkpoints, and generates plots.
 
+### Iteration numbering
+
+Iteration numbers are 0-indexed everywhere they surface: a run of `total_iterations = N` executes iterations `0` through `N - 1`. Two variables carry the count through the code:
+- `current_iteration` - the 0-indexed loop index of the iteration being processed.
+- `iterations_completed = current_iteration + 1` - how many iterations have finished.
+
+Interval-gated actions (checkpoints, training/checkpoint evals, info logs, progress plots, report snapshots) fire when `iterations_completed` is a positive multiple of their interval, so with an interval of `K` the first firing is after exactly `K` iterations and every `K` thereafter.
+
+Every persisted label - checkpoint directory names (`models/{name}/checkpoints/{current_iteration}/`), `metrics["iteration"]` values, report CSV rows and Markdown snapshots, and wandb steps - uses the 0-indexed `current_iteration`. A checkpoint written on the firing for interval `K` is therefore named `K - 1`, `2K - 1`, and so on; a checkpoint directory named `m` holds the model after `m + 1` completed iterations.
+
+On resume, `restore` returns the directory name `m` it loaded from, and training continues at `starting_iteration = m + 1`. A run whose latest checkpoint equals `total_iterations - 1` is complete, and resuming it does nothing.
+
 ### Algorithm details
 
 #### Rllib (`l2l_lab.rllib.algorithms`)

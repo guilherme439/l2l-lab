@@ -172,7 +172,7 @@ class AlphaZooBackend(AlgorithmBackend):
             loaded_iteration = 0
             self._alphazoo = AlphaZoo(env=game, config=az_config, model=self._model)
 
-        self._start_iteration = loaded_iteration + 1
+        self._starting_iteration = loaded_iteration + 1
 
         return loaded_iteration
 
@@ -227,7 +227,8 @@ class AlphaZooBackend(AlgorithmBackend):
 
             info_interval = self._config.common.info_interval
 
-            def _on_step_end(alphazoo_instance, step, metrics):
+            def _on_step_end(alphazoo_instance, current_iteration, metrics):
+                iterations_completed = current_iteration + 1
                 public_metrics = {
                     "episode_len_mean": metrics.get("rollout/episode_len_mean", 0),
                     "policy_loss": metrics.get("train/policy_loss"),
@@ -239,21 +240,21 @@ class AlphaZooBackend(AlgorithmBackend):
                     "cycle_size": metrics.get("inference/cycle_size"),
                     "batch_size": metrics.get("inference/batch_size"),
                 }
-                self._print_step_info(step, public_metrics)
-                if check_interval(step, info_interval):
-                    self._print_training_info(step, public_metrics)
+                self._print_step_info(current_iteration, public_metrics)
+                if check_interval(iterations_completed, info_interval):
+                    self._print_training_info(current_iteration, public_metrics)
 
                 checkpoint_path: Optional[Path] = None
-                if check_interval(step, self._checkpoint_interval):
+                if check_interval(iterations_completed, self._checkpoint_interval):
                     snapshot = self._checkpoint_payload()
-                    checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(step)
+                    checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(current_iteration)
                     checkpoint_path.mkdir(exist_ok=True)
                     self._writer.enqueue(snapshot, checkpoint_path)
 
-                eval_model = self.get_eval_model() if self._needs_snapshot(step) else None
+                eval_model = self.get_eval_model() if self._needs_snapshot(iterations_completed) else None
 
                 self.step_queue.put(StepResult(
-                    iteration=step,
+                    iteration=current_iteration,
                     metrics=public_metrics,
                     checkpoint_path=checkpoint_path,
                     eval_model=eval_model,

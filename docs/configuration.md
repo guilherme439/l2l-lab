@@ -74,7 +74,7 @@ All other top-level keys are nested sections described below.
 
 ## Common
 
-Interval knobs. Setting any to `0` disables the corresponding action.
+Interval knobs. Setting any to `0` disables the corresponding action. Iteration numbers are 0-indexed, so an artifact tagged with an iteration number (a checkpoint, plot, or report row) is numbered one below the count of completed iterations - the checkpoint saved after 50 completed iterations is named `49`.
 
 | Field | Type | Default | Description |
 |---|---|---|---|

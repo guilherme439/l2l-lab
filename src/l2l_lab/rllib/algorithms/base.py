@@ -99,11 +99,11 @@ class BaseAlgorithmTrainer(ABC):
         self.algo.restore_from_path(str(algo_checkpoint_path.absolute()))
         logger.info("\n✓ Weights restored from checkpoint")
 
-        start_iteration = int(algo_checkpoint_path.parent.name)
+        loaded_iteration = int(algo_checkpoint_path.parent.name)
 
         if target_iteration is not None:
-            logger.info(f"✓ Loaded checkpoint from iteration {start_iteration} (requested: {target_iteration})")
+            logger.info(f"✓ Loaded checkpoint from iteration {loaded_iteration} (requested: {target_iteration})")
         else:
-            logger.info(f"✓ Resuming from iteration {start_iteration}")
+            logger.info(f"✓ Resuming from iteration {loaded_iteration}")
 
-        return start_iteration
+        return loaded_iteration

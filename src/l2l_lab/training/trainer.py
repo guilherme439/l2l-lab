@@ -78,17 +78,18 @@ class Trainer:
 
         if backend_cfg.continue_training:
             self._setup_model_dir(model_dir)
-            start_iteration = self.backend.restore(cfg, self.current_model_dir)
-            self._is_rewind = is_rewind(self.current_model_dir, start_iteration)
+            loaded_iteration = self.backend.restore(cfg, self.current_model_dir)
+            self._is_rewind = is_rewind(self.current_model_dir, loaded_iteration)
             if self._is_rewind:
-                self._clear_rewinded_iterations(start_iteration, wait_seconds=30)
-            self._load_trainer_checkpoint(self.current_model_dir, start_iteration, backend_cfg.continue_from_iteration)
+                self._clear_rewinded_iterations(loaded_iteration, wait_seconds=30)
+            self._load_trainer_checkpoint(self.current_model_dir, loaded_iteration, backend_cfg.continue_from_iteration)
+            starting_iteration = loaded_iteration + 1
         else:
             if model_dir.exists():
                 self._clear_existing_model_dir(model_dir, wait_seconds=30)
 
             self._setup_model_dir(model_dir)
-            start_iteration = 0
+            starting_iteration = 0
             self.backend.setup(cfg, self.current_model_dir)
             self._log_network_summary()
 
@@ -98,24 +99,24 @@ class Trainer:
             self.evaluator.training_eval_intervals(),
         )
 
-        self._setup_reporter(cfg, start_iteration)
+        self._setup_reporter(cfg, starting_iteration)
 
         self._wandb_enabled = wandb_helper.init(
             run_name=cfg.name,
             training_config=cfg,
         )
 
-        remaining_iterations = total_iterations - start_iteration
+        remaining_iterations = total_iterations - starting_iteration
         if remaining_iterations <= 0:
-            logger.info(f"\nAlready completed {start_iteration} iterations (target: {total_iterations}). Nothing to do.")
+            logger.info(f"\nAlready completed {starting_iteration} iterations (target: {total_iterations}). Nothing to do.")
             return
 
         logger.info("")
         logger.info("=" * 70)
-        logger.info(f"\n\nStarting training for {remaining_iterations} iterations (from {start_iteration} to {total_iterations})...")
+        logger.info(f"\n\nStarting training for {remaining_iterations} iterations (from {starting_iteration} to {total_iterations})...")
         logger.info("Press Ctrl+C to stop early.")
         logger.info("-" * 70)
-        self._last_iteration = start_iteration
+        self._last_completed_iteration = starting_iteration - 1
         self._completed = False
         self.backend.start_training()
 
@@ -142,15 +143,19 @@ class Trainer:
         }, checkpoint_dir / "training.cp")
         logger.info(f"\n  [Trainer checkpoint saved: iter {iteration}]\n")
 
-    def _load_trainer_checkpoint(self, model_dir: Path, start_iteration: int,
-                                 target_iteration: Optional[int]) -> None:
+    def _load_trainer_checkpoint(
+        self,
+        model_dir: Path,
+        loaded_iteration: int,
+        target_iteration: Optional[int]
+    ) -> None:
         cp_path = get_training_checkpoint_path(model_dir, target_iteration)
         if cp_path is None or not cp_path.exists():
             return
         data = load_checkpoint_file(cp_path)
         metrics = data.get("metrics") or {}
         if target_iteration is not None:
-            metrics = trim_metrics_to_iteration(metrics, start_iteration)
+            metrics = trim_metrics_to_iteration(metrics, loaded_iteration)
         if metrics:
             for key, values in metrics.items():
                 self.metrics[key] = values
@@ -169,38 +174,39 @@ class Trainer:
                 self._completed = True
                 break
 
-            i = step_result.iteration
-            self._last_iteration = i
+            current_iteration = step_result.iteration
+            iterations_completed = current_iteration + 1
+            self._last_completed_iteration = current_iteration
             step_metrics = step_result.metrics
-            logger.info(f"Processing step {i} result")
+            logger.info(f"Processing step {current_iteration} result")
 
             self._collect_weight_metrics(step_metrics)
             if self._memory_sampler is not None:
                 self._collect_memory_metrics(step_metrics)
 
-            training_results = self.evaluator.run_training_evals(i, step_result.eval_model)
+            training_results = self.evaluator.run_training_evals(current_iteration, step_result.eval_model)
 
             checkpoint_results: dict[str, Optional[GameResults]] = {}
             if step_result.checkpoint_path is not None:
                 self.backend.wait_for_pending_checkpoints()
-                self._save_trainer_checkpoint(step_result.checkpoint_path, i)
+                self._save_trainer_checkpoint(step_result.checkpoint_path, current_iteration)
                 checkpoint_results = self.evaluator.run_checkpoint_evals(
-                    previous_checkpoint, iteration=i, eval_model=step_result.eval_model
+                    previous_checkpoint, iteration=current_iteration, eval_model=step_result.eval_model
                 )
             eval_str = self._collect_eval_metrics({**training_results, **checkpoint_results}, step_metrics)
 
-            self.metrics["iteration"].append(i)
+            self.metrics["iteration"].append(current_iteration)
             self._update_metrics(step_metrics)
 
             if self.reporter is not None:
-                self.reporter.on_step(i, step_metrics)
+                self.reporter.on_step(current_iteration, step_metrics)
 
             if self._wandb_enabled:
-                wandb_helper.log(step_metrics, i)
+                wandb_helper.log(step_metrics, current_iteration)
 
             if step_result.checkpoint_path is not None:
                 previous_checkpoint = step_result.checkpoint_path
-                self.backend.on_checkpoint_saved(self.current_model_dir, i)
+                self.backend.on_checkpoint_saved(self.current_model_dir, current_iteration)
 
             if eval_str:
                 logger.info("\n")
@@ -209,7 +215,7 @@ class Trainer:
                 logger.info("  └──────────────────────────────────────────────")
                 logger.info("")
 
-            if check_interval(i, cfg.common.plot_interval):
+            if check_interval(iterations_completed, cfg.common.plot_interval):
                 self.plot_progress()
 
     def _graceful_shutdown(self) -> None:
@@ -222,8 +228,8 @@ class Trainer:
 
         last_step = self._skip_to_end_of_queue()
         if last_step is not None:
-            self._last_iteration = last_step.iteration
-        i = self._last_iteration
+            self._last_completed_iteration = last_step.iteration
+        last_completed_iteration = self._last_completed_iteration
 
         try:
             logger.info("")
@@ -231,8 +237,8 @@ class Trainer:
             if self._completed:
                 logger.info(f"✓ {algo_name} Training completed!")
             else:
-                logger.info(f"Training stopped early at iteration {i}/{total_iterations}.")
-            self._save_final_checkpoint(i)
+                logger.info(f"Training stopped early at iteration {last_completed_iteration}/{total_iterations}.")
+            self._save_final_checkpoint(last_completed_iteration)
             self.plot_progress(plot_memory=False)
         except Exception:
             logger.exception("Error during shutdown while saving the final checkpoints and plots")
@@ -244,6 +250,8 @@ class Trainer:
             wandb_helper.finish()
 
     def _save_final_checkpoint(self, iteration: int) -> None:
+        if iteration < 0:
+            return
         final_path = self.backend.save_final_checkpoint(iteration)
         if final_path is not None:
             self._save_trainer_checkpoint(final_path, iteration)
@@ -268,7 +276,7 @@ class Trainer:
         (model_dir / "graphs" / "evaluations").mkdir(exist_ok=True)
         self.current_model_dir = model_dir
 
-    def _setup_reporter(self, cfg: TrainingConfig, start_iteration: int) -> None:
+    def _setup_reporter(self, cfg: TrainingConfig, starting_iteration: int) -> None:
         if self.current_model_dir is None:
             raise RuntimeError("Model directory must be set before wiring the reporter.")
         reports_dir = self.current_model_dir / "reports"
@@ -286,7 +294,7 @@ class Trainer:
             metrics_getter=lambda: self.metrics,
             model_getter=self.backend.get_eval_model,
         )
-        self.reporter.on_setup(start_iteration=start_iteration)
+        self.reporter.on_setup(starting_iteration=starting_iteration)
         self.evaluator.reporter = self.reporter
 
     def _init_metrics(self) -> None:
@@ -425,22 +433,22 @@ class Trainer:
         time.sleep(wait_seconds)
         shutil.rmtree(model_dir)
 
-    def _clear_rewinded_iterations(self, start_iteration: int, wait_seconds: int) -> None:
-        stale_iters = list_checkpoint_iterations_past(self.current_model_dir, start_iteration)
+    def _clear_rewinded_iterations(self, loaded_iteration: int, wait_seconds: int) -> None:
+        stale_iters = list_checkpoint_iterations_past(self.current_model_dir, loaded_iteration)
         reports_dir = self.current_model_dir / "reports"
 
         red_color_tags = "\033[31m", "\033[0m"
         start, end = red_color_tags
         logger.warning(
-            f"{start}\nRewind requested to iteration {start_iteration} "
+            f"{start}\nRewind requested to iteration {loaded_iteration} "
             f"while later iterations exist on disk: {stale_iters}.\n"
-            f"!! Checkpoints past {start_iteration} and any report data will be removed !!\n"
+            f"!! Checkpoints past {loaded_iteration} and any report data will be removed !!\n"
             f" - Press Ctrl+C within {wait_seconds}s to abort.\n\n{end}"
         )
         time.sleep(wait_seconds)
 
-        self.backend.delete_checkpoints_past(self.current_model_dir, start_iteration)
-        Reporter.clear_artifacts_past(reports_dir, start_iteration)
+        self.backend.delete_checkpoints_past(self.current_model_dir, loaded_iteration)
+        Reporter.clear_artifacts_past(reports_dir, loaded_iteration)
 
     @staticmethod
     def _format_eval_line(label: str, result: GameResults) -> str:

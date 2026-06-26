@@ -57,7 +57,7 @@ class Reporter:
         self._csv_writer: Optional[MetricsCSVWriter] = None
         self._metrics_getter: Optional[Callable[[], dict[str, Any]]] = None
         self._model_getter: Optional[Callable[[], Any]] = None
-        self._start_iteration: int = 0
+        self._starting_iteration: int = 0
 
     @classmethod
     def clear_artifacts_past(cls, reports_dir: Path, iteration: int) -> None:
@@ -102,11 +102,11 @@ class Reporter:
         self._metrics_getter = metrics_getter
         self._model_getter = model_getter
 
-    def on_setup(self, start_iteration: int = 0) -> None:
+    def on_setup(self, starting_iteration: int = 0) -> None:
         if not self.cfg.enabled:
             return
 
-        self._start_iteration = start_iteration
+        self._starting_iteration = starting_iteration
         self._reports_dir.mkdir(parents=True, exist_ok=True)
         self._handle_config_archive()
 
@@ -121,7 +121,7 @@ class Reporter:
         csv_row = {k: v for k, v in step_metrics.items() if k in self._csv_keys}
         self._csv_writer.append(iteration, csv_row)
 
-        if check_interval(iteration, self.cfg.interval):
+        if check_interval(iteration + 1, self.cfg.interval):
             self._emit_snapshot(iteration)
 
     def on_shutdown(self) -> None:
@@ -176,7 +176,7 @@ class Reporter:
         if Reporter._canonical_hash(current_bytes) == Reporter._canonical_hash(archived_bytes):
             return
 
-        archive_name = f"config_{self._start_iteration:06d}.yaml"
+        archive_name = f"config_{self._starting_iteration:06d}.yaml"
         archive_path = self._reports_dir / archive_name
         archive_path.write_bytes(current_bytes)
         logger.info(f"Reporter: config change detected, archived to {archive_path}")

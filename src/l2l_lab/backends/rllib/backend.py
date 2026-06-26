@@ -109,7 +109,7 @@ class RLlibBackend(AlgorithmBackend):
         self.algo_trainer.algo = self.algo
         self._network_template_bytes = self._pickle_network(self._get_backbone())
 
-        self._start_iteration = 0
+        self._starting_iteration = 0
         self._total_iterations = config.backend.algorithm.total_iterations
 
         logger.info("\n✓ Algorithm built successfully!")
@@ -144,7 +144,7 @@ class RLlibBackend(AlgorithmBackend):
         self.algo = self.algo_trainer.algo
         self._network_template_bytes = self._pickle_network(self._get_backbone())
 
-        self._start_iteration = loaded_iteration + 1
+        self._starting_iteration = loaded_iteration + 1
         self._total_iterations = config.backend.algorithm.total_iterations
 
         return loaded_iteration
@@ -205,28 +205,29 @@ class RLlibBackend(AlgorithmBackend):
     def _train(self) -> None:
         info_interval = self._config.common.info_interval
         try:
-            for step in range(self._start_iteration, self._total_iterations):
+            for current_iteration in range(self._starting_iteration, self._total_iterations):
                 if self._stop_event.is_set():
                     break
+                iterations_completed = current_iteration + 1
                 result = self.algo.train()
                 metrics = self.algo_trainer.extract_metrics(result)
 
-                self._print_step_info(step, metrics)
-                if check_interval(step, info_interval):
-                    self._print_training_info(step, metrics)
+                self._print_step_info(current_iteration, metrics)
+                if check_interval(iterations_completed, info_interval):
+                    self._print_training_info(current_iteration, metrics)
 
                 checkpoint_path: Optional[Path] = None
-                if check_interval(step, self._checkpoint_interval):
-                    logger.info(f"\nSaving {self.name} checkpoint for iteration {step}")
+                if check_interval(iterations_completed, self._checkpoint_interval):
+                    logger.info(f"\nSaving {self.name} checkpoint for iteration {current_iteration}")
                     snapshot = self._capture_snapshot()
-                    checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(step)
+                    checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(current_iteration)
                     checkpoint_path.mkdir(exist_ok=True)
                     self._writer.enqueue(snapshot, checkpoint_path)
 
-                eval_model = self.get_eval_model() if self._needs_snapshot(step) else None
+                eval_model = self.get_eval_model() if self._needs_snapshot(iterations_completed) else None
 
                 self.step_queue.put(StepResult(
-                    iteration=step,
+                    iteration=current_iteration,
                     metrics=metrics,
                     checkpoint_path=checkpoint_path,
                     eval_model=eval_model,

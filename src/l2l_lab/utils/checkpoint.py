@@ -100,8 +100,8 @@ def delete_checkpoint_dirs_past(model_dir: Path, iteration: int) -> None:
             shutil.rmtree(path)
 
 
-def is_rewind(model_dir: Path, start_iteration: int) -> bool:
-    """True when `start_iteration` falls behind the highest checkpoint on disk."""
+def is_rewind(model_dir: Path, loaded_iteration: int) -> bool:
+    """True when `loaded_iteration` falls behind the highest checkpoint on disk."""
     latest_dir = get_latest_checkpoint_dir(model_dir)
     if latest_dir is None:
         return False
@@ -109,7 +109,7 @@ def is_rewind(model_dir: Path, start_iteration: int) -> bool:
         latest_iter = int(latest_dir.name)
     except ValueError:
         return False
-    return start_iteration < latest_iter
+    return loaded_iteration < latest_iter
 
 
 def trim_metrics_to_iteration(metrics: dict[str, list], target_iteration: int) -> dict[str, list]:

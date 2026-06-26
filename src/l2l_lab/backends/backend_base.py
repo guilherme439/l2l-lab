@@ -35,7 +35,7 @@ class AlgorithmBackend(ABC):
         self._checkpoint_interval: int = 0
         self._checkpoint_base_dir: Optional[Path] = None
         self._snapshot_intervals: list[int] = []
-        self._start_iteration: int = 0
+        self._starting_iteration: int = 0
         self._total_iterations: int = 0
 
     def configure_checkpointing(
@@ -98,11 +98,11 @@ class AlgorithmBackend(ABC):
         `info_interval` steps. Default is a no-op."""
         pass
 
-    def _needs_snapshot(self, step: int) -> bool:
-        """True when an eval or checkpoint at `step` will consume a model
+    def _needs_snapshot(self, iterations_completed: int) -> bool:
+        """True when an eval or checkpoint at this point will consume a model
         snapshot. Evaluated on the training thread to decide whether to capture
         the current weights for this step's `StepResult`."""
-        return any(check_interval(step, interval) for interval in self._snapshot_intervals)
+        return any(check_interval(iterations_completed, interval) for interval in self._snapshot_intervals)
 
     @property
     @abstractmethod
@@ -119,7 +119,7 @@ class AlgorithmBackend(ABC):
 
     @abstractmethod
     def restore(self, config: TrainingConfig, model_dir: Path) -> int:
-        """Restore backend state from checkpoint. Return start_iteration."""
+        """Restore backend state from checkpoint. Return the loaded iteration."""
         ...
 
     @abstractmethod
