@@ -116,6 +116,7 @@ class Trainer:
         logger.info(f"\n\nStarting training for {remaining_iterations} iterations (from {starting_iteration} to {total_iterations})...")
         logger.info("Press Ctrl+C to stop early.")
         logger.info("-" * 70)
+        self._starting_iteration = starting_iteration
         self._last_completed_iteration = starting_iteration - 1
         self._completed = False
         self.backend.start_training()
@@ -250,7 +251,7 @@ class Trainer:
             wandb_helper.finish()
 
     def _save_final_checkpoint(self, iteration: int) -> None:
-        if iteration < 0:
+        if iteration < self._starting_iteration:
             return
         final_path = self.backend.save_final_checkpoint(iteration)
         if final_path is not None:
