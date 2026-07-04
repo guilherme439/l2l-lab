@@ -438,7 +438,7 @@ class Trainer:
         red_color_tags = "\033[31m", "\033[0m"
         start, end = red_color_tags
         logger.warning(
-            f"{start}\nRewind requested to iteration {loaded_iteration} "
+            f"{start}\nRewinding to iteration {loaded_iteration} "
             f"while later iterations exist on disk: {stale_iters}.\n"
             f"!! Checkpoints past {loaded_iteration} and any report data will be removed !!\n"
             f" - Press Ctrl+C within {wait_seconds}s to abort.\n\n{end}"
