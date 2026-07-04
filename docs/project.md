@@ -58,6 +58,8 @@ Every persisted label - checkpoint directory names (`models/{name}/checkpoints/{
 
 On resume, `restore` returns the directory name `m` it loaded from, and training continues at `starting_iteration = m + 1`. A run whose latest checkpoint equals `total_iterations - 1` is complete, and resuming it does nothing.
 
+`AlgorithmBackend.restore` walks the checkpoint directories at or below `continue_from_iteration` from highest to lowest and loads the first that loads without error, returning its iteration (0 when none load). A save interrupted mid-write leaves a numbered directory missing the artifacts the backend restores from, so its load raises and the walk falls through to an earlier checkpoint. `is_rewind` then compares the loaded iteration against the highest checkpoint directory on disk: loading anything behind that highest directory is a rewind, which prompts and then deletes every checkpoint and report artifact past the loaded iteration - including a partial directory the load skipped.
+
 ### Algorithm details
 
 #### Rllib (`l2l_lab.rllib.algorithms`)
@@ -140,6 +142,8 @@ Saved to `models/{name}/checkpoints/{iteration}/` containing model weights, RLli
 The `model/` subdirectory (`weights.cp` state dict + `base_class.pkl` pickled architecture) is l2l-lab's own portable, shareable model artifact, written the same way by every backend: architecture plus weights, loadable on its own via `get_model_from_checkpoint` for evaluation or for handing a trained net to someone else, independent of any backend's resume state. (The pickle-based `model/` format is a stopgap; moving it to a portable format such as safetensors or TorchScript is a planned l2l-lab improvement.)
 
 Each backend writes its own resume state alongside `model/`: the RLlib algorithm state for the rllib backend, or for the `alphazoo` backend the flat `optimizer.pt` / `scheduler.pt` / `replay_buffer.pt` / `metadata.json` that `AlphaZoo.save(save_model=False)` produces. Those resume files exist only to continue training in place. `_CheckpointWriter` fills `model/weights.cp` from `AlphaZoo.get_model_state_dict()` and writes the resume state via `AlphaZoo.save`.
+
+Individual files are written atomically by `l2l_lab.utils.atomic.atomic_write`: it serializes into l2l-lab's own temp directory (`$XDG_CACHE_HOME/l2l_lab/tmp`, else `~/.cache/l2l_lab/tmp`) and then `os.replace`s the result onto its destination. The rename is atomic when the temp directory and the destination share a filesystem; when they do not, `os.replace` raises `EXDEV` and the write falls back to a non-atomic move with a warning. The checkpoint directory as a whole is not atomic - it is filled file by file, so an interrupted save leaves a directory holding some complete files and missing others, which `restore` handles by loading an earlier checkpoint. `trainer.py` writes `training.cp` and both backends' `_CheckpointWriter`s write `model/weights.cp` and `base_class.pkl` this way; the `alphazoo` package writes its own resume files atomically through the same temp-then-rename scheme under `~/.cache/alphazoo/tmp`.
 
 ### Reporting (`l2l_lab.reporting`)
 

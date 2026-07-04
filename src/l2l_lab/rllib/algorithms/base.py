@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
@@ -11,7 +11,6 @@ from l2l_lab.configs.training.network import (BaseNetworkConfig, MLPNetConfig,
                                                 SNNetConfig)
 from l2l_lab.rllib.modules.networks.conv import ConvDualHeadRLModule
 from l2l_lab.rllib.modules.networks.mlp import MLPDualHeadRLModule
-from l2l_lab.utils.checkpoint import get_algo_checkpoint_path
 import logging
 
 logger = logging.getLogger("l2l_lab")
@@ -76,34 +75,3 @@ class BaseAlgorithmTrainer(ABC):
             },
         )
 
-    def load_checkpoint_for_continue(
-        self,
-        rllib_config,
-        model_dir: Path,
-        target_iteration: Optional[int] = None,
-    ) -> int:
-        algo_checkpoint_path = get_algo_checkpoint_path(model_dir, target_iteration)
-        if algo_checkpoint_path is None or not algo_checkpoint_path.exists():
-            logger.info("\nNo existing checkpoint found. Starting fresh training...")
-            logger.info(f"\nBuilding {self.algorithm_name.upper()} algorithm...\n")
-            self.algo = rllib_config.build_algo()
-            logger.info("\n✓ Algorithm built successfully!")
-            return 0
-
-        logger.info("\nContinuing training with current config...")
-        logger.info(f"Building {self.algorithm_name.upper()} algorithm with new config...\n")
-        self.algo = rllib_config.build_algo()
-        logger.info("\n✓ Algorithm built successfully!")
-
-        logger.info("Restoring weights from checkpoint...")
-        self.algo.restore_from_path(str(algo_checkpoint_path.absolute()))
-        logger.info("\n✓ Weights restored from checkpoint")
-
-        loaded_iteration = int(algo_checkpoint_path.parent.name)
-
-        if target_iteration is not None:
-            logger.info(f"✓ Loaded checkpoint from iteration {loaded_iteration} (requested: {target_iteration})")
-        else:
-            logger.info(f"✓ Resuming from iteration {loaded_iteration}")
-
-        return loaded_iteration

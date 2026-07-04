@@ -1,74 +1,36 @@
+"""Shared assertions and utilities for end-to-end training tests. Each test builds
+and runs its own `Trainer`, then calls these to check the outcome."""
+
 import shutil
 from pathlib import Path
 from typing import Any
 
-from l2l_lab.training.trainer import Trainer
-
 _MODELS_DIR = Path("models")
 
 
-def assert_training_completes(
-    config_path: str,
-    run_name: str,
-    check_training_eval: bool = False,
-    check_checkpoint_eval: bool = False,
-) -> None:
-    _remove_run(run_name)
-    trainer = Trainer(config_path)
-    try:
-        trainer.train()
-
-        expected_iterations = trainer.config.backend.algorithm.total_iterations
-        iterations = trainer.metrics["iteration"]
-        assert len(iterations) == expected_iterations, (
-            f"expected {expected_iterations} iterations, got {len(iterations)}: {iterations}"
-        )
-
-        checkpoints = _MODELS_DIR / run_name / "checkpoints"
-        assert checkpoints.exists() and any(checkpoints.iterdir()), "no checkpoint was written"
-
-        if check_training_eval:
-            _assert_eval_results(trainer.metrics, "training")
-        if check_checkpoint_eval:
-            _assert_eval_results(trainer.metrics, "checkpoint")
-    finally:
-        _remove_run(run_name)
+def remove_run(run_name: str) -> None:
+    run_dir = _MODELS_DIR / run_name
+    if run_dir.exists():
+        shutil.rmtree(run_dir, ignore_errors=True)
 
 
-def assert_resume_extends_training(
-    init_config: str,
-    continue_config: str,
-    run_name: str,
-    check_training_eval: bool = False,
-) -> None:
-    _remove_run(run_name)
-    try:
-        initial = Trainer(init_config)
-        initial.train()
-        initial_iterations = list(initial.metrics["iteration"])
-        assert initial_iterations, "initial run recorded no iterations"
-
-        checkpoints = _MODELS_DIR / run_name / "checkpoints"
-        assert checkpoints.exists() and any(checkpoints.iterdir()), "initial run wrote no checkpoint to resume from"
-
-        resumed = Trainer(continue_config)
-        resumed.train()
-        resumed_iterations = list(resumed.metrics["iteration"])
-
-        assert len(resumed_iterations) > len(initial_iterations), (
-            f"resume did not extend training: initial={initial_iterations}, resumed={resumed_iterations}"
-        )
-        assert resumed_iterations[-1] > initial_iterations[-1], (
-            f"resume did not progress past the initial run: initial={initial_iterations}, resumed={resumed_iterations}"
-        )
-
-        if check_training_eval:
-            _assert_eval_results(resumed.metrics, "training")
-    finally:
-        _remove_run(run_name)
+def checkpoint_iterations(run_name: str) -> set[int]:
+    checkpoints_dir = _MODELS_DIR / run_name / "checkpoints"
+    if not checkpoints_dir.exists():
+        return set()
+    return {int(entry.name) for entry in checkpoints_dir.iterdir() if entry.is_dir() and entry.name.isdigit()}
 
 
-def _assert_eval_results(metrics: dict[str, Any], category: str) -> None:
+def assert_run_completed(trainer) -> None:
+    expected_iterations = trainer.config.backend.algorithm.total_iterations
+    iterations = trainer.metrics["iteration"]
+    assert len(iterations) == expected_iterations, (
+        f"expected {expected_iterations} iterations, got {len(iterations)}: {iterations}"
+    )
+    assert checkpoint_iterations(trainer.config.name), "no checkpoint was written"
+
+
+def assert_eval_results(metrics: dict[str, Any], category: str) -> None:
     buckets = metrics.get("evaluations", {}).get(category, {})
     assert buckets, f"no '{category}' evaluations were recorded"
     has_result = any(
@@ -78,9 +40,3 @@ def _assert_eval_results(metrics: dict[str, Any], category: str) -> None:
         for value in bucket.get(position, {}).get("wins", [])
     )
     assert has_result, f"'{category}' evaluations recorded no game results"
-
-
-def _remove_run(run_name: str) -> None:
-    run_dir = _MODELS_DIR / run_name
-    if run_dir.exists():
-        shutil.rmtree(run_dir, ignore_errors=True)

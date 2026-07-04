@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator, Optional, override
 
 import torch
-from alphazoo import AlphaZooRecurrentNet, AlphaZooConfig
+from alphazoo import AlphaZoo, AlphaZooRecurrentNet, AlphaZooConfig
 from gymnasium.spaces.utils import flatdim
 
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
@@ -14,8 +14,7 @@ from l2l_lab.backends.obs_utils import make_wrapper, obs_to_state_provider
 from l2l_lab.configs.training.network import MLPNetConfig, SNNetConfig
 from l2l_lab.envs.registry import create_env
 from l2l_lab.neural_networks.utils.builders import build_network
-from l2l_lab.utils.checkpoint import (get_checkpoint_dir, load_checkpoint_file,
-                                      load_model_state_dict)
+from l2l_lab.utils.checkpoint import atomic_write, load_checkpoint_file, load_model_state_dict
 from l2l_lab.utils.common import check_interval
 import logging
 
@@ -38,8 +37,8 @@ class _CheckpointWriter(CheckpointWriter):
 
         model_dir = path / "model"
         model_dir.mkdir(exist_ok=True)
-        torch.save(az.get_model_state_dict(), model_dir / "weights.cp")
-        (model_dir / "base_class.pkl").write_bytes(snapshot["network_template_bytes"])
+        atomic_write(model_dir / "weights.cp", lambda temp_path: torch.save(az.get_model_state_dict(), temp_path))
+        atomic_write(model_dir / "base_class.pkl", lambda temp_path: temp_path.write_bytes(snapshot["network_template_bytes"]))
 
 
 class AlphaZooBackend(AlgorithmBackend):
@@ -50,6 +49,8 @@ class AlphaZooBackend(AlgorithmBackend):
         self._config: Optional[TrainingConfig] = None
         self._model = None
         self._obs_to_state = None
+        self._game = None
+        self._az_config: Optional[AlphaZooConfig] = None
         self._network_template_bytes: Optional[bytes] = None
         self._writer = _CheckpointWriter(self)
 
@@ -78,9 +79,7 @@ class AlphaZooBackend(AlgorithmBackend):
             ray.shutdown()
 
     @override
-    def setup(self, config: TrainingConfig, model_dir: Path) -> None:
-        from alphazoo import AlphaZoo
-
+    def prepare(self, config: TrainingConfig) -> None:
         self._config = config
         env_config = config.env
 
@@ -102,7 +101,7 @@ class AlphaZooBackend(AlgorithmBackend):
         self._initialize_lazy_params(state_shape)
         self._network_template_bytes = self._pickle_network(self._model)
 
-        game = make_wrapper(env, env_config.obs_space_format)
+        self._game = make_wrapper(env, env_config.obs_space_format)
 
         self._total_iterations = config.backend.algorithm.total_iterations
 
@@ -110,71 +109,31 @@ class AlphaZooBackend(AlgorithmBackend):
         az_config.data.observation_format = env_config.obs_space_format
         az_config.data.network_input_format = "channels_first"
         az_config.running.training_steps = self._total_iterations
-
-        self._alphazoo = AlphaZoo(
-            env=game,
-            config=az_config,
-            model=self._model,
-        )
-
-        logger.info(f"\n✓ AlphaZoo instance created successfully!")
+        self._az_config = az_config
 
     @override
-    def restore(self, config: TrainingConfig, model_dir: Path) -> int:
-        from alphazoo import AlphaZoo
+    def load_checkpoint(self, checkpoint_dir: Path) -> None:
+        weights_path = checkpoint_dir / "model" / "weights.cp"
+        model_state_dict = load_checkpoint_file(weights_path)
+        load_model_state_dict(self._model, model_state_dict)
+        logger.info(f"\n✓ Model weights restored from {weights_path}")
 
-        self._config = config
-        env_config = config.env
+        backend_cfg = self._config.backend
+        self._alphazoo = AlphaZoo.from_checkpoint(
+            checkpoint_dir,
+            env=self._game,
+            config=self._az_config,
+            model=self._model,
+            load_model=False,
+            load_optimizer=backend_cfg.load_optimizer,
+            load_scheduler=backend_cfg.load_scheduler,
+            load_replay_buffer=backend_cfg.load_replay_buffer,
+        )
 
-        env = create_env(env_config.name, **env_config.kwargs)
-        self._obs_to_state = obs_to_state_provider(env_config.obs_space_format)
-
-        env.reset()
-        state_shape, action_space_shape = self._get_shapes(env, self._obs_to_state)
-        self._state_shape = state_shape
-        self._action_space_shape = action_space_shape
-
-        self._model = self._build_model(config, state_shape, action_space_shape)
-        self._initialize_lazy_params(state_shape)
-        self._network_template_bytes = self._pickle_network(self._model)
-
-        game = make_wrapper(env, env_config.obs_space_format)
-
-        backend_cfg = config.backend
-        checkpoint_dir = get_checkpoint_dir(model_dir, backend_cfg.continue_from_iteration)
-
-        self._total_iterations = config.backend.algorithm.total_iterations
-
-        az_config: AlphaZooConfig = backend_cfg.algorithm.config
-        az_config.data.observation_format = env_config.obs_space_format
-        az_config.data.network_input_format = "channels_first"
-        az_config.running.training_steps = self._total_iterations
-
-        weights_path = checkpoint_dir / "model" / "weights.cp" if checkpoint_dir is not None else None
-        if weights_path is not None and weights_path.exists():
-            model_state_dict = load_checkpoint_file(weights_path)
-            load_model_state_dict(self._model, model_state_dict)
-            loaded_iteration = int(checkpoint_dir.name)
-            logger.info(f"\n✓ Model weights restored from {weights_path}")
-
-            self._alphazoo = AlphaZoo.from_checkpoint(
-                checkpoint_dir,
-                env=game,
-                config=az_config,
-                model=self._model,
-                load_model=False,
-                load_optimizer=backend_cfg.load_optimizer,
-                load_scheduler=backend_cfg.load_scheduler,
-                load_replay_buffer=backend_cfg.load_replay_buffer,
-            )
-        else:
-            logger.info("No checkpoint found. Starting fresh.")
-            loaded_iteration = 0
-            self._alphazoo = AlphaZoo(env=game, config=az_config, model=self._model)
-
-        self._starting_iteration = loaded_iteration + 1
-
-        return loaded_iteration
+    @override
+    def init_fresh(self) -> None:
+        self._alphazoo = AlphaZoo(env=self._game, config=self._az_config, model=self._model)
+        logger.info(f"\n✓ AlphaZoo instance created successfully!")
 
     @override
     def get_reporter_csv_keys(self) -> list[str]:
@@ -221,7 +180,7 @@ class AlphaZooBackend(AlgorithmBackend):
 
     
     @override
-    def _train(self) -> None:
+    def train(self) -> None:
         try:
             az = self._alphazoo
 
@@ -240,9 +199,9 @@ class AlphaZooBackend(AlgorithmBackend):
                     "cycle_size": metrics.get("inference/cycle_size"),
                     "batch_size": metrics.get("inference/batch_size"),
                 }
-                self._print_step_info(current_iteration, public_metrics)
+                self.print_step_info(current_iteration, public_metrics)
                 if check_interval(iterations_completed, info_interval):
-                    self._print_training_info(current_iteration, public_metrics)
+                    self.print_training_info(current_iteration, public_metrics)
 
                 checkpoint_path: Optional[Path] = None
                 if check_interval(iterations_completed, self._checkpoint_interval):
@@ -285,7 +244,7 @@ class AlphaZooBackend(AlgorithmBackend):
         )
     
     @override
-    def _print_step_info(self, iteration: int, metrics: dict[str, Any]) -> None:
+    def print_step_info(self, iteration: int, metrics: dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
         total = self._config.backend.algorithm.total_iterations
         logger.info(f"\nIteration {iteration}/{total} finished | EpLen: {ep_len:6.1f}\n")

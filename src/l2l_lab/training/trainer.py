@@ -15,7 +15,7 @@ from l2l_lab.testing.tester import GameResults
 from l2l_lab.training.evaluator import Evaluator
 from l2l_lab.utils import graphs
 from l2l_lab.utils import wandb as wandb_helper
-from l2l_lab.utils.checkpoint import (is_rewind, list_checkpoint_iterations_past,
+from l2l_lab.utils.checkpoint import (atomic_write, is_rewind, list_checkpoint_iterations_past,
                                       load_checkpoint_file,
                                       get_training_checkpoint_path,
                                       trim_metrics_to_iteration)
@@ -27,6 +27,8 @@ import logging
 logger = logging.getLogger("l2l_lab")
 
 MODELS_DIR = Path("models")
+
+_DESTRUCTIVE_ABORT_WAIT_SECONDS = 30
 
 
 class Trainer:
@@ -78,19 +80,19 @@ class Trainer:
 
         if backend_cfg.continue_training:
             self._setup_model_dir(model_dir)
-            loaded_iteration = self.backend.restore(cfg, self.current_model_dir)
+            loaded_iteration = self.backend.restore_run(cfg, self.current_model_dir)
             self._is_rewind = is_rewind(self.current_model_dir, loaded_iteration)
             if self._is_rewind:
-                self._clear_rewinded_iterations(loaded_iteration, wait_seconds=30)
-            self._load_trainer_checkpoint(self.current_model_dir, loaded_iteration, backend_cfg.continue_from_iteration)
+                self._clear_rewinded_iterations(loaded_iteration, _DESTRUCTIVE_ABORT_WAIT_SECONDS)
+            self._load_trainer_checkpoint(self.current_model_dir, loaded_iteration)
             starting_iteration = loaded_iteration + 1
         else:
             if model_dir.exists():
-                self._clear_existing_model_dir(model_dir, wait_seconds=30)
+                self._clear_existing_model_dir(model_dir, _DESTRUCTIVE_ABORT_WAIT_SECONDS)
 
             self._setup_model_dir(model_dir)
             starting_iteration = 0
-            self.backend.setup(cfg, self.current_model_dir)
+            self.backend.new_run(cfg, self.current_model_dir)
             self._log_network_summary()
 
         self.backend.configure_checkpointing(
@@ -137,26 +139,21 @@ class Trainer:
         logger.info(f"\n\n📊 Graphs saved to: {graphs_dir}\n\n")
 
     def _save_trainer_checkpoint(self, checkpoint_dir: Path, iteration: int) -> None:
-        torch.save({
+        payload = {
             "iteration": iteration,
             "metrics": self.metrics,
             "backend": self.backend.name,
-        }, checkpoint_dir / "training.cp")
+        }
+        atomic_write(checkpoint_dir / "training.cp", lambda temp_path: torch.save(payload, temp_path))
         logger.info(f"\n  [Trainer checkpoint saved: iter {iteration}]\n")
 
-    def _load_trainer_checkpoint(
-        self,
-        model_dir: Path,
-        loaded_iteration: int,
-        target_iteration: Optional[int]
-    ) -> None:
-        cp_path = get_training_checkpoint_path(model_dir, target_iteration)
+    def _load_trainer_checkpoint(self, model_dir: Path, loaded_iteration: int) -> None:
+        cp_path = get_training_checkpoint_path(model_dir, loaded_iteration)
         if cp_path is None or not cp_path.exists():
             return
         data = load_checkpoint_file(cp_path)
         metrics = data.get("metrics") or {}
-        if target_iteration is not None:
-            metrics = trim_metrics_to_iteration(metrics, loaded_iteration)
+        metrics = trim_metrics_to_iteration(metrics, loaded_iteration)
         if metrics:
             for key, values in metrics.items():
                 self.metrics[key] = values
@@ -190,7 +187,6 @@ class Trainer:
             checkpoint_results: dict[str, Optional[GameResults]] = {}
             if step_result.checkpoint_path is not None:
                 self.backend.wait_for_pending_checkpoints()
-                self._save_trainer_checkpoint(step_result.checkpoint_path, current_iteration)
                 checkpoint_results = self.evaluator.run_checkpoint_evals(
                     previous_checkpoint, iteration=current_iteration, eval_model=step_result.eval_model
                 )
@@ -206,6 +202,7 @@ class Trainer:
                 wandb_helper.log(step_metrics, current_iteration)
 
             if step_result.checkpoint_path is not None:
+                self._save_trainer_checkpoint(step_result.checkpoint_path, current_iteration)
                 previous_checkpoint = step_result.checkpoint_path
                 self.backend.on_checkpoint_saved(self.current_model_dir, current_iteration)
 

@@ -10,7 +10,7 @@ from ray.tune.registry import register_env
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
 from l2l_lab.backends.checkpoint_writer import CheckpointWriter
 from l2l_lab.envs.registry import create_env
-from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
+from l2l_lab.utils.checkpoint import atomic_write, load_checkpoint_file, load_model_state_dict
 from l2l_lab.utils.common import check_interval
 import logging
 
@@ -31,8 +31,8 @@ class _CheckpointWriter(CheckpointWriter):
     def write(self, snapshot: dict[str, Any], path: Path) -> None:
         model_dir = path / "model"
         model_dir.mkdir(exist_ok=True)
-        torch.save(snapshot["model_state_dict"], model_dir / "weights.cp")
-        (model_dir / "base_class.pkl").write_bytes(snapshot["network_template_bytes"])
+        atomic_write(model_dir / "weights.cp", lambda temp_path: torch.save(snapshot["model_state_dict"], temp_path))
+        atomic_write(model_dir / "base_class.pkl", lambda temp_path: temp_path.write_bytes(snapshot["network_template_bytes"]))
         self._backend.algo.save_to_path(str((path / "algo").absolute()))
 
 
@@ -81,7 +81,7 @@ class RLlibBackend(AlgorithmBackend):
             ray.shutdown()
 
     @override
-    def setup(self, config: TrainingConfig, model_dir: Path) -> None:
+    def prepare(self, config: TrainingConfig) -> None:
         self._config = config
         self._register_env(config.env)
         obs_space, act_space = self._get_spaces(config.env)
@@ -109,45 +109,21 @@ class RLlibBackend(AlgorithmBackend):
         self.algo_trainer.algo = self.algo
         self._network_template_bytes = self._pickle_network(self._get_backbone())
 
-        self._starting_iteration = 0
         self._total_iterations = config.backend.algorithm.total_iterations
 
         logger.info("\n✓ Algorithm built successfully!")
 
     @override
-    def restore(self, config: TrainingConfig, model_dir: Path) -> int:
-        self._config = config
-        self._register_env(config.env)
-        obs_space, act_space = self._get_spaces(config.env)
-        self._input_shape = obs_space["observation"].shape
-        self._num_actions = act_space.n
+    def load_checkpoint(self, checkpoint_dir: Path) -> None:
+        algo_path = checkpoint_dir / "algo"
+        if not algo_path.exists():
+            raise FileNotFoundError(f"Checkpoint '{checkpoint_dir}' is missing 'algo'.")
+        self.algo.restore_from_path(str(algo_path.absolute()))
+        logger.info(f"\n✓ Weights restored from {algo_path}")
 
-        logger.info(f"\nEnvironment Info:")
-        logger.info("  Observation space:")
-        for key, space in obs_space.spaces.items():
-            if hasattr(space, 'shape'):
-                logger.info(f"    {key}: shape={space.shape}, dtype={space.dtype}")
-            else:
-                logger.info(f"    {key}: {space}")
-        logger.info(f"  Action space: {act_space}")
-        logger.info("")
-        logger.info("=" * 70)
-
-        self.algo_trainer = self._get_algorithm_trainer()
-        rllib_config = self.algo_trainer.build_config(
-            config.env.name, config.env.obs_space_format, obs_space, act_space
-        )
-
-        loaded_iteration = self.algo_trainer.load_checkpoint_for_continue(
-            rllib_config, model_dir, target_iteration=config.backend.continue_from_iteration
-        )
-        self.algo = self.algo_trainer.algo
-        self._network_template_bytes = self._pickle_network(self._get_backbone())
-
-        self._starting_iteration = loaded_iteration + 1
-        self._total_iterations = config.backend.algorithm.total_iterations
-
-        return loaded_iteration
+    @override
+    def init_fresh(self) -> None:
+        pass
 
     @override
     def get_eval_model(self) -> torch.nn.Module:
@@ -202,7 +178,7 @@ class RLlibBackend(AlgorithmBackend):
         ]
 
     @override
-    def _train(self) -> None:
+    def train(self) -> None:
         info_interval = self._config.common.info_interval
         try:
             for current_iteration in range(self._starting_iteration, self._total_iterations):
@@ -212,9 +188,9 @@ class RLlibBackend(AlgorithmBackend):
                 result = self.algo.train()
                 metrics = self.algo_trainer.extract_metrics(result)
 
-                self._print_step_info(current_iteration, metrics)
+                self.print_step_info(current_iteration, metrics)
                 if check_interval(iterations_completed, info_interval):
-                    self._print_training_info(current_iteration, metrics)
+                    self.print_training_info(current_iteration, metrics)
 
                 checkpoint_path: Optional[Path] = None
                 if check_interval(iterations_completed, self._checkpoint_interval):
@@ -251,13 +227,13 @@ class RLlibBackend(AlgorithmBackend):
         return buf.getvalue()
 
     @override
-    def _print_step_info(self, iteration: int, metrics: dict[str, Any]) -> None:
+    def print_step_info(self, iteration: int, metrics: dict[str, Any]) -> None:
         ep_len = metrics.get("episode_len_mean", 0) or 0
         total = self._config.backend.algorithm.total_iterations
         logger.info(f"\n{iteration}/{total} | EpLen: {ep_len:6.1f}\n")
 
     @override
-    def _print_training_info(self, iteration: int, metrics: dict[str, Any]) -> None:
+    def print_training_info(self, iteration: int, metrics: dict[str, Any]) -> None:
         timesteps = metrics.get("timesteps_lifetime", 0)
         curr_lr = metrics.get("learning_rate")
 

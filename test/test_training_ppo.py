@@ -1,25 +1,34 @@
 import os
 
-from _train_utils import assert_resume_extends_training, assert_training_completes
+from _train_utils import assert_eval_results, assert_run_completed
+from l2l_lab.training.trainer import Trainer
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "configs")
 
 
-def test_ppo_convnet_trains() -> None:
+def test_ppo_convnet_trains(clean_test_model_dirs) -> None:
     """PPO + ConvNet trains on tictactoe, with policy training and checkpoint evals."""
-    assert_training_completes(
-        os.path.join(CONFIG_DIR, "ppo_convnet_tictactoe.yml"),
-        run_name="_test_ppo_convnet",
-        check_training_eval=True,
-        check_checkpoint_eval=True,
-    )
+    trainer = Trainer(os.path.join(CONFIG_DIR, "ppo_convnet_tictactoe.yml"))
+    trainer.train()
+    assert_run_completed(trainer)
+    assert_eval_results(trainer.metrics, "training")
+    assert_eval_results(trainer.metrics, "checkpoint")
 
 
-def test_ppo_mlpnet_resumes() -> None:
+def test_ppo_mlpnet_resumes(clean_test_model_dirs) -> None:
     """PPO + MLPNet resumes from a checkpoint and keeps training, with policy evals."""
-    assert_resume_extends_training(
-        os.path.join(CONFIG_DIR, "ppo_mlpnet_resume_init.yml"),
-        os.path.join(CONFIG_DIR, "ppo_mlpnet_resume_continue.yml"),
-        run_name="_test_ppo_mlpnet_resume",
-        check_training_eval=True,
+    initial = Trainer(os.path.join(CONFIG_DIR, "ppo_mlpnet_resume_init.yml"))
+    initial.train()
+    initial_iterations = list(initial.metrics["iteration"])
+
+    resumed = Trainer(os.path.join(CONFIG_DIR, "ppo_mlpnet_resume_continue.yml"))
+    resumed.train()
+    resumed_iterations = list(resumed.metrics["iteration"])
+
+    assert len(resumed_iterations) > len(initial_iterations), (
+        f"resume did not extend training: initial={initial_iterations}, resumed={resumed_iterations}"
     )
+    assert resumed_iterations[-1] > initial_iterations[-1], (
+        f"resume did not progress past the initial run: initial={initial_iterations}, resumed={resumed_iterations}"
+    )
+    assert_eval_results(resumed.metrics, "training")

@@ -1,7 +1,10 @@
+import errno
+import os
 import re
 import shutil
+import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import torch
 
@@ -11,6 +14,36 @@ import logging
 logger = logging.getLogger("l2l_lab")
 
 _CHECKPOINT_DIR_PATTERN = re.compile(r"^(\d+)$")
+
+
+def get_temp_dir() -> Path:
+    cache_root = os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")
+    temp_dir = Path(cache_root) / "l2l_lab" / "tmp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    return temp_dir
+
+
+def atomic_write(path: Path, write_to_temp: Callable[[Path], None]) -> None:
+    """Write to a temp file in l2l-lab's own temp directory, then rename it onto `path`.
+
+    The rename is atomic when the temp directory and `path` share a filesystem. When they do
+    not, `os.replace` raises `EXDEV`; the write then falls back to a non-atomic move.
+    """
+    fd, temp_name = tempfile.mkstemp(dir=get_temp_dir())
+    os.close(fd)
+    temp_path = Path(temp_name)
+    try:
+        write_to_temp(temp_path)
+        try:
+            os.replace(temp_path, path)
+        except OSError as exc:
+            if exc.errno != errno.EXDEV:
+                raise
+            logger.warning(f"Directory is on a different filesystem; using non-atomic write to '{path}'")
+            shutil.move(str(temp_path), str(path))
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
 
 
 def load_checkpoint_file(path: Path) -> dict:
@@ -36,32 +69,21 @@ def load_model_state_dict(model: torch.nn.Module, state_dict: dict[str, Any]) ->
     model.load_state_dict(state_dict, strict=False)
 
 
-def get_checkpoint_dir(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
+def list_checkpoint_iterations(model_dir: Path) -> list[int]:
+    """Return the iteration numbers of all checkpoint directories, sorted ascending."""
     checkpoints_dir = model_dir / "checkpoints"
     if not checkpoints_dir.exists():
-        return None
+        return []
+    return sorted(int(d.name) for d in checkpoints_dir.iterdir() if d.is_dir() and d.name.isdigit())
 
-    checkpoint_dirs = [d for d in checkpoints_dir.iterdir() if d.is_dir() and d.name.isdigit()]
-    if not checkpoint_dirs:
-        return None
 
+def get_checkpoint_dir(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
+    iterations = list_checkpoint_iterations(model_dir)
     if iteration is not None:
-        target = checkpoints_dir / str(iteration)
-        if target.exists():
-            return target
-        valid = [d for d in checkpoint_dirs if int(d.name) <= iteration]
-        if valid:
-            return max(valid, key=lambda d: int(d.name))
+        iterations = [it for it in iterations if it <= iteration]
+    if not iterations:
         return None
-
-    return max(checkpoint_dirs, key=lambda d: int(d.name))
-
-
-def get_algo_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
-    checkpoint_dir = get_checkpoint_dir(model_dir, iteration)
-    if checkpoint_dir is None:
-        return None
-    return checkpoint_dir / "algo"
+    return model_dir / "checkpoints" / str(max(iterations))
 
 
 def get_training_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
