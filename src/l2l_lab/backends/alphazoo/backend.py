@@ -178,7 +178,6 @@ class AlphaZooBackend(AlgorithmBackend):
     def wait_for_pending_checkpoints(self) -> None:
         self._writer.wait_for_idle()
 
-    
     @override
     def train(self) -> None:
         try:
@@ -221,7 +220,10 @@ class AlphaZooBackend(AlgorithmBackend):
                 if self._stop_event.is_set():
                     return False
 
-            az.train(on_step_end=_on_step_end)
+            def _on_heartbeat(alphazoo_instance):
+                return not self._stop_event.is_set()
+
+            az.train(on_step_end=_on_step_end, on_heartbeat=_on_heartbeat)
         finally:
             self.step_queue.put(None)
 
