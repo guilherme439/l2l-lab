@@ -7,6 +7,8 @@ import numpy as np
 from pettingzoo import AECEnv
 import torch
 
+from l2l_lab._utils.checkpoint import CheckpointUtils
+from l2l_lab._utils.common import CommonUtils
 from l2l_lab.agents import Agent, PolicyAgent, RandomAgent
 from l2l_lab.configs.common.env_config import EnvConfig
 from l2l_lab.configs.testing.agents import (AlphaZeroMCTSAgentConfig,
@@ -16,8 +18,6 @@ from l2l_lab.configs.testing.agents import (AlphaZeroMCTSAgentConfig,
 from l2l_lab.configs.testing.testing_config import TestingConfig
 from l2l_lab.envs.registry import create_env
 from l2l_lab.reporting.types import GameReport
-from l2l_lab.utils.checkpoint import load_checkpoint_file, load_model_state_dict
-from l2l_lab.utils.common import clone_observation
 import logging
 
 logger = logging.getLogger("l2l_lab")
@@ -103,7 +103,7 @@ class Tester:
                 action = current.choose_action(env)
 
                 if capture:
-                    recorded_moves.append((agent_id, action, clone_observation(obs)))
+                    recorded_moves.append((agent_id, action, CommonUtils.clone_observation(obs)))
 
                 env.step(action)
                 if action is not None:
@@ -200,11 +200,11 @@ class Tester:
 
             case AlphaZeroMCTSAgentConfig():
                 from l2l_lab.agents import AlphaZeroMCTSAgent
-                from l2l_lab.utils.search import load_search_config
+                from l2l_lab._utils.search import SearchUtils
 
                 cp_dir = self._get_checkpoint_dir(agent_config.model_name, agent_config.checkpoint)
                 backbone = self._create_backbone(cp_dir)
-                search_config = load_search_config(agent_config.search_config_path)
+                search_config = SearchUtils.load_search_config(agent_config.search_config_path)
                 label = f"alphazero_mcts[{agent_config.model_name}@{agent_config.checkpoint}]"
                 return AlphaZeroMCTSAgent(
                     model=backbone,
@@ -216,9 +216,9 @@ class Tester:
 
             case TraditionalMCTSAgentConfig():
                 from l2l_lab.agents import TraditionalMCTSAgent
-                from l2l_lab.utils.search import load_search_config
+                from l2l_lab._utils.search import SearchUtils
 
-                search_config = load_search_config(agent_config.search_config_path)
+                search_config = SearchUtils.load_search_config(agent_config.search_config_path)
                 return TraditionalMCTSAgent(
                     search_config=search_config,
                     obs_space_format=self.config.env.obs_space_format,
@@ -231,7 +231,7 @@ class Tester:
     def _create_backbone(self, checkpoint_dir: Path) -> torch.nn.Module:
         model_dir = checkpoint_dir / "model"
         backbone = torch.load(model_dir / "base_class.pkl", weights_only=False)
-        state_dict = load_checkpoint_file(model_dir / "weights.cp")
-        load_model_state_dict(backbone, state_dict)
+        state_dict = CheckpointUtils.load_checkpoint_file(model_dir / "weights.cp")
+        CheckpointUtils.load_model_state_dict(backbone, state_dict)
         backbone.eval()
         return backbone

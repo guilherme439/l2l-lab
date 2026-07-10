@@ -8,6 +8,12 @@ import numpy as np
 import torch
 from torch import nn
 
+from l2l_lab._utils.checkpoint import CheckpointUtils
+from l2l_lab._utils.common import CommonUtils
+from l2l_lab._utils.exception_handler import ExceptionHandler
+from l2l_lab._utils.graphs import GraphsUtils
+from l2l_lab._utils.memory import MemorySampler
+from l2l_lab._utils.wandb import WandbUtils
 from l2l_lab.backends import get_backend
 from l2l_lab.backends.backend_base import StepResult
 from l2l_lab.configs.training.training_config import TrainingConfig
@@ -15,15 +21,6 @@ from l2l_lab.reporting import Reporter
 from l2l_lab.testing.tester import GameResults
 from l2l_lab.training.eval_worker import EvalRequest, EvalResult, EvalWorker
 from l2l_lab.training.evaluator import Evaluator
-from l2l_lab.utils import graphs
-from l2l_lab.utils import wandb as wandb_helper
-from l2l_lab.utils.checkpoint import (atomic_write, is_rewind, list_checkpoint_iterations_past,
-                                      load_checkpoint_file,
-                                      get_training_checkpoint_path,
-                                      trim_metrics_to_iteration)
-from l2l_lab.utils.common import check_interval
-from l2l_lab.utils.exception_handler import ExceptionHandler
-from l2l_lab.utils.memory import MemorySampler
 import logging
 
 logger = logging.getLogger("l2l_lab")
@@ -90,7 +87,7 @@ class Trainer:
         if backend_cfg.continue_training:
             self._setup_model_dir(model_dir)
             loaded_iteration = self.backend.restore_run(cfg, self.current_model_dir)
-            self._is_rewind = is_rewind(self.current_model_dir, loaded_iteration)
+            self._is_rewind = CheckpointUtils.is_rewind(self.current_model_dir, loaded_iteration)
             if self._is_rewind:
                 self._clear_rewinded_iterations(loaded_iteration, _DESTRUCTIVE_ABORT_WAIT_SECONDS)
             self._load_trainer_checkpoint(self.current_model_dir, loaded_iteration)
@@ -112,7 +109,7 @@ class Trainer:
 
         self._setup_reporter(cfg, starting_iteration)
 
-        self._wandb_enabled = wandb_helper.init(
+        self._wandb_enabled = WandbUtils.init(
             run_name=cfg.name,
             training_config=cfg,
         )
@@ -148,25 +145,25 @@ class Trainer:
             raise RuntimeError("No model directory.")
 
         graphs_dir = self.current_model_dir / "graphs"
-        graphs.plot_metrics(graphs_dir, self.metrics, self.config.common.eval_graph_split, plot_memory=plot_memory)
+        GraphsUtils.plot_metrics(graphs_dir, self.metrics, self.config.common.eval_graph_split, plot_memory=plot_memory)
         logger.info(f"\n\n📊 Graphs saved to: {graphs_dir}\n\n")
 
     def _save_trainer_checkpoint(self, checkpoint_dir: Path, iteration: int) -> None:
         payload = {
             "iteration": iteration,
-            "metrics": trim_metrics_to_iteration(self.metrics, iteration),
+            "metrics": CheckpointUtils.trim_metrics_to_iteration(self.metrics, iteration),
             "backend": self.backend.name,
         }
-        atomic_write(checkpoint_dir / "training.cp", lambda temp_path: torch.save(payload, temp_path))
+        CheckpointUtils.atomic_write(checkpoint_dir / "training.cp", lambda temp_path: torch.save(payload, temp_path))
         logger.info(f"\n  [Trainer checkpoint saved: iter {iteration}]\n")
 
     def _load_trainer_checkpoint(self, model_dir: Path, loaded_iteration: int) -> None:
-        cp_path = get_training_checkpoint_path(model_dir, loaded_iteration)
+        cp_path = CheckpointUtils.get_training_checkpoint_path(model_dir, loaded_iteration)
         if cp_path is None or not cp_path.exists():
             return
-        data = load_checkpoint_file(cp_path)
+        data = CheckpointUtils.load_checkpoint_file(cp_path)
         metrics = data.get("metrics") or {}
-        metrics = trim_metrics_to_iteration(metrics, loaded_iteration)
+        metrics = CheckpointUtils.trim_metrics_to_iteration(metrics, loaded_iteration)
         if metrics:
             for key, values in metrics.items():
                 self.metrics[key] = values
@@ -215,7 +212,7 @@ class Trainer:
             self.reporter.on_step(current_iteration, step_metrics)
 
         if self._wandb_enabled:
-            wandb_helper.log(step_metrics, current_iteration)
+            WandbUtils.log(step_metrics, current_iteration)
 
         needs_eval = (
             self.evaluator.training_evals_due(iterations_completed) or step_result.checkpoint_path is not None
@@ -235,7 +232,7 @@ class Trainer:
         if self.reporter is not None and self.reporter.snapshot_due(iterations_completed):
             self._deferred_snapshots.append((current_iteration, step_result.eval_model))
 
-        if check_interval(iterations_completed, cfg.common.plot_interval):
+        if CommonUtils.check_interval(iterations_completed, cfg.common.plot_interval):
             self.plot_progress()
 
     def _process_remaining_steps(self) -> None:
@@ -288,7 +285,7 @@ class Trainer:
             logger.info("")
 
         if self._wandb_enabled:
-            wandb_helper.log_evaluations(wandb_metrics, result.iteration)
+            WandbUtils.log_evaluations(wandb_metrics, result.iteration)
 
         if result.checkpoint_path is not None:
             self._save_trainer_checkpoint(result.checkpoint_path, result.iteration)
@@ -338,7 +335,7 @@ class Trainer:
         if self.reporter is not None:
             self.reporter.on_shutdown()
         if self._wandb_enabled:
-            wandb_helper.finish()
+            WandbUtils.finish()
 
     def _save_final_checkpoint(self, iteration: int) -> None:
         if iteration < self._starting_iteration:
@@ -493,7 +490,7 @@ class Trainer:
         shutil.rmtree(model_dir)
 
     def _clear_rewinded_iterations(self, loaded_iteration: int, wait_seconds: int) -> None:
-        stale_iters = list_checkpoint_iterations_past(self.current_model_dir, loaded_iteration)
+        stale_iters = CheckpointUtils.list_checkpoint_iterations_past(self.current_model_dir, loaded_iteration)
         reports_dir = self.current_model_dir / "reports"
 
         red_color_tags = "\033[31m", "\033[0m"

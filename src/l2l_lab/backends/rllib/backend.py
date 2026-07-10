@@ -8,11 +8,11 @@ from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
 from torch import nn
 from ray.tune.registry import register_env
 
+from l2l_lab._utils.checkpoint import CheckpointUtils
+from l2l_lab._utils.common import CommonUtils
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
 from l2l_lab.backends.checkpoint_writer import CheckpointWriter
 from l2l_lab.envs.registry import create_env
-from l2l_lab.utils.checkpoint import atomic_write, load_checkpoint_file, load_model_state_dict
-from l2l_lab.utils.common import check_interval
 import logging
 
 logger = logging.getLogger("l2l_lab")
@@ -32,8 +32,8 @@ class _CheckpointWriter(CheckpointWriter):
     def write(self, snapshot: dict[str, Any], path: Path) -> None:
         model_dir = path / "model"
         model_dir.mkdir(exist_ok=True)
-        atomic_write(model_dir / "weights.cp", lambda temp_path: torch.save(snapshot["model_state_dict"], temp_path))
-        atomic_write(model_dir / "base_class.pkl", lambda temp_path: temp_path.write_bytes(snapshot["network_template_bytes"]))
+        CheckpointUtils.atomic_write(model_dir / "weights.cp", lambda temp_path: torch.save(snapshot["model_state_dict"], temp_path))
+        CheckpointUtils.atomic_write(model_dir / "base_class.pkl", lambda temp_path: temp_path.write_bytes(snapshot["network_template_bytes"]))
         self._backend.algo.save_to_path(str((path / "algo").absolute()))
 
 
@@ -134,8 +134,8 @@ class RLlibBackend(AlgorithmBackend):
     def get_model_from_checkpoint(self, checkpoint_dir: Path) -> nn.Module:
         model_dir = checkpoint_dir / "model"
         backbone = torch.load(model_dir / "base_class.pkl", weights_only=False)
-        state_dict = load_checkpoint_file(model_dir / "weights.cp")
-        load_model_state_dict(backbone, state_dict)
+        state_dict = CheckpointUtils.load_checkpoint_file(model_dir / "weights.cp")
+        CheckpointUtils.load_model_state_dict(backbone, state_dict)
         backbone.eval()
         return backbone
 
@@ -188,11 +188,11 @@ class RLlibBackend(AlgorithmBackend):
                 metrics = self.algo_trainer.extract_metrics(result)
 
                 self.print_step_info(current_iteration, metrics)
-                if check_interval(iterations_completed, info_interval):
+                if CommonUtils.check_interval(iterations_completed, info_interval):
                     self.print_training_info(current_iteration, metrics)
 
                 checkpoint_path: Optional[Path] = None
-                if check_interval(iterations_completed, self._checkpoint_interval):
+                if CommonUtils.check_interval(iterations_completed, self._checkpoint_interval):
                     logger.info(f"\nSaving {self.name} checkpoint for iteration {current_iteration}")
                     snapshot = self._capture_snapshot()
                     checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(current_iteration)

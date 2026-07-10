@@ -7,8 +7,8 @@ from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Iterator, Optional
 
-from l2l_lab.utils.checkpoint import delete_checkpoint_dirs_past, list_checkpoint_iterations
-from l2l_lab.utils.common import check_interval
+from l2l_lab._utils.checkpoint import CheckpointUtils
+from l2l_lab._utils.common import CommonUtils
 
 if TYPE_CHECKING:
     from torch import nn
@@ -159,7 +159,7 @@ class AlgorithmBackend(ABC):
 
     def delete_checkpoints_past(self, model_dir: Path, iteration: int) -> None:
         """Remove every checkpoint on disk whose iteration is greater than `iteration`."""
-        delete_checkpoint_dirs_past(model_dir, iteration)
+        CheckpointUtils.delete_checkpoint_dirs_past(model_dir, iteration)
 
     def new_run(self, config: TrainingConfig, model_dir: Path) -> None:
         self.prepare(config)
@@ -179,7 +179,7 @@ class AlgorithmBackend(ABC):
         """Load the highest-numbered checkpoint at or below `target_iteration`, walking to
         earlier ones when a load fails, and return its iteration. Start fresh (returning 0)
         when nothing loads. No `target_iteration` considers every checkpoint."""
-        candidates = list_checkpoint_iterations(model_dir)
+        candidates = CheckpointUtils.list_checkpoint_iterations(model_dir)
         if target_iteration is not None:
             candidates = [iteration for iteration in candidates if iteration <= target_iteration]
 
@@ -201,7 +201,7 @@ class AlgorithmBackend(ABC):
         """True when an eval, checkpoint, or report at this point will consume a
         model snapshot. Evaluated on the training thread to decide whether to
         capture the current weights for this step's `StepResult`."""
-        return any(check_interval(iterations_completed, interval) for interval in self._snapshot_intervals)
+        return any(CommonUtils.check_interval(iterations_completed, interval) for interval in self._snapshot_intervals)
 
     def _get_eval_model(self) -> nn.Module:
         """Return an eval-mode, CPU-resident copy of the currently-training model,

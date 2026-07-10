@@ -16,7 +16,7 @@ l2l-lab/
 │   ├── testing/            # tester.py (YAML-driven manual testing flow)
 │   ├── training/           # trainer.py, evaluator.py
 │   ├── reporting/          # diagnostic CSV + Markdown snapshot writer
-│   ├── utils/              # common.py, graphs.py, checkpoint.py, search.py
+│   ├── _utils/              # internal-only helpers: CommonUtils, GraphsUtils, CheckpointUtils, SearchUtils, WandbUtils, ...
 │   ├── agents/  backends/  envs/  neural_networks/  rllib/
 │   └── configs/            # Python dataclass definitions
 ├── configs/                # YAML assets (training/, testing/, search/)
@@ -143,7 +143,7 @@ The `model/` subdirectory (`weights.cp` state dict + `base_class.pkl` pickled ar
 
 Each backend writes its own resume state alongside `model/`: the RLlib algorithm state for the rllib backend, or for the `alphazoo` backend the flat `optimizer.pt` / `scheduler.pt` / `replay_buffer.pt` / `metadata.json` that `AlphaZoo.save(save_model=False)` produces. Those resume files exist only to continue training in place. `_CheckpointWriter` fills `model/weights.cp` from `AlphaZoo.get_model_state_dict()` and writes the resume state via `AlphaZoo.save`.
 
-Individual files are written atomically by `l2l_lab.utils.atomic.atomic_write`: it serializes into l2l-lab's own temp directory (`$XDG_CACHE_HOME/l2l_lab/tmp`, else `~/.cache/l2l_lab/tmp`) and then `os.replace`s the result onto its destination. The rename is atomic when the temp directory and the destination share a filesystem; when they do not, `os.replace` raises `EXDEV` and the write falls back to a non-atomic move with a warning. The checkpoint directory as a whole is not atomic - it is filled file by file, so an interrupted save leaves a directory holding some complete files and missing others, which `restore` handles by loading an earlier checkpoint. `trainer.py` writes `training.cp` and both backends' `_CheckpointWriter`s write `model/weights.cp` and `base_class.pkl` this way; the `alphazoo` package writes its own resume files atomically through the same temp-then-rename scheme under `~/.cache/alphazoo/tmp`.
+Individual files are written atomically by `CheckpointUtils.atomic_write` (`l2l_lab._utils.checkpoint`): it serializes into l2l-lab's own temp directory (`$XDG_CACHE_HOME/l2l_lab/tmp`, else `~/.cache/l2l_lab/tmp`) and then `os.replace`s the result onto its destination. The rename is atomic when the temp directory and the destination share a filesystem; when they do not, `os.replace` raises `EXDEV` and the write falls back to a non-atomic move with a warning. The checkpoint directory as a whole is not atomic - it is filled file by file, so an interrupted save leaves a directory holding some complete files and missing others, which `restore` handles by loading an earlier checkpoint. `trainer.py` writes `training.cp` and both backends' `_CheckpointWriter`s write `model/weights.cp` and `base_class.pkl` this way; the `alphazoo` package writes its own resume files atomically through the same temp-then-rename scheme under `~/.cache/alphazoo/tmp`.
 
 ### Reporting (`l2l_lab.reporting`)
 
@@ -159,7 +159,7 @@ Opt-in diagnostic layer, enabled by setting `reporting.enabled: true` in the tra
 
 The Reporter runs its own worker thread for all file I/O and probe-state inference, so `on_step` (the per-iteration CSV row) and `emit_snapshot` (a Markdown snapshot) only enqueue work from the main thread and never block it. The trainer calls `emit_snapshot` once every eval in flight as of that snapshot's iteration has completed, passing a metrics copy trimmed to that iteration (`trim_metrics_to_iteration`) and the model snapshot it captured for that step - the same snapshot mechanism the `EvalWorker` consumes. See `src/l2l_lab/reporting/` for the implementation.
 
-### Weights & Biases (`l2l_lab.utils.wandb`)
+### Weights & Biases (`l2l_lab._utils.wandb`)
 
 Opt-in cloud logging. When active, every per-iteration scalar handed to the trainer (`policy_loss`, `value_loss`, `combined_loss`, `learning_rate`, `replay_buffer_size`, `episode_len_mean`, `weight_max/min/avg`) and the nested `memory/*` series are streamed to a wandb run via `wandb.log(..., step=iteration)`. The nested `evaluations/*` series logs separately, through `log_evaluations(..., iteration)`, against a custom `eval_iteration` axis (`run.define_metric("evaluations/*", step_metric="eval_iteration")`, set up in `init`) rather than the training step: evaluations complete asynchronously and can land behind steps already logged, which `wandb.log(..., step=...)` would otherwise silently drop. `None` values are dropped before either call. `wandb.init` also enables wandb's built-in system monitor, so CPU %, RAM, GPU util, GPU memory, disk, and network metrics are logged automatically every ~15s.
 

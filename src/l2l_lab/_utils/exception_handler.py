@@ -22,9 +22,9 @@ class ExceptionHandler:
         if exc_type is None:
             logger.info("\nShutting down...\n")
         elif issubclass(exc_type, KeyboardInterrupt):
-            logger.info("\nInterrupted by user — shutting down... (press Ctrl+C again to force quit)\n")
+            logger.info("\nInterrupted by user - shutting down... (press Ctrl+C again to force quit)\n")
         else:
-            logger.error("\nError raised — shutting down...\n", exc_info=(exc_type, exc, tb))
+            logger.error("\nError raised - shutting down...\n", exc_info=(exc_type, exc, tb))
 
         try:
             self._on_exit()

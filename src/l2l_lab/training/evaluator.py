@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from l2l_lab._utils.common import CommonUtils
+from l2l_lab._utils.search import SearchUtils
 from l2l_lab.agents import PolicyAgent, RandomAgent
 from l2l_lab.configs.training.evaluation_config import EvaluationConfig
 from l2l_lab.testing.tester import GameResults, Tester
-from l2l_lab.utils.common import check_interval
-from l2l_lab.utils.search import load_search_config
 import logging
 
 logger = logging.getLogger("l2l_lab")
@@ -42,7 +42,7 @@ class Evaluator:
         """True when at least one `training_eval` entry fires at this point,
         so the caller knows whether an eval request is worth enqueuing."""
         return any(
-            check_interval(iterations_completed, entry.interval) for entry in self.eval_config.training_eval
+            CommonUtils.check_interval(iterations_completed, entry.interval) for entry in self.eval_config.training_eval
         )
 
     def label_to_type_map(self) -> dict[str, str]:
@@ -66,7 +66,7 @@ class Evaluator:
         iterations_completed = iteration + 1
         results: dict[str, Optional[GameResults]] = {}
         for entry in self.eval_config.training_eval:
-            if not check_interval(iterations_completed, entry.interval):
+            if not CommonUtils.check_interval(iterations_completed, entry.interval):
                 results[entry.label] = None
                 continue
             logger.info(f"Starting training eval [{entry.player} x {entry.opponent}] for iteration {iteration}...")
@@ -137,7 +137,7 @@ class Evaluator:
             model=model,
             is_recurrent=self.network_config.is_recurrent(),
             recurrent_iterations=self._recurrent_iterations(),
-            search_config=load_search_config(search_config_path),
+            search_config=SearchUtils.load_search_config(search_config_path),
             obs_space_format=self.env_config.obs_space_format,
             name=name,
         )
@@ -146,7 +146,7 @@ class Evaluator:
         from l2l_lab.agents import TraditionalMCTSAgent
 
         return TraditionalMCTSAgent(
-            search_config=load_search_config(search_config_path),
+            search_config=SearchUtils.load_search_config(search_config_path),
             obs_space_format=self.env_config.obs_space_format,
             name=name,
         )

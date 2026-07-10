@@ -8,14 +8,14 @@ from alphazoo import AlphaZoo, AlphaZooRecurrentNet, AlphaZooConfig
 from torch import nn
 from gymnasium.spaces.utils import flatdim
 
+from l2l_lab._utils.checkpoint import CheckpointUtils
+from l2l_lab._utils.common import CommonUtils
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
 from l2l_lab.backends.checkpoint_writer import CheckpointWriter
 from l2l_lab.backends.obs_utils import make_wrapper, obs_to_state_provider
 from l2l_lab.configs.training.network import MLPNetConfig, SNNetConfig
 from l2l_lab.envs.registry import create_env
 from l2l_lab.neural_networks.utils.builders import build_network
-from l2l_lab.utils.checkpoint import atomic_write, load_checkpoint_file, load_model_state_dict
-from l2l_lab.utils.common import check_interval
 import logging
 
 logger = logging.getLogger("l2l_lab")
@@ -37,8 +37,8 @@ class _CheckpointWriter(CheckpointWriter):
 
         model_dir = path / "model"
         model_dir.mkdir(exist_ok=True)
-        atomic_write(model_dir / "weights.cp", lambda temp_path: torch.save(az.get_model_state_dict(), temp_path))
-        atomic_write(model_dir / "base_class.pkl", lambda temp_path: temp_path.write_bytes(snapshot["network_template_bytes"]))
+        CheckpointUtils.atomic_write(model_dir / "weights.cp", lambda temp_path: torch.save(az.get_model_state_dict(), temp_path))
+        CheckpointUtils.atomic_write(model_dir / "base_class.pkl", lambda temp_path: temp_path.write_bytes(snapshot["network_template_bytes"]))
 
 
 class AlphaZooBackend(AlgorithmBackend):
@@ -114,8 +114,8 @@ class AlphaZooBackend(AlgorithmBackend):
     @override
     def load_checkpoint(self, checkpoint_dir: Path) -> None:
         weights_path = checkpoint_dir / "model" / "weights.cp"
-        model_state_dict = load_checkpoint_file(weights_path)
-        load_model_state_dict(self._model, model_state_dict)
+        model_state_dict = CheckpointUtils.load_checkpoint_file(weights_path)
+        CheckpointUtils.load_model_state_dict(self._model, model_state_dict)
         logger.info(f"\n✓ Model weights restored from {weights_path}")
 
         backend_cfg = self._config.backend
@@ -153,8 +153,8 @@ class AlphaZooBackend(AlgorithmBackend):
     def get_model_from_checkpoint(self, checkpoint_dir: Path) -> nn.Module:
         model_dir = checkpoint_dir / "model"
         model = torch.load(model_dir / "base_class.pkl", weights_only=False)
-        state_dict = load_checkpoint_file(model_dir / "weights.cp")
-        load_model_state_dict(model, state_dict)
+        state_dict = CheckpointUtils.load_checkpoint_file(model_dir / "weights.cp")
+        CheckpointUtils.load_model_state_dict(model, state_dict)
         model.eval()
         return model
 
@@ -197,11 +197,11 @@ class AlphaZooBackend(AlgorithmBackend):
                     "batch_size": metrics.get("inference/batch_size"),
                 }
                 self.print_step_info(current_iteration, public_metrics)
-                if check_interval(iterations_completed, info_interval):
+                if CommonUtils.check_interval(iterations_completed, info_interval):
                     self.print_training_info(current_iteration, public_metrics)
 
                 checkpoint_path: Optional[Path] = None
-                if check_interval(iterations_completed, self._checkpoint_interval):
+                if CommonUtils.check_interval(iterations_completed, self._checkpoint_interval):
                     snapshot = self._checkpoint_payload()
                     checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(current_iteration)
                     checkpoint_path.mkdir(exist_ok=True)

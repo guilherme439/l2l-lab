@@ -37,7 +37,7 @@ class MemorySampler:
         self._pss_supported = self._detect_pss_support()
         if not self._pss_supported:
             logger.warning(
-                "WARNING: PSS not available on this platform — memory tracking will fall back "
+                "WARNING: PSS not available on this platform - memory tracking will fall back "
                 "to RSS, which double-counts pages shared between forked workers."
             )
 

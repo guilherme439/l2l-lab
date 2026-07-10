@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import yaml
 
+from l2l_lab._utils.checkpoint import CheckpointUtils
+from l2l_lab._utils.common import CommonUtils
 from l2l_lab.configs.common.env_config import EnvConfig
 from l2l_lab.configs.training.reporting_config import ReportingConfig
-from l2l_lab.utils.checkpoint import trim_metrics_to_iteration
-from l2l_lab.utils.common import check_interval, find_paths_with_iteration_past
 
 from .csv_writer import MetricsCSVWriter
 from .markdown import StampedReport, render_report
@@ -92,9 +92,9 @@ class Reporter:
         """Remove report snapshots, archived config snapshots, and CSV rows past `iteration`."""
         if not reports_dir.exists():
             return
-        for path, _ in find_paths_with_iteration_past(reports_dir, _REPORT_SNAPSHOT_PATTERN, iteration):
+        for path, _ in CommonUtils.find_paths_with_iteration_past(reports_dir, _REPORT_SNAPSHOT_PATTERN, iteration):
             path.unlink()
-        for path, _ in find_paths_with_iteration_past(reports_dir, _ARCHIVED_CONFIG_PATTERN, iteration):
+        for path, _ in CommonUtils.find_paths_with_iteration_past(reports_dir, _ARCHIVED_CONFIG_PATTERN, iteration):
             path.unlink()
         MetricsCSVWriter.truncate_to_iteration(reports_dir / "training.csv", iteration)
 
@@ -116,7 +116,7 @@ class Reporter:
     def snapshot_due(self, iterations_completed: int) -> bool:
         """True when `iterations_completed` lands on a reporting interval, so
         the caller knows to capture a model snapshot and call `emit_snapshot`."""
-        return self.cfg.enabled and check_interval(iterations_completed, self.cfg.interval)
+        return self.cfg.enabled and CommonUtils.check_interval(iterations_completed, self.cfg.interval)
 
     def on_setup(self, starting_iteration: int = 0) -> None:
         if not self.cfg.enabled:
@@ -143,7 +143,7 @@ class Reporter:
         """
         if not self.cfg.enabled:
             return
-        trimmed_metrics = trim_metrics_to_iteration(metrics, iteration)
+        trimmed_metrics = CheckpointUtils.trim_metrics_to_iteration(metrics, iteration)
         reports = self._drain_reports()
         self._requests.put(_SnapshotRequest(
             iteration=iteration, metrics=trimmed_metrics, model=model, reports=reports,

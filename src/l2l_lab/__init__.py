@@ -1,6 +1,6 @@
 import logging
 
-from l2l_lab.utils.logging_utils import GutterFormatter, _DynamicStdoutHandler
+from l2l_lab._utils.logging_utils import GutterFormatter, _DynamicStdoutHandler
 
 logger = logging.getLogger("l2l_lab")
 _handler = _DynamicStdoutHandler()
