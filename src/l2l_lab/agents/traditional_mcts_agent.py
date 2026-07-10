@@ -1,5 +1,7 @@
 from typing import Any, override
 
+from pettingzoo import AECEnv
+
 from l2l_lab.agents.agent import Agent
 from alphazoo import SearchConfig
 from alphazoo.utils.mcts import select_action_with_traditional_mcts
@@ -18,7 +20,7 @@ class TraditionalMCTSAgent(Agent):
         self.name = name
 
     @override
-    def choose_action(self, env: Any) -> int:
+    def choose_action(self, env: AECEnv) -> int:
         return select_action_with_traditional_mcts(
             env=env,
             search_config=self._search_config,

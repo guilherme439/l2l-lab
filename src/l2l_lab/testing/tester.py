@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
+from pettingzoo import AECEnv
 import torch
 
 from l2l_lab.agents import Agent, PolicyAgent, RandomAgent
@@ -78,7 +79,7 @@ class Tester:
         start_time = time.time()
         wins, losses, draws = 0, 0, 0
         total_moves = 0
-        env = create_env(env_config.name, **env_config.kwargs)
+        env: AECEnv = create_env(env_config.name, **env_config.kwargs)
 
         captured_reports: list[GameReport] = []
 

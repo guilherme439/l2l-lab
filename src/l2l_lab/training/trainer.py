@@ -6,12 +6,14 @@ from typing import Any, Optional
 
 import numpy as np
 import torch
+from torch import nn
 
 from l2l_lab.backends import get_backend
 from l2l_lab.backends.backend_base import StepResult
 from l2l_lab.configs.training.training_config import TrainingConfig
 from l2l_lab.reporting import Reporter
 from l2l_lab.testing.tester import GameResults
+from l2l_lab.training.eval_worker import EvalRequest, EvalResult, EvalWorker
 from l2l_lab.training.evaluator import Evaluator
 from l2l_lab.utils import graphs
 from l2l_lab.utils import wandb as wandb_helper
@@ -37,10 +39,17 @@ class Trainer:
         self.config_path = Path(config_path)
         self.config = TrainingConfig.from_yaml(config_path)
         self.backend = get_backend(self.config.backend.name)()
-        self.evaluator = Evaluator(self.config.evaluation, self.backend, self.config.env, self.config.network)
+        reports_to_capture = (
+            self.config.reporting.sample_games_per_eval if self.config.reporting.enabled else 0
+        )
+        self.evaluator = Evaluator(
+            self.config.evaluation, self.backend, self.config.env, self.config.network,
+            reports_to_capture=reports_to_capture,
+        )
         self.metrics: dict[str, Any] = {}
         self.current_model_dir: Optional[Path] = None
         self.reporter: Optional[Reporter] = None
+        self.eval_worker: Optional[EvalWorker] = None
         self._completed = False
         self._memory_sampler: Optional[MemorySampler] = None
         self._wandb_enabled: bool = False
@@ -93,12 +102,12 @@ class Trainer:
             self._setup_model_dir(model_dir)
             starting_iteration = 0
             self.backend.new_run(cfg, self.current_model_dir)
-            self._log_network_summary()
 
         self.backend.configure_checkpointing(
             self.current_model_dir,
             cfg.common.checkpoint_interval,
             self.evaluator.training_eval_intervals(),
+            cfg.reporting.interval if cfg.reporting.enabled else 0,
         )
 
         self._setup_reporter(cfg, starting_iteration)
@@ -121,6 +130,10 @@ class Trainer:
         self._starting_iteration = starting_iteration
         self._last_completed_iteration = starting_iteration - 1
         self._completed = False
+        self._evals_in_flight = 0
+        self._deferred_snapshots: list[tuple[int, Optional[nn.Module]]] = []
+        self._previous_checkpoint: Optional[Path] = None
+        self.eval_worker = EvalWorker(self.evaluator, self.backend)
         self.backend.start_training()
 
         with ExceptionHandler(self._graceful_shutdown):
@@ -141,7 +154,7 @@ class Trainer:
     def _save_trainer_checkpoint(self, checkpoint_dir: Path, iteration: int) -> None:
         payload = {
             "iteration": iteration,
-            "metrics": self.metrics,
+            "metrics": trim_metrics_to_iteration(self.metrics, iteration),
             "backend": self.backend.name,
         }
         atomic_write(checkpoint_dir / "training.cp", lambda temp_path: torch.save(payload, temp_path))
@@ -160,61 +173,135 @@ class Trainer:
             logger.info(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint\n")
 
     def _run_training_loop(self) -> None:
-        cfg = self.config
-        previous_checkpoint: Optional[Path] = None
         while True:
             try:
                 step_result = self.backend.step_queue.get(timeout=1)
             except queue.Empty:
+                self._drain_eval_results()
+                self._flush_deferred_snapshots()
                 continue
 
             if step_result is None:
                 self._completed = True
                 break
 
-            current_iteration = step_result.iteration
-            iterations_completed = current_iteration + 1
-            self._last_completed_iteration = current_iteration
-            step_metrics = step_result.metrics
-            logger.info(f"Processing step {current_iteration} result")
+            self._process_step(step_result)
+            self._drain_eval_results()
+            self._flush_deferred_snapshots()
 
-            self._collect_weight_metrics(step_metrics)
-            if self._memory_sampler is not None:
-                self._collect_memory_metrics(step_metrics)
+    def _process_step(self, step_result: StepResult) -> None:
+        """Record a finished step's metrics and, if evals or a reporting
+        snapshot are due, hand them off to the eval/reporter workers. Never
+        blocks on game play, file I/O, or probe inference."""
+        cfg = self.config
+        current_iteration = step_result.iteration
+        iterations_completed = current_iteration + 1
+        self._last_completed_iteration = current_iteration
+        step_metrics = step_result.metrics
+        logger.info(f"Processing step {current_iteration} result")
 
-            training_results = self.evaluator.run_training_evals(current_iteration, step_result.eval_model)
+        self._collect_weight_metrics(step_metrics)
+        if self._memory_sampler is not None:
+            self._collect_memory_metrics(step_metrics)
 
-            checkpoint_results: dict[str, Optional[GameResults]] = {}
-            if step_result.checkpoint_path is not None:
-                self.backend.wait_for_pending_checkpoints()
-                checkpoint_results = self.evaluator.run_checkpoint_evals(
-                    previous_checkpoint, iteration=current_iteration, eval_model=step_result.eval_model
-                )
-            eval_str = self._collect_eval_metrics({**training_results, **checkpoint_results}, step_metrics)
+        # Placeholder (all-None) eval buckets for this iteration; a completed
+        # EvalResult backfills them later via `_merge_eval_result`.
+        self._collect_eval_metrics({}, step_metrics)
 
-            self.metrics["iteration"].append(current_iteration)
-            self._update_metrics(step_metrics)
+        self.metrics["iteration"].append(current_iteration)
+        self._update_metrics(step_metrics)
 
-            if self.reporter is not None:
-                self.reporter.on_step(current_iteration, step_metrics)
+        if self.reporter is not None:
+            self.reporter.on_step(current_iteration, step_metrics)
 
-            if self._wandb_enabled:
-                wandb_helper.log(step_metrics, current_iteration)
+        if self._wandb_enabled:
+            wandb_helper.log(step_metrics, current_iteration)
 
-            if step_result.checkpoint_path is not None:
-                self._save_trainer_checkpoint(step_result.checkpoint_path, current_iteration)
-                previous_checkpoint = step_result.checkpoint_path
-                self.backend.on_checkpoint_saved(self.current_model_dir, current_iteration)
+        needs_eval = (
+            self.evaluator.training_evals_due(iterations_completed) or step_result.checkpoint_path is not None
+        )
+        if needs_eval and self.eval_worker is not None:
+            self.eval_worker.enqueue(EvalRequest(
+                iteration=current_iteration,
+                eval_model=step_result.eval_model,
+                checkpoint_path=step_result.checkpoint_path,
+                previous_checkpoint=self._previous_checkpoint,
+            ))
+            self._evals_in_flight += 1
 
-            if eval_str:
-                logger.info("\n")
-                logger.info("  ┌─ Eval Results ───────────────────────────────")
-                logger.info(eval_str)
-                logger.info("  └──────────────────────────────────────────────")
-                logger.info("")
+        if step_result.checkpoint_path is not None:
+            self._previous_checkpoint = step_result.checkpoint_path
 
-            if check_interval(iterations_completed, cfg.common.plot_interval):
-                self.plot_progress()
+        if self.reporter is not None and self.reporter.snapshot_due(iterations_completed):
+            self._deferred_snapshots.append((current_iteration, step_result.eval_model))
+
+        if check_interval(iterations_completed, cfg.common.plot_interval):
+            self.plot_progress()
+
+    def _process_remaining_steps(self) -> None:
+        """Process every step still queued by the backend, so a stop mid-run
+        records metrics, evals, and checkpoints for steps that finished
+        training but hadn't been picked up yet."""
+        while True:
+            try:
+                step_result = self.backend.step_queue.get_nowait()
+            except queue.Empty:
+                break
+            if step_result is None:
+                continue
+            self._process_step(step_result)
+
+    def _drain_eval_results(self) -> None:
+        if self.eval_worker is None:
+            return
+        for result in self.eval_worker.drain_results():
+            self._merge_eval_result(result)
+            self._evals_in_flight -= 1
+
+    def _merge_eval_result(self, result: EvalResult) -> None:
+        """Backfill a completed eval into its iteration's metrics slot (appended
+        as a placeholder back in `_process_step`), then log, report, and
+        checkpoint whatever that result unblocks."""
+        idx = self.metrics["iteration"].index(result.iteration)
+        label_to_type = self.evaluator.label_to_type_map()
+        for label, game_result in result.results.items():
+            if game_result is None:
+                continue
+            bucket = self.metrics["evaluations"][label_to_type[label]][label]
+            for position, side in (("as_p0", game_result.as_p0), ("as_p1", game_result.as_p1)):
+                if side is None:
+                    continue
+                bucket[position]["wins"][idx] = side.wins
+                bucket[position]["losses"][idx] = side.losses
+                bucket[position]["draws"][idx] = side.draws
+                if self.reporter is not None:
+                    for report in side.reports:
+                        self.reporter.add_game_report(result.iteration, label, position, report)
+
+        wandb_metrics: dict[str, Any] = {}
+        eval_str = self._collect_eval_metrics(result.results, wandb_metrics)
+        if eval_str:
+            logger.info("\n")
+            logger.info("  ┌─ Eval Results ───────────────────────────────")
+            logger.info(eval_str)
+            logger.info("  └──────────────────────────────────────────────")
+            logger.info("")
+
+        if self._wandb_enabled:
+            wandb_helper.log_evaluations(wandb_metrics, result.iteration)
+
+        if result.checkpoint_path is not None:
+            self._save_trainer_checkpoint(result.checkpoint_path, result.iteration)
+            self.backend.on_checkpoint_saved(self.current_model_dir, result.iteration)
+
+    def _flush_deferred_snapshots(self) -> None:
+        """Emit reporting snapshots that were waiting on in-flight evals, now
+        that every eval up to the latest deferred iteration has landed."""
+        if self._evals_in_flight > 0 or not self._deferred_snapshots or self.reporter is None:
+            return
+        for iteration, model in self._deferred_snapshots:
+            self.reporter.emit_snapshot(iteration, self.metrics, model)
+        self._deferred_snapshots = []
 
     def _graceful_shutdown(self) -> None:
         cfg = self.config
@@ -223,10 +310,7 @@ class Trainer:
 
         self.backend.request_stop()
         self.backend.wait_for_training(cfg.backend.graceful_shutdown_period)
-
-        last_step = self._skip_to_end_of_queue()
-        if last_step is not None:
-            self._last_completed_iteration = last_step.iteration
+        self._process_remaining_steps()
         last_completed_iteration = self._last_completed_iteration
 
         try:
@@ -236,11 +320,20 @@ class Trainer:
                 logger.info(f"✓ {algo_name} Training completed!")
             else:
                 logger.info(f"Training stopped early at iteration {last_completed_iteration}/{total_iterations}.")
+
+            if self.eval_worker is not None:
+                logger.info("\nWaiting for pending evaluations to finish...\n")
+                self.eval_worker.wait_for_idle()
+                self._drain_eval_results()
+                self._flush_deferred_snapshots()
+
             self._save_final_checkpoint(last_completed_iteration)
             self.plot_progress(plot_memory=False)
         except Exception:
             logger.exception("Error during shutdown while saving the final checkpoints and plots")
 
+        if self.eval_worker is not None:
+            self.eval_worker.stop()
         self.backend.shutdown()
         if self.reporter is not None:
             self.reporter.on_shutdown()
@@ -253,19 +346,6 @@ class Trainer:
         final_path = self.backend.save_final_checkpoint(iteration)
         if final_path is not None:
             self._save_trainer_checkpoint(final_path, iteration)
-
-    def _skip_to_end_of_queue(self) -> Optional[StepResult]:
-        """Drain the backend step queue, returning the most recent StepResult."""
-        last: Optional[StepResult] = None
-        while True:
-            try:
-                item = self.backend.step_queue.get_nowait()
-            except queue.Empty:
-                break
-            if item is None:
-                continue
-            last = item
-        return last
 
     def _setup_model_dir(self, model_dir: Path) -> None:
         model_dir.mkdir(parents=True, exist_ok=True)
@@ -288,12 +368,7 @@ class Trainer:
             resume=cfg.backend.continue_training,
             csv_keys=self.backend.get_reporter_csv_keys(),
         )
-        self.reporter.attach_sources(
-            metrics_getter=lambda: self.metrics,
-            model_getter=self.backend.get_eval_model,
-        )
         self.reporter.on_setup(starting_iteration=starting_iteration)
-        self.evaluator.reporter = self.reporter
 
     def _init_metrics(self) -> None:
         evaluations: dict[str, dict[str, Any]] = {"training": {}, "checkpoint": {}}
@@ -363,20 +438,6 @@ class Trainer:
         deficit = target_len - len(series)
         if deficit > 0:
             series.extend([None] * deficit)
-
-    def _log_network_summary(self) -> None:
-        model = self.backend.get_eval_model()
-        if model is None:
-            return
-        total_params = sum(p.numel() for p in model.parameters())
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        bar = "=" * 70
-        sep = "-" * 70
-        logger.info(
-            f"\n{bar}\n\nNetwork architecture\n{sep}\n{model}\n{sep}\n"
-            f"Total parameters:     {total_params:,}\n"
-            f"Trainable parameters: {trainable_params:,}\n{bar}\n"
-        )
 
     def _collect_weight_metrics(self, step_metrics: dict[str, Any]) -> None:
         parameters = self.backend.get_weight_parameters()

@@ -2,6 +2,7 @@ import random
 from typing import Any, override
 
 import numpy as np
+from pettingzoo import AECEnv
 
 from l2l_lab.agents.agent import Agent
 
@@ -12,7 +13,7 @@ class RandomAgent(Agent):
         self.name = name
 
     @override
-    def choose_action(self, env: Any) -> int:
+    def choose_action(self, env: AECEnv) -> int:
         obs = env.observe(env.agent_selection)
         action_mask = obs["action_mask"]
         valid_actions = np.where(action_mask == 1)[0]

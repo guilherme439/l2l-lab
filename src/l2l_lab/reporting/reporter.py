@@ -1,13 +1,17 @@
 import hashlib
 import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from queue import Queue
+from threading import Thread
+from typing import TYPE_CHECKING, Any, Optional
 
 import yaml
 
 from l2l_lab.configs.common.env_config import EnvConfig
 from l2l_lab.configs.training.reporting_config import ReportingConfig
+from l2l_lab.utils.checkpoint import trim_metrics_to_iteration
 from l2l_lab.utils.common import check_interval, find_paths_with_iteration_past
 
 from .csv_writer import MetricsCSVWriter
@@ -19,18 +23,40 @@ import logging
 
 logger = logging.getLogger("l2l_lab")
 
+if TYPE_CHECKING:
+    from torch import nn
+
 _REPORT_SNAPSHOT_PATTERN = re.compile(r"^report_(\d{6})\.md$")
 _ARCHIVED_CONFIG_PATTERN = re.compile(r"^config_(\d{6})\.yaml$")
 
 
-class Reporter:
-    """Orchestrates per-iteration CSV writes and periodic Markdown snapshots.
+@dataclass
+class _CsvRowRequest:
+    iteration: int
+    row: dict[str, Any]
 
-    When ``cfg.enabled`` is False all methods become no-ops and no files are
-    touched. When enabled, writes live under ``reports_dir`` (typically
+
+@dataclass
+class _SnapshotRequest:
+    iteration: int
+    metrics: dict[str, Any]
+    model: Optional[nn.Module]
+    reports: list[StampedReport]
+
+
+_ReporterRequest = _CsvRowRequest | _SnapshotRequest
+
+
+class Reporter:
+    """Buffers per-iteration metrics and periodic diagnostic snapshots, then
+    writes them from a dedicated worker thread so callers never block on
+    file I/O or probe-state inference.
+
+    When ``cfg.enabled`` is False every method is a no-op and no files are
+    touched. When enabled, writes land under ``reports_dir`` (typically
     ``models/{run_name}/reports/``): ``training.csv``, ``config.yaml``
     (archived verbatim from the source YAML), and ``report_{iter:06d}.md``
-    snapshots every ``cfg.interval`` iterations.
+    snapshots for iterations the caller marks via `snapshot_due`.
     """
 
     def __init__(
@@ -55,9 +81,11 @@ class Reporter:
 
         self._pending_reports: list[StampedReport] = []
         self._csv_writer: Optional[MetricsCSVWriter] = None
-        self._metrics_getter: Optional[Callable[[], dict[str, Any]]] = None
-        self._model_getter: Optional[Callable[[], Any]] = None
         self._starting_iteration: int = 0
+
+        self._requests: Queue[Optional[_ReporterRequest]] = Queue()
+        self._thread = Thread(target=self._run, daemon=True)
+        self._thread.start()
 
     @classmethod
     def clear_artifacts_past(cls, reports_dir: Path, iteration: int) -> None:
@@ -69,10 +97,6 @@ class Reporter:
         for path, _ in find_paths_with_iteration_past(reports_dir, _ARCHIVED_CONFIG_PATTERN, iteration):
             path.unlink()
         MetricsCSVWriter.truncate_to_iteration(reports_dir / "training.csv", iteration)
-
-    @property
-    def enabled(self) -> bool:
-        return self.cfg.enabled
 
     def add_game_report(
         self,
@@ -89,18 +113,10 @@ class Reporter:
             return
         self._pending_reports.append(StampedReport(iteration, eval_label, as_position, report))
 
-    def attach_sources(
-        self,
-        metrics_getter: Callable[[], dict[str, Any]],
-        model_getter: Callable[[], Any],
-    ) -> None:
-        """Wire in lazy accessors for the full metrics dict and the eval model.
-
-        The Reporter only invokes these at snapshot time, so the Trainer never
-        has to hand over the full metrics dict on every step.
-        """
-        self._metrics_getter = metrics_getter
-        self._model_getter = model_getter
+    def snapshot_due(self, iterations_completed: int) -> bool:
+        """True when `iterations_completed` lands on a reporting interval, so
+        the caller knows to capture a model snapshot and call `emit_snapshot`."""
+        return self.cfg.enabled and check_interval(iterations_completed, self.cfg.interval)
 
     def on_setup(self, starting_iteration: int = 0) -> None:
         if not self.cfg.enabled:
@@ -115,42 +131,66 @@ class Reporter:
         logger.info(f"Reporter enabled: writing to {self._reports_dir}")
 
     def on_step(self, iteration: int, step_metrics: dict[str, Any]) -> None:
-        if not self.cfg.enabled or self._csv_writer is None:
+        if not self.cfg.enabled:
             return
-
         csv_row = {k: v for k, v in step_metrics.items() if k in self._csv_keys}
-        self._csv_writer.append(iteration, csv_row)
+        self._requests.put(_CsvRowRequest(iteration=iteration, row=csv_row))
 
-        if check_interval(iteration + 1, self.cfg.interval):
-            self._emit_snapshot(iteration)
+    def emit_snapshot(self, iteration: int, metrics: dict[str, Any], model: Optional[nn.Module]) -> None:
+        """Enqueue a Markdown snapshot for `iteration`, built from a metrics copy
+        trimmed to that iteration and the model snapshot the caller captured for
+        this step. Call only when `snapshot_due` was true for this iteration.
+        """
+        if not self.cfg.enabled:
+            return
+        trimmed_metrics = trim_metrics_to_iteration(metrics, iteration)
+        reports = self._drain_reports()
+        self._requests.put(_SnapshotRequest(
+            iteration=iteration, metrics=trimmed_metrics, model=model, reports=reports,
+        ))
 
     def on_shutdown(self) -> None:
+        self._requests.put(None)
+        self._thread.join()
         if self._csv_writer is not None:
             self._csv_writer.close()
             self._csv_writer = None
 
-    def _emit_snapshot(self, iteration: int) -> None:
-        metrics = self._metrics_getter() if self._metrics_getter else {}
-        model = self._model_getter() if self._model_getter else None
+    def _run(self) -> None:
+        while True:
+            request = self._requests.get()
+            try:
+                if request is None:
+                    return
+                if isinstance(request, _CsvRowRequest):
+                    self._write_csv_row(request)
+                else:
+                    self._write_snapshot(request)
+            finally:
+                self._requests.task_done()
 
+    def _write_csv_row(self, request: _CsvRowRequest) -> None:
+        if self._csv_writer is None:
+            return
+        self._csv_writer.append(request.iteration, request.row)
+
+    def _write_snapshot(self, request: _SnapshotRequest) -> None:
         probe_states = get_probe_states(self._env_config.name) if self._env_config.name else []
-        probe_results = run_probe_states(model, self._env_config, probe_states)
-
-        reports = self._drain_reports()
+        probe_results = run_probe_states(request.model, self._env_config, probe_states)
 
         window = max(10, self.cfg.interval // 10)
         md = render_report(
             run_name=self._run_name,
-            iteration=iteration,
+            iteration=request.iteration,
             backend_name=self._backend_name,
             env_name=self._env_config.name or "unknown",
-            metrics=metrics,
+            metrics=request.metrics,
             probe_results=probe_results,
-            reports=reports,
+            reports=request.reports,
             sparkline_window=window,
         )
 
-        out_path = self._reports_dir / f"report_{iteration:06d}.md"
+        out_path = self._reports_dir / f"report_{request.iteration:06d}.md"
         out_path.write_text(md, encoding="utf-8")
         logger.info(f"\nReporter snapshot written: {out_path}")
 

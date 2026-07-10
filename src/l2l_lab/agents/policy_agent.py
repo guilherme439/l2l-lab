@@ -1,5 +1,6 @@
 from typing import Any, Callable, override
 
+from pettingzoo import AECEnv
 import torch
 
 from l2l_lab.agents.agent import Agent
@@ -23,7 +24,7 @@ class PolicyAgent(Agent):
         self.name = name
 
     @override
-    def choose_action(self, env: Any) -> int:
+    def choose_action(self, env: AECEnv) -> int:
         agent_id = env.agent_selection
         obs = env.observe(agent_id)
         action_mask = obs["action_mask"]

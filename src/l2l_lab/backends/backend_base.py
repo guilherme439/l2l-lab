@@ -1,6 +1,7 @@
 import logging
 import threading
 from abc import ABC, abstractmethod
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Queue
@@ -10,7 +11,7 @@ from l2l_lab.utils.checkpoint import delete_checkpoint_dirs_past, list_checkpoin
 from l2l_lab.utils.common import check_interval
 
 if TYPE_CHECKING:
-    import torch
+    from torch import nn
 
     from l2l_lab.configs.training.training_config import TrainingConfig
 
@@ -23,7 +24,7 @@ class StepResult:
     iteration: int
     metrics: dict[str, Any] = field(default_factory=dict)
     checkpoint_path: Optional[Path] = None
-    eval_model: Optional[torch.nn.Module] = None
+    eval_model: Optional[nn.Module] = None
 
 
 class AlgorithmBackend(ABC):
@@ -63,12 +64,13 @@ class AlgorithmBackend(ABC):
         ...
 
     @abstractmethod
-    def get_eval_model(self) -> torch.nn.Module:
-        """Return an eval-mode snapshot of the currently-training model."""
+    def _get_live_model(self) -> nn.Module:
+        """Return the model as the backend currently holds it, with no copying.
+        Only safe to call from the training thread while it owns the model."""
         ...
 
     @abstractmethod
-    def get_model_from_checkpoint(self, checkpoint_dir: Path) -> torch.nn.Module:
+    def get_model_from_checkpoint(self, checkpoint_dir: Path) -> nn.Module:
         """Load and return an eval-mode model from a training checkpoint directory."""
         ...
 
@@ -119,15 +121,16 @@ class AlgorithmBackend(ABC):
         pass
 
     def configure_checkpointing(
-        self, base_dir: Path, checkpoint_interval: int, eval_intervals: list[int]
+        self, base_dir: Path, checkpoint_interval: int, eval_intervals: list[int], report_interval: int
     ) -> None:
         """Set up checkpoint writing and the cadence at which the training thread
         must snapshot the model. A snapshot is captured on any step that a
-        checkpoint or a training eval will consume, so the consumer can build
-        eval agents from the weights as they were at that step."""
+        checkpoint, a training eval, or a reporting snapshot will consume, so the
+        consumer can build eval agents (or a report) from the weights as they
+        were at that step."""
         self._checkpoint_interval = checkpoint_interval
         self._checkpoint_base_dir = base_dir
-        self._snapshot_intervals = sorted({checkpoint_interval, *eval_intervals})
+        self._snapshot_intervals = sorted({checkpoint_interval, report_interval, *eval_intervals})
 
     def request_stop(self) -> None:
         """Signal the training thread to stop after the current step."""
@@ -162,6 +165,7 @@ class AlgorithmBackend(ABC):
         self.prepare(config)
         self.init_fresh()
         self._starting_iteration = 0
+        self._log_network_summary()
 
     def restore_run(self, config: TrainingConfig, model_dir: Path) -> int:
         self.prepare(config)
@@ -194,7 +198,29 @@ class AlgorithmBackend(ABC):
         return 0
 
     def _needs_snapshot(self, iterations_completed: int) -> bool:
-        """True when an eval or checkpoint at this point will consume a model
-        snapshot. Evaluated on the training thread to decide whether to capture
-        the current weights for this step's `StepResult`."""
+        """True when an eval, checkpoint, or report at this point will consume a
+        model snapshot. Evaluated on the training thread to decide whether to
+        capture the current weights for this step's `StepResult`."""
         return any(check_interval(iterations_completed, interval) for interval in self._snapshot_intervals)
+
+    def _get_eval_model(self) -> nn.Module:
+        """Return an eval-mode, CPU-resident copy of the currently-training model,
+        detached from anything the training thread goes on to mutate. Call this
+        only from the training thread, then hand the copy to other threads."""
+        model_copy = deepcopy(self._get_live_model()).cpu()
+        model_copy.eval()
+        return model_copy
+
+    def _log_network_summary(self) -> None:
+        model = self._get_live_model()
+        if model is None:
+            return
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        bar = "=" * 70
+        sep = "-" * 70
+        logger.info(
+            f"\n{bar}\n\nNetwork architecture\n{sep}\n{model}\n{sep}\n"
+            f"Total parameters:     {total_params:,}\n"
+            f"Trainable parameters: {trainable_params:,}\n{bar}\n"
+        )

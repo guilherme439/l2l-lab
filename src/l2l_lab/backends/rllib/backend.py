@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Iterator, Optional, override
 
 import torch
 from ray.rllib.env.wrappers.pettingzoo_env import PettingZooEnv
+from torch import nn
 from ray.tune.registry import register_env
 
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
@@ -126,13 +127,11 @@ class RLlibBackend(AlgorithmBackend):
         pass
 
     @override
-    def get_eval_model(self) -> torch.nn.Module:
-        model_copy = deepcopy(self._get_backbone()).cpu()
-        model_copy.eval()
-        return model_copy
+    def _get_live_model(self) -> nn.Module:
+        return self._get_backbone()
 
     @override
-    def get_model_from_checkpoint(self, checkpoint_dir: Path) -> torch.nn.Module:
+    def get_model_from_checkpoint(self, checkpoint_dir: Path) -> nn.Module:
         model_dir = checkpoint_dir / "model"
         backbone = torch.load(model_dir / "base_class.pkl", weights_only=False)
         state_dict = load_checkpoint_file(model_dir / "weights.cp")
@@ -200,7 +199,7 @@ class RLlibBackend(AlgorithmBackend):
                     checkpoint_path.mkdir(exist_ok=True)
                     self._writer.enqueue(snapshot, checkpoint_path)
 
-                eval_model = self.get_eval_model() if self._needs_snapshot(iterations_completed) else None
+                eval_model = self._get_eval_model() if self._needs_snapshot(iterations_completed) else None
 
                 self.step_queue.put(StepResult(
                     iteration=current_iteration,
@@ -217,11 +216,11 @@ class RLlibBackend(AlgorithmBackend):
             "network_template_bytes": self._network_template_bytes,
         }
 
-    def _get_backbone(self) -> torch.nn.Module:
+    def _get_backbone(self) -> nn.Module:
         return self.algo.get_module(self._get_policy_name()).backbone
 
     @staticmethod
-    def _pickle_network(model: torch.nn.Module) -> bytes:
+    def _pickle_network(model: nn.Module) -> bytes:
         buf = io.BytesIO()
         torch.save(model, buf)
         return buf.getvalue()

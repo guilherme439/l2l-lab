@@ -1,11 +1,11 @@
 import io
 import math
-from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator, Optional, override
 
 import torch
 from alphazoo import AlphaZoo, AlphaZooRecurrentNet, AlphaZooConfig
+from torch import nn
 from gymnasium.spaces.utils import flatdim
 
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
@@ -146,13 +146,11 @@ class AlphaZooBackend(AlgorithmBackend):
         ]
 
     @override
-    def get_eval_model(self) -> torch.nn.Module:
-        model_copy = deepcopy(self._model).cpu()
-        model_copy.eval()
-        return model_copy
+    def _get_live_model(self) -> nn.Module:
+        return self._model
 
     @override
-    def get_model_from_checkpoint(self, checkpoint_dir: Path) -> torch.nn.Module:
+    def get_model_from_checkpoint(self, checkpoint_dir: Path) -> nn.Module:
         model_dir = checkpoint_dir / "model"
         model = torch.load(model_dir / "base_class.pkl", weights_only=False)
         state_dict = load_checkpoint_file(model_dir / "weights.cp")
@@ -209,7 +207,7 @@ class AlphaZooBackend(AlgorithmBackend):
                     checkpoint_path.mkdir(exist_ok=True)
                     self._writer.enqueue(snapshot, checkpoint_path)
 
-                eval_model = self.get_eval_model() if self._needs_snapshot(iterations_completed) else None
+                eval_model = self._get_eval_model() if self._needs_snapshot(iterations_completed) else None
 
                 self.step_queue.put(StepResult(
                     iteration=current_iteration,
@@ -254,7 +252,7 @@ class AlphaZooBackend(AlgorithmBackend):
     def _checkpoint_payload(self) -> dict[str, Any]:
         return {"network_template_bytes": self._network_template_bytes}
 
-    def _pickle_network(self, model: torch.nn.Module) -> bytes:
+    def _pickle_network(self, model: nn.Module) -> bytes:
         buf = io.BytesIO()
         torch.save(model, buf)
         return buf.getvalue()

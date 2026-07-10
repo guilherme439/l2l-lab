@@ -52,11 +52,15 @@ def init(
         }
 
         run = _wandb_pkg.init(**init_kwargs)
-        
+
         logger.info("")
         if run is None:
             logger.warning("WARNING: wandb: init returned None; skipping")
             return False
+
+        # Evaluations complete out of order with training steps, so they log on
+        # their own x-axis instead of the (monotonically increasing) step used by `log`
+        run.define_metric("evaluations/*", step_metric="eval_iteration")
 
         logger.info(f"wandb: run started (id={run.id}, project={wandb_settings.get('project')})")
         return True
@@ -73,6 +77,20 @@ def log(metrics: dict[str, Any], step: int) -> None:
         _wandb_pkg.log(flat, step=step)
     except Exception as e:
         logger.warning(f"WARNING: wandb: log failed ({e})")
+
+
+def log_evaluations(metrics: dict[str, Any], iteration: int) -> None:
+    """Log evaluation results against the `eval_iteration` axis `init` defined
+    for `evaluations/*`, independent of the training step counter `log` uses.
+    """
+    try:
+        flat = _flatten(metrics)
+        if not flat:
+            return
+        flat["eval_iteration"] = iteration
+        _wandb_pkg.log(flat)
+    except Exception as e:
+        logger.warning(f"WARNING: wandb: log_evaluations failed ({e})")
 
 
 def finish() -> None:

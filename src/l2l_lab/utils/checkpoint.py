@@ -134,14 +134,22 @@ def is_rewind(model_dir: Path, loaded_iteration: int) -> bool:
     return loaded_iteration < latest_iter
 
 
-def trim_metrics_to_iteration(metrics: dict[str, list], target_iteration: int) -> dict[str, list]:
+def trim_metrics_to_iteration(metrics: dict[str, Any], target_iteration: int) -> dict[str, Any]:
+    """Return an independent copy of `metrics` with every series - recursing
+    into nested dicts such as `evaluations` and `memory` - truncated to entries
+    at or before `target_iteration`. All series are length-aligned to
+    `iteration`, so a single cutoff index applies uniformly across the whole
+    structure. Always copies, even when nothing needs trimming, so callers can
+    hand the result to another thread without aliasing the original lists.
+    """
     iterations = metrics.get("iteration", [])
-    if not iterations:
-        return metrics
+    cutoff_idx = next((i for i, it in enumerate(iterations) if it > target_iteration), len(iterations))
+    return _trim_to_index(metrics, cutoff_idx)
 
-    try:
-        cutoff_idx = next(i for i, it in enumerate(iterations) if it > target_iteration)
-    except StopIteration:
-        return metrics
 
-    return {k: v[:cutoff_idx] for k, v in metrics.items()}
+def _trim_to_index(value: Any, cutoff_idx: int) -> Any:
+    if isinstance(value, dict):
+        return {k: _trim_to_index(v, cutoff_idx) for k, v in value.items()}
+    if isinstance(value, list):
+        return value[:cutoff_idx]
+    return value

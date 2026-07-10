@@ -42,9 +42,9 @@ After `pip install -e .`, the package imports as `l2l_lab.*` (e.g. `from l2l_lab
 - `RLlibBackend` (`backends/rllib/backend.py`) - PPO, IMPALA via Ray RLlib
 - `AlphaZooBackend` (`backends/alphazoo/backend.py`) - AlphaZero (optional dep)
 
-Key interface: `setup()`, `start_training()`, `get_eval_model()`, `get_model_from_checkpoint()`, `save_checkpoint()`
+Key interface: `setup()`, `start_training()`, `get_model_from_checkpoint()`, `save_checkpoint()`
 
-Training runs in a daemon thread pushing `StepResult` objects to a metrics queue. The main thread consumes metrics, runs evaluations, saves checkpoints, and generates plots.
+Training runs in a daemon thread pushing `StepResult` objects to a metrics queue. The main thread only distributes work and collects results - it never runs evaluations or reporting inline. Evaluations run on a dedicated `EvalWorker` thread (`l2l_lab.training.eval_worker`); reporting snapshots run on the `Reporter`'s own worker thread. Both receive a CPU-resident model copy the training thread captured via the backend's private `_get_eval_model()` - the only place a model is ever copied off the training thread, keeping eval/report inference free of races with the live, in-training model. The main thread remains the single writer of `Trainer.metrics`, wandb calls, and checkpoint bookkeeping; each worker reports back over its own queue, which the main thread drains without blocking.
 
 ### Iteration numbering
 
@@ -117,7 +117,7 @@ All environments support action masking.
 
 Each entry declares a `player` (`policy`, `alphazero_mcts`, or `traditional_mcts`), an `opponent`, a `games_per_player` count (games played with the player as p0 *and* as p1 - total 2N), and optionally a `search_config_path` (required whenever player or opponent is an mcts kind).
 
-`Evaluator` builds the player/opponent agents from the backend's `get_eval_model()` / `get_model_from_checkpoint()`, drives `Tester.play_games` twice per entry (to alternate positions), and aggregates into a `GameResults`. Results are stored under `metrics["evaluations"][label]` keyed by the auto-derived label (`{player}_vs_{opponent}`). Duplicate labels across both lists raise a config validation error.
+`Evaluator` builds the player/opponent agents from a model snapshot handed to it (the `eval_model` on `StepResult`, captured by the backend once per snapshot-worthy step) and from `get_model_from_checkpoint()`, drives `Tester.play_games` twice per entry (to alternate positions), and aggregates into a `GameResults`. `Evaluator` runs on the `EvalWorker` thread rather than the main thread; its results travel back as an `EvalResult` and get backfilled into `metrics["evaluations"][label]` (keyed by the auto-derived label `{player}_vs_{opponent}`) once merged on the main thread. Duplicate labels across both lists raise a config validation error.
 
 Metrics and graphs are label-agnostic - `graphs.plot_metrics` iterates `metrics["evaluations"]` and renders one chart per label.
 
@@ -155,13 +155,13 @@ Opt-in diagnostic layer, enabled by setting `reporting.enabled: true` in the tra
 
 **Probe states** are env-specific canonical observations registered via `l2l_lab.reporting.register_probe_states(env_name, provider)`. The provider returns `ProbeState` instances each carrying a pre-built observation dict (`{"observation", "action_mask"}`) so they're robust to non-deterministic envs. Only `connect_four` ships with probes in v1; the probes section is omitted from reports for other envs.
 
-**Sample games** are returned directly by `Tester.play_games` via `GameResults.reports` when `reports_to_capture > 0`. `Evaluator._play_balanced` passes `reporting.sample_games_per_eval` as the capture count whenever reporting is enabled, stamps each returned `GameReport` with `(iteration, eval_label, as_position)`, and hands it to `Reporter.add_game_report`. Capture runs on both the `as_p0` and `as_p1` halves of each eval. The Reporter buffers the stamped reports and drains them into the next snapshot.
+**Sample games** are returned directly by `Tester.play_games` via `GameResults.reports` when `reports_to_capture > 0`; `Evaluator` is constructed with `reporting.sample_games_per_eval` as that capture count whenever reporting is enabled. Capture runs on both the `as_p0` and `as_p1` halves of each eval, riding back on the `EvalResult` the `EvalWorker` returns. The trainer stamps each captured `GameReport` with `(iteration, eval_label, as_position)` and hands it to `Reporter.add_game_report`, which buffers it for the next snapshot.
 
-Reporting I/O runs synchronously on the trainer thread. See `src/l2l_lab/reporting/` for the implementation.
+The Reporter runs its own worker thread for all file I/O and probe-state inference, so `on_step` (the per-iteration CSV row) and `emit_snapshot` (a Markdown snapshot) only enqueue work from the main thread and never block it. The trainer calls `emit_snapshot` once every eval in flight as of that snapshot's iteration has completed, passing a metrics copy trimmed to that iteration (`trim_metrics_to_iteration`) and the model snapshot it captured for that step - the same snapshot mechanism the `EvalWorker` consumes. See `src/l2l_lab/reporting/` for the implementation.
 
 ### Weights & Biases (`l2l_lab.utils.wandb`)
 
-Opt-in cloud logging. When active, every per-iteration scalar handed to the trainer (`policy_loss`, `value_loss`, `combined_loss`, `learning_rate`, `replay_buffer_size`, `episode_len_mean`, `weight_max/min/avg`), the nested `memory/*` series, and the nested `evaluations/*` series (only on iterations they actually fire - `None` values are dropped) are streamed to a wandb run via `wandb.log(..., step=iteration)`. `wandb.init` also enables wandb's built-in system monitor, so CPU %, RAM, GPU util, GPU memory, disk, and network metrics are logged automatically every ~15s.
+Opt-in cloud logging. When active, every per-iteration scalar handed to the trainer (`policy_loss`, `value_loss`, `combined_loss`, `learning_rate`, `replay_buffer_size`, `episode_len_mean`, `weight_max/min/avg`) and the nested `memory/*` series are streamed to a wandb run via `wandb.log(..., step=iteration)`. The nested `evaluations/*` series logs separately, through `log_evaluations(..., iteration)`, against a custom `eval_iteration` axis (`run.define_metric("evaluations/*", step_metric="eval_iteration")`, set up in `init`) rather than the training step: evaluations complete asynchronously and can land behind steps already logged, which `wandb.log(..., step=...)` would otherwise silently drop. `None` values are dropped before either call. `wandb.init` also enables wandb's built-in system monitor, so CPU %, RAM, GPU util, GPU memory, disk, and network metrics are logged automatically every ~15s.
 
 Configuration lives outside the training YAML, in `application.yml` at the repo root (gitignored - see `application.example.yml` for the schema):
 
