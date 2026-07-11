@@ -1,5 +1,5 @@
-import io
 import math
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator, Optional, override
 
@@ -38,7 +38,7 @@ class _CheckpointWriter(CheckpointWriter):
         model_dir = path / "model"
         model_dir.mkdir(exist_ok=True)
         CheckpointUtils.atomic_write(model_dir / "weights.cp", lambda temp_path: torch.save(az.get_model_state_dict(), temp_path))
-        CheckpointUtils.atomic_write(model_dir / "base_class.pkl", lambda temp_path: temp_path.write_bytes(snapshot["network_template_bytes"]))
+        CheckpointUtils.atomic_write(model_dir / "base_class.pkl", lambda temp_path: shutil.copyfile(self._backend._network_template_path, temp_path))
 
 
 class AlphaZooBackend(AlgorithmBackend):
@@ -51,7 +51,6 @@ class AlphaZooBackend(AlgorithmBackend):
         self._obs_to_state = None
         self._game = None
         self._az_config: Optional[AlphaZooConfig] = None
-        self._network_template_bytes: Optional[bytes] = None
         self._writer = _CheckpointWriter(self)
 
     @property
@@ -99,7 +98,6 @@ class AlphaZooBackend(AlgorithmBackend):
 
         self._model = self._build_model(config, state_shape, action_space_shape)
         self._initialize_lazy_params(state_shape)
-        self._network_template_bytes = self._pickle_network(self._model)
 
         self._game = make_wrapper(env, env_config.obs_space_format)
 
@@ -250,12 +248,7 @@ class AlphaZooBackend(AlgorithmBackend):
         logger.info(f"\nIteration {iteration}/{total} finished | EpLen: {ep_len:6.1f}\n")
         
     def _checkpoint_payload(self) -> dict[str, Any]:
-        return {"network_template_bytes": self._network_template_bytes}
-
-    def _pickle_network(self, model: nn.Module) -> bytes:
-        buf = io.BytesIO()
-        torch.save(model, buf)
-        return buf.getvalue()
+        return {}
 
     def _initialize_lazy_params(self, state_shape) -> None:
         with torch.no_grad():

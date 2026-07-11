@@ -11,4 +11,4 @@ def test_impala_mlpnet_trains(clean_test_model_dirs) -> None:
     trainer = Trainer(os.path.join(CONFIG_DIR, "impala_mlpnet_tictactoe.yml"))
     trainer.train()
     assert_run_completed(trainer)
-    assert_eval_results(trainer.metrics, "training")
+    assert_eval_results(trainer.load_metrics(), "training")

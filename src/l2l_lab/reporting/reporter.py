@@ -9,12 +9,11 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import yaml
 
-from l2l_lab._utils.checkpoint import CheckpointUtils
 from l2l_lab._utils.common import CommonUtils
+from l2l_lab._utils.csv_writer import MetricsCSVWriter
 from l2l_lab.configs.common.env_config import EnvConfig
 from l2l_lab.configs.training.reporting_config import ReportingConfig
 
-from .csv_writer import MetricsCSVWriter
 from .markdown import StampedReport, render_report
 from .probe_runner import run_probe_states
 from .probe_states import get_probe_states
@@ -25,6 +24,8 @@ logger = logging.getLogger("l2l_lab")
 
 if TYPE_CHECKING:
     from torch import nn
+
+    from l2l_lab.training.metrics_store import MetricsView
 
 _REPORT_SNAPSHOT_PATTERN = re.compile(r"^report_(\d{6})\.md$")
 _ARCHIVED_CONFIG_PATTERN = re.compile(r"^config_(\d{6})\.yaml$")
@@ -39,7 +40,7 @@ class _CsvRowRequest:
 @dataclass
 class _SnapshotRequest:
     iteration: int
-    metrics: dict[str, Any]
+    view: MetricsView
     model: Optional[nn.Module]
     reports: list[StampedReport]
 
@@ -118,6 +119,11 @@ class Reporter:
         the caller knows to capture a model snapshot and call `emit_snapshot`."""
         return self.cfg.enabled and CommonUtils.check_interval(iterations_completed, self.cfg.interval)
 
+    @property
+    def sparkline_window(self) -> int:
+        """Number of trailing points a snapshot renders per scalar series."""
+        return max(10, self.cfg.interval // 10)
+
     def on_setup(self, starting_iteration: int = 0) -> None:
         if not self.cfg.enabled:
             return
@@ -136,17 +142,16 @@ class Reporter:
         csv_row = {k: v for k, v in step_metrics.items() if k in self._csv_keys}
         self._requests.put(_CsvRowRequest(iteration=iteration, row=csv_row))
 
-    def emit_snapshot(self, iteration: int, metrics: dict[str, Any], model: Optional[nn.Module]) -> None:
-        """Enqueue a Markdown snapshot for `iteration`, built from a metrics copy
-        trimmed to that iteration and the model snapshot the caller captured for
+    def emit_snapshot(self, iteration: int, view: MetricsView, model: Optional[nn.Module]) -> None:
+        """Enqueue a Markdown snapshot for `iteration`, built from a metrics view
+        the caller trimmed to that iteration and the model snapshot captured for
         this step. Call only when `snapshot_due` was true for this iteration.
         """
         if not self.cfg.enabled:
             return
-        trimmed_metrics = CheckpointUtils.trim_metrics_to_iteration(metrics, iteration)
         reports = self._drain_reports()
         self._requests.put(_SnapshotRequest(
-            iteration=iteration, metrics=trimmed_metrics, model=model, reports=reports,
+            iteration=iteration, view=view, model=model, reports=reports,
         ))
 
     def on_shutdown(self) -> None:
@@ -178,16 +183,16 @@ class Reporter:
         probe_states = get_probe_states(self._env_config.name) if self._env_config.name else []
         probe_results = run_probe_states(request.model, self._env_config, probe_states)
 
-        window = max(10, self.cfg.interval // 10)
         md = render_report(
             run_name=self._run_name,
             iteration=request.iteration,
             backend_name=self._backend_name,
             env_name=self._env_config.name or "unknown",
-            metrics=request.metrics,
+            scalars=request.view.scalars,
+            evaluations=request.view.evaluations,
             probe_results=probe_results,
             reports=request.reports,
-            sparkline_window=window,
+            sparkline_window=self.sparkline_window,
         )
 
         out_path = self._reports_dir / f"report_{request.iteration:06d}.md"

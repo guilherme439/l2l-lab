@@ -14,7 +14,7 @@ l2l-lab/
 ├── src/l2l_lab/            # the package (all Python code lives here)
 │   ├── cli.py              # CLI entry point; also exposed as the `l2l-lab` script
 │   ├── testing/            # tester.py (YAML-driven manual testing flow)
-│   ├── training/           # trainer.py, evaluator.py
+│   ├── training/           # trainer.py, evaluator.py, metrics_store.py
 │   ├── reporting/          # diagnostic CSV + Markdown snapshot writer
 │   ├── _utils/              # internal-only helpers: CommonUtils, GraphsUtils, CheckpointUtils, SearchUtils, WandbUtils, ...
 │   ├── agents/  backends/  envs/  neural_networks/  rllib/
@@ -44,7 +44,7 @@ After `pip install -e .`, the package imports as `l2l_lab.*` (e.g. `from l2l_lab
 
 Key interface: `setup()`, `start_training()`, `get_model_from_checkpoint()`, `save_checkpoint()`
 
-Training runs in a daemon thread pushing `StepResult` objects to a metrics queue. The main thread only distributes work and collects results - it never runs evaluations or reporting inline. Evaluations run on a dedicated `EvalWorker` thread (`l2l_lab.training.eval_worker`); reporting snapshots run on the `Reporter`'s own worker thread. Both receive a CPU-resident model copy the training thread captured via the backend's private `_get_eval_model()` - the only place a model is ever copied off the training thread, keeping eval/report inference free of races with the live, in-training model. The main thread remains the single writer of `Trainer.metrics`, wandb calls, and checkpoint bookkeeping; each worker reports back over its own queue, which the main thread drains without blocking.
+Training runs in a daemon thread pushing `StepResult` objects to a metrics queue. The main thread only distributes work and collects results - it never runs evaluations or reporting inline. Evaluations run on a dedicated `EvalWorker` thread (`l2l_lab.training.eval_worker`); reporting snapshots run on the `Reporter`'s own worker thread. Both receive a CPU-resident model copy the training thread captured via the backend's private `_get_eval_model()` - the only place a model is ever copied off the training thread, keeping eval/report inference free of races with the live, in-training model. The main thread remains the single writer of the on-disk metrics store (`l2l_lab.training.metrics_store.MetricsStore`), wandb calls, and checkpoint bookkeeping; each worker reports back over its own queue, which the main thread drains without blocking.
 
 ### Iteration numbering
 
@@ -54,7 +54,7 @@ Iteration numbers are 0-indexed everywhere they surface: a run of `total_iterati
 
 Interval-gated actions (checkpoints, training/checkpoint evals, info logs, progress plots, report snapshots) fire when `iterations_completed` is a positive multiple of their interval, so with an interval of `K` the first firing is after exactly `K` iterations and every `K` thereafter.
 
-Every persisted label - checkpoint directory names (`models/{name}/checkpoints/{current_iteration}/`), `metrics["iteration"]` values, report CSV rows and Markdown snapshots, and wandb steps - uses the 0-indexed `current_iteration`. A checkpoint written on the firing for interval `K` is therefore named `K - 1`, `2K - 1`, and so on; a checkpoint directory named `m` holds the model after `m + 1` completed iterations.
+Every persisted label - checkpoint directory names (`models/{name}/checkpoints/{current_iteration}/`), the metrics store's `iteration` column, report CSV rows and Markdown snapshots, and wandb steps - uses the 0-indexed `current_iteration`. A checkpoint written on the firing for interval `K` is therefore named `K - 1`, `2K - 1`, and so on; a checkpoint directory named `m` holds the model after `m + 1` completed iterations.
 
 On resume, `restore` returns the directory name `m` it loaded from, and training continues at `starting_iteration = m + 1`. A run whose latest checkpoint equals `total_iterations - 1` is complete, and resuming it does nothing.
 
@@ -117,9 +117,9 @@ All environments support action masking.
 
 Each entry declares a `player` (`policy`, `alphazero_mcts`, or `traditional_mcts`), an `opponent`, a `games_per_player` count (games played with the player as p0 *and* as p1 - total 2N), and optionally a `search_config_path` (required whenever player or opponent is an mcts kind).
 
-`Evaluator` builds the player/opponent agents from a model snapshot handed to it (the `eval_model` on `StepResult`, captured by the backend once per snapshot-worthy step) and from `get_model_from_checkpoint()`, drives `Tester.play_games` twice per entry (to alternate positions), and aggregates into a `GameResults`. `Evaluator` runs on the `EvalWorker` thread rather than the main thread; its results travel back as an `EvalResult` and get backfilled into `metrics["evaluations"][label]` (keyed by the auto-derived label `{player}_vs_{opponent}`) once merged on the main thread. Duplicate labels across both lists raise a config validation error.
+`Evaluator` builds the player/opponent agents from a model snapshot handed to it (the `eval_model` on `StepResult`, captured by the backend once per snapshot-worthy step) and from `get_model_from_checkpoint()`, drives `Tester.play_games` twice per entry (to alternate positions), and aggregates into a `GameResults`. `Evaluator` runs on the `EvalWorker` thread rather than the main thread; its results travel back as an `EvalResult` and get recorded into the metrics store (`MetricsStore.record_eval`, keyed by the auto-derived label `{player}_vs_{opponent}`) once merged on the main thread. Duplicate labels across both lists raise a config validation error.
 
-Metrics and graphs are label-agnostic - `graphs.plot_metrics` iterates `metrics["evaluations"]` and renders one chart per label.
+Metrics and graphs are label-agnostic - `GraphsUtils.plot_evaluations` iterates the metrics view's evaluation series and renders one chart per label.
 
 ### Configuration
 
@@ -137,19 +137,25 @@ See [`configuration.md`](configuration.md) for the full field-by-field reference
 
 ### Checkpoints
 
-Saved to `models/{name}/checkpoints/{iteration}/` containing model weights, RLlib algorithm state, and metrics history. Checkpoints can be loaded as frozen opponent policies for multi-policy training or as agents for evaluation.
+Saved to `models/{name}/checkpoints/{iteration}/` containing model weights and RLlib algorithm state. Checkpoints can be loaded as frozen opponent policies for multi-policy training or as agents for evaluation. Metrics history lives separately under `models/{name}/metrics/` (see Metrics persistence).
 
-The `model/` subdirectory (`weights.cp` state dict + `base_class.pkl` pickled architecture) is l2l-lab's own portable, shareable model artifact, written the same way by every backend: architecture plus weights, loadable on its own via `get_model_from_checkpoint` for evaluation or for handing a trained net to someone else, independent of any backend's resume state. (The pickle-based `model/` format is a stopgap; moving it to a portable format such as safetensors or TorchScript is a planned l2l-lab improvement.)
+The `model/` subdirectory (`weights.cp` state dict + `base_class.pkl` pickled architecture) is l2l-lab's own portable, shareable model artifact, written the same way by every backend: architecture plus weights, loadable on its own via `get_model_from_checkpoint` for evaluation or for handing a trained net to someone else, independent of any backend's resume state. The architecture is pickled once per run to `models/{name}/network_template.pkl` when checkpointing is configured, and each checkpoint's `base_class.pkl` is a copy of that template. (The pickle-based `model/` format is a stopgap; moving it to a portable format such as safetensors or TorchScript is a planned l2l-lab improvement.)
 
 Each backend writes its own resume state alongside `model/`: the RLlib algorithm state for the rllib backend, or for the `alphazoo` backend the flat `optimizer.pt` / `scheduler.pt` / `replay_buffer.pt` / `metadata.json` that `AlphaZoo.save(save_model=False)` produces. Those resume files exist only to continue training in place. `_CheckpointWriter` fills `model/weights.cp` from `AlphaZoo.get_model_state_dict()` and writes the resume state via `AlphaZoo.save`.
 
-Individual files are written atomically by `CheckpointUtils.atomic_write` (`l2l_lab._utils.checkpoint`): it serializes into l2l-lab's own temp directory (`$XDG_CACHE_HOME/l2l_lab/tmp`, else `~/.cache/l2l_lab/tmp`) and then `os.replace`s the result onto its destination. The rename is atomic when the temp directory and the destination share a filesystem; when they do not, `os.replace` raises `EXDEV` and the write falls back to a non-atomic move with a warning. The checkpoint directory as a whole is not atomic - it is filled file by file, so an interrupted save leaves a directory holding some complete files and missing others, which `restore` handles by loading an earlier checkpoint. `trainer.py` writes `training.cp` and both backends' `_CheckpointWriter`s write `model/weights.cp` and `base_class.pkl` this way; the `alphazoo` package writes its own resume files atomically through the same temp-then-rename scheme under `~/.cache/alphazoo/tmp`.
+Individual files are written atomically by `CheckpointUtils.atomic_write` (`l2l_lab._utils.checkpoint`): it serializes into l2l-lab's own temp directory (`$XDG_CACHE_HOME/l2l_lab/tmp`, else `~/.cache/l2l_lab/tmp`) and then `os.replace`s the result onto its destination. The rename is atomic when the temp directory and the destination share a filesystem; when they do not, `os.replace` raises `EXDEV` and the write falls back to a non-atomic move with a warning. The checkpoint directory as a whole is not atomic - it is filled file by file, so an interrupted save leaves a directory holding some complete files and missing others, which `restore` handles by loading an earlier checkpoint. Both backends' `_CheckpointWriter`s write `model/weights.cp` and `base_class.pkl` this way, and the metrics store's `scalars.csv` / `evals.csv` are flushed per append; the `alphazoo` package writes its own resume files atomically through the same temp-then-rename scheme under `~/.cache/alphazoo/tmp`.
+
+### Metrics persistence (`l2l_lab.training.metrics_store`)
+
+`MetricsStore` streams metrics to `models/{name}/metrics/` so the full history never accumulates in memory. Dense per-iteration scalars append to `scalars.csv` (one row per iteration, nested groups such as `memory` flattened to `parent.child` columns); sparse evaluation results append to `evals.csv` (one row per iteration/label/position) and are mirrored in a compact in-memory structure. The main thread is the store's only writer.
+
+Readers call `load_view` to reconstruct a `MetricsView` on demand: it streams `scalars.csv`, optionally downsampling to at most `_PLOT_MAX_POINTS` evenly-spaced points for plotting or keeping only a trailing window for a report snapshot, and pairs the scalars with the sparse evaluation points. Peak reader memory stays bounded regardless of run length. On resume the store truncates both files to the loaded iteration (dropping any rows a crash left past the last checkpoint) and reloads the evaluation points; a rewind truncates the same way. `GraphsUtils.plot_metrics` and the Markdown reporter both consume a `MetricsView` rather than a live dict, and tests read the history through `Trainer.load_metrics()`.
 
 ### Reporting (`l2l_lab.reporting`)
 
 Opt-in diagnostic layer, enabled by setting `reporting.enabled: true` in the training YAML. When enabled, the trainer writes LLM-friendly artifacts to `models/{name}/reports/`:
 
-- `training.csv` - one row per iteration, appended live. Only flat scalars from `Trainer.metrics` are persisted; the header is locked at first write, so schema stays stable across resumes.
+- `training.csv` - one row per iteration, appended live. Only flat scalars from each step's metrics are persisted; the header is locked at first write, so schema stays stable across resumes.
 - `report_{iter:06d}.md` - full Markdown snapshot every `reporting.interval` iterations. Sections (omitted entirely when empty): header, scalar metrics with sparklines, evaluations with per-position win rates, env-registered probe states with policy distribution + value, and sample games.
 - `config.yaml` - verbatim copy of the originating training YAML. On resume, if the current YAML differs structurally (canonical-YAML SHA-256 diff), an additional `config_{iter:06d}.yaml` is written - `config.yaml` is never overwritten.
 
@@ -157,7 +163,7 @@ Opt-in diagnostic layer, enabled by setting `reporting.enabled: true` in the tra
 
 **Sample games** are returned directly by `Tester.play_games` via `GameResults.reports` when `reports_to_capture > 0`; `Evaluator` is constructed with `reporting.sample_games_per_eval` as that capture count whenever reporting is enabled. Capture runs on both the `as_p0` and `as_p1` halves of each eval, riding back on the `EvalResult` the `EvalWorker` returns. The trainer stamps each captured `GameReport` with `(iteration, eval_label, as_position)` and hands it to `Reporter.add_game_report`, which buffers it for the next snapshot.
 
-The Reporter runs its own worker thread for all file I/O and probe-state inference, so `on_step` (the per-iteration CSV row) and `emit_snapshot` (a Markdown snapshot) only enqueue work from the main thread and never block it. The trainer calls `emit_snapshot` once every eval in flight as of that snapshot's iteration has completed, passing a metrics copy trimmed to that iteration (`trim_metrics_to_iteration`) and the model snapshot it captured for that step - the same snapshot mechanism the `EvalWorker` consumes. See `src/l2l_lab/reporting/` for the implementation.
+The Reporter runs its own worker thread for all file I/O and probe-state inference, so `on_step` (the per-iteration CSV row) and `emit_snapshot` (a Markdown snapshot) only enqueue work from the main thread and never block it. The trainer calls `emit_snapshot` once every eval in flight as of that snapshot's iteration has completed, passing a `MetricsView` the store built for that iteration (trailing window of scalars plus evaluation points up to it) and the model snapshot it captured for that step - the same snapshot mechanism the `EvalWorker` consumes. See `src/l2l_lab/reporting/` for the implementation.
 
 ### Weights & Biases (`l2l_lab._utils.wandb`)
 

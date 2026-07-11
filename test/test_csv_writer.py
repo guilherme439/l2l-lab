@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from l2l_lab.reporting.csv_writer import MetricsCSVWriter
+from l2l_lab._utils.csv_writer import MetricsCSVWriter
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:

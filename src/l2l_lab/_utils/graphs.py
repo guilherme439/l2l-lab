@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import matplotlib
 matplotlib.use("Agg")
@@ -8,6 +8,9 @@ from matplotlib.ticker import MultipleLocator
 import logging
 
 logger = logging.getLogger("l2l_lab")
+
+if TYPE_CHECKING:
+    from l2l_lab.training.metrics_store import EvalSeries, MetricsView
 
 
 class GraphsUtils:
@@ -299,51 +302,51 @@ class GraphsUtils:
         plt.close(fig)
 
     @staticmethod
-    def plot_evaluations(eval_dir: Path, metrics: dict[str, Any], split_interval: int) -> None:
-        iterations = metrics.get("iteration", [])
-        evaluations = metrics.get("evaluations", {})
+    def plot_evaluations(
+        eval_dir: Path, evaluations: dict[str, dict[str, EvalSeries]], split_interval: int
+    ) -> None:
         titles_by_type = {
             "training": "Training Eval",
             "checkpoint": "Checkpoint Eval",
         }
         positions = (("as_p0", "as P0"), ("as_p1", "as P1"))
         for eval_type, prefix in titles_by_type.items():
-            for label, bucket in evaluations.get(eval_type, {}).items():
+            for label, series in evaluations.get(eval_type, {}).items():
                 for position_key, position_label in positions:
-                    sub = bucket.get(position_key, {})
-                    wins = sub.get("wins", [])
-                    losses = sub.get("losses", [])
-                    draws = sub.get("draws", [])
-                    if not GraphsUtils._has_valid_data(wins):
+                    points = series.as_p0 if position_key == "as_p0" else series.as_p1
+                    if len(points) < 2:
                         continue
                     GraphsUtils._plot_wld_stacked_split(
-                        eval_dir, iterations,
-                        wins, losses, draws,
+                        eval_dir,
+                        [point.iteration for point in points],
+                        [point.wins for point in points],
+                        [point.losses for point in points],
+                        [point.draws for point in points],
                         title_base=f"{prefix}: {label} ({position_label})",
                         filename_base=f"eval_{label}_{position_key}.png",
                         split_interval=split_interval,
                     )
 
     @staticmethod
-    def plot_metrics(graphs_dir: Path, metrics: dict[str, Any], eval_graph_split: int = 500, plot_memory: bool = True) -> None:
-        iterations = metrics.get("iteration", [])
-        if not iterations:
+    def plot_metrics(graphs_dir: Path, view: MetricsView, eval_graph_split: int = 500, plot_memory: bool = True) -> None:
+        scalars = view.scalars
+        if not scalars.get("iteration"):
             return
 
         logger.info("\n\nPlotting...")
-        GraphsUtils.plot_training_overview(graphs_dir, metrics)
-        GraphsUtils.plot_loss_breakdown(graphs_dir, metrics)
-        GraphsUtils.plot_policy_health(graphs_dir, metrics)
-        GraphsUtils.plot_learning_rate(graphs_dir, metrics)
-        GraphsUtils.plot_weight_stats(graphs_dir, metrics)
+        GraphsUtils.plot_training_overview(graphs_dir, scalars)
+        GraphsUtils.plot_loss_breakdown(graphs_dir, scalars)
+        GraphsUtils.plot_policy_health(graphs_dir, scalars)
+        GraphsUtils.plot_learning_rate(graphs_dir, scalars)
+        GraphsUtils.plot_weight_stats(graphs_dir, scalars)
         if plot_memory:
-            GraphsUtils.plot_memory_usage(graphs_dir, metrics)
+            GraphsUtils.plot_memory_usage(graphs_dir, scalars)
 
-        has_icm = GraphsUtils._has_valid_data(metrics.get("intrinsic_reward_mean", []))
+        has_icm = GraphsUtils._has_valid_data(scalars.get("intrinsic_reward_mean", []))
         if has_icm:
-            GraphsUtils.plot_icm_dashboard(graphs_dir, metrics)
+            GraphsUtils.plot_icm_dashboard(graphs_dir, scalars)
 
-        GraphsUtils.plot_evaluations(graphs_dir / "evaluations", metrics, eval_graph_split)
+        GraphsUtils.plot_evaluations(graphs_dir / "evaluations", view.evaluations, eval_graph_split)
 
     @staticmethod
     def _filter_none(iterations: list[int], values: list[Optional[float]]) -> tuple[list[int], list[float]]:

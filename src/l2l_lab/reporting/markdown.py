@@ -1,9 +1,12 @@
 import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from .types import GameReport
+
+if TYPE_CHECKING:
+    from l2l_lab.training.metrics_store import EvalSeries
 
 _SPARK_CHARS = "▁▂▃▄▅▆▇█"
 
@@ -22,7 +25,8 @@ def render_report(
     iteration: int,
     backend_name: str,
     env_name: str,
-    metrics: dict[str, Any],
+    scalars: dict[str, Any],
+    evaluations: dict[str, dict[str, EvalSeries]],
     probe_results: list[dict[str, Any]],
     reports: list[StampedReport],
     sparkline_window: int,
@@ -35,11 +39,11 @@ def render_report(
     parts: list[str] = []
     parts.append(_render_header(run_name, iteration, backend_name, env_name))
 
-    scalar_section = _render_scalar_metrics(metrics, sparkline_window)
+    scalar_section = _render_scalar_metrics(scalars, sparkline_window)
     if scalar_section:
         parts.append(scalar_section)
 
-    eval_section = _render_evaluations(metrics)
+    eval_section = _render_evaluations(evaluations)
     if eval_section:
         parts.append(eval_section)
 
@@ -119,44 +123,26 @@ def _render_scalar_metrics(metrics: dict[str, Any], window: int) -> str:
     return "## Scalar metrics\n" + "\n".join(lines)
 
 
-def _render_evaluations(metrics: dict[str, Any]) -> str:
-    evaluations = metrics.get("evaluations")
-    if not isinstance(evaluations, dict) or not evaluations:
-        return ""
-
+def _render_evaluations(evaluations: dict[str, dict[str, EvalSeries]]) -> str:
     headings = {"training": "Training Evals", "checkpoint": "Checkpoint Evals"}
     sections: list[str] = []
     for eval_type, heading in headings.items():
-        type_buckets = evaluations.get(eval_type)
-        if not isinstance(type_buckets, dict) or not type_buckets:
+        series_by_label = evaluations.get(eval_type)
+        if not series_by_label:
             continue
 
         lines: list[str] = []
-        for label in sorted(type_buckets.keys()):
-            bucket = type_buckets[label]
-            if not isinstance(bucket, dict):
-                continue
-
+        for label in sorted(series_by_label.keys()):
+            series = series_by_label[label]
             eval_lines: list[str] = []
-            for position in ("as_p0", "as_p1"):
-                sub = bucket.get(position)
-                if not isinstance(sub, dict):
+            for position, points in (("as_p0", series.as_p0), ("as_p1", series.as_p1)):
+                if not points:
                     continue
-                wins = sub.get("wins", []) or []
-                losses = sub.get("losses", []) or []
-                draws = sub.get("draws", []) or []
-
-                latest_w = _latest_non_none(wins)
-                latest_l = _latest_non_none(losses)
-                latest_d = _latest_non_none(draws)
-                if latest_w is None and latest_l is None and latest_d is None:
-                    continue
-
-                total = (latest_w or 0) + (latest_l or 0) + (latest_d or 0)
-                win_rate = (latest_w or 0) / total if total > 0 else 0.0
-
+                latest = points[-1]
+                total = latest.wins + latest.losses + latest.draws
+                win_rate = latest.wins / total if total > 0 else 0.0
                 eval_lines.append(
-                    f"  - {position}: {latest_w or 0}W/{latest_l or 0}L/{latest_d or 0}D"
+                    f"  - {position}: {latest.wins}W/{latest.losses}L/{latest.draws}D"
                     f" (win_rate={win_rate:.1%})"
                 )
 
@@ -228,13 +214,6 @@ def _render_sample_games(reports: list[StampedReport]) -> str:
         lines.append("")
 
     return "## Sample games\n" + "\n".join(lines).rstrip()
-
-
-def _latest_non_none(values: list[Any]) -> Optional[int]:
-    for v in reversed(values):
-        if v is not None:
-            return v
-    return None
 
 
 def _fmt(x: Optional[float]) -> str:

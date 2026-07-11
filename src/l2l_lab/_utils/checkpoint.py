@@ -90,22 +90,8 @@ class CheckpointUtils:
         return model_dir / "checkpoints" / str(max(iterations))
 
     @staticmethod
-    def get_training_checkpoint_path(model_dir: Path, iteration: Optional[int] = None) -> Optional[Path]:
-        checkpoint_dir = CheckpointUtils.get_checkpoint_dir(model_dir, iteration)
-        if checkpoint_dir is None:
-            return None
-        return checkpoint_dir / "training.cp"
-
-    @staticmethod
     def get_latest_checkpoint_dir(model_dir: Path) -> Optional[Path]:
         return CheckpointUtils.get_checkpoint_dir(model_dir, iteration=None)
-
-    @staticmethod
-    def load_trainer_checkpoint(model_dir: Path, iteration: Optional[int] = None) -> Optional[dict[str, Any]]:
-        cp_path = CheckpointUtils.get_training_checkpoint_path(model_dir, iteration)
-        if cp_path is None or not cp_path.exists():
-            return None
-        return CheckpointUtils.load_checkpoint_file(cp_path)
 
     @staticmethod
     def list_checkpoint_iterations_past(model_dir: Path, iteration: int) -> list[int]:
@@ -136,24 +122,3 @@ class CheckpointUtils:
         except ValueError:
             return False
         return loaded_iteration < latest_iter
-
-    @staticmethod
-    def trim_metrics_to_iteration(metrics: dict[str, Any], target_iteration: int) -> dict[str, Any]:
-        """Return an independent copy of `metrics` with every series - recursing
-        into nested dicts such as `evaluations` and `memory` - truncated to entries
-        at or before `target_iteration`. All series are length-aligned to
-        `iteration`, so a single cutoff index applies uniformly across the whole
-        structure. Always copies, even when nothing needs trimming, so callers can
-        hand the result to another thread without aliasing the original lists.
-        """
-        iterations = metrics.get("iteration", [])
-        cutoff_idx = next((i for i, it in enumerate(iterations) if it > target_iteration), len(iterations))
-        return CheckpointUtils._trim_to_index(metrics, cutoff_idx)
-
-    @staticmethod
-    def _trim_to_index(value: Any, cutoff_idx: int) -> Any:
-        if isinstance(value, dict):
-            return {k: CheckpointUtils._trim_to_index(v, cutoff_idx) for k, v in value.items()}
-        if isinstance(value, list):
-            return value[:cutoff_idx]
-        return value

@@ -3,7 +3,6 @@ and runs its own `Trainer`, then calls these to check the outcome."""
 
 import shutil
 from pathlib import Path
-from typing import Any
 
 _MODELS_DIR = Path("models")
 
@@ -23,20 +22,18 @@ def checkpoint_iterations(run_name: str) -> set[int]:
 
 def assert_run_completed(trainer) -> None:
     expected_iterations = trainer.config.backend.algorithm.total_iterations
-    iterations = trainer.metrics["iteration"]
+    iterations = trainer.load_metrics().scalars["iteration"]
     assert len(iterations) == expected_iterations, (
         f"expected {expected_iterations} iterations, got {len(iterations)}: {iterations}"
     )
     assert checkpoint_iterations(trainer.config.name), "no checkpoint was written"
 
 
-def assert_eval_results(metrics: dict[str, Any], category: str) -> None:
-    buckets = metrics.get("evaluations", {}).get(category, {})
-    assert buckets, f"no '{category}' evaluations were recorded"
+def assert_eval_results(view, category: str) -> None:
+    series_by_label = view.evaluations.get(category, {})
+    assert series_by_label, f"no '{category}' evaluations were recorded"
     has_result = any(
-        value is not None
-        for bucket in buckets.values()
-        for position in ("as_p0", "as_p1")
-        for value in bucket.get(position, {}).get("wins", [])
+        series.as_p0 or series.as_p1
+        for series in series_by_label.values()
     )
     assert has_result, f"'{category}' evaluations recorded no game results"

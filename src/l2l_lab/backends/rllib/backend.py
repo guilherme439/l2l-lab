@@ -1,4 +1,4 @@
-import io
+import shutil
 from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator, Optional, override
@@ -33,7 +33,7 @@ class _CheckpointWriter(CheckpointWriter):
         model_dir = path / "model"
         model_dir.mkdir(exist_ok=True)
         CheckpointUtils.atomic_write(model_dir / "weights.cp", lambda temp_path: torch.save(snapshot["model_state_dict"], temp_path))
-        CheckpointUtils.atomic_write(model_dir / "base_class.pkl", lambda temp_path: temp_path.write_bytes(snapshot["network_template_bytes"]))
+        CheckpointUtils.atomic_write(model_dir / "base_class.pkl", lambda temp_path: shutil.copyfile(self._backend._network_template_path, temp_path))
         self._backend.algo.save_to_path(str((path / "algo").absolute()))
 
 
@@ -46,7 +46,6 @@ class RLlibBackend(AlgorithmBackend):
         self._config: Optional[TrainingConfig] = None
         self._input_shape: Optional[tuple] = None
         self._num_actions: Optional[int] = None
-        self._network_template_bytes: Optional[bytes] = None
         self._writer = _CheckpointWriter(self)
 
     @property
@@ -108,7 +107,6 @@ class RLlibBackend(AlgorithmBackend):
         logger.info(f"\nBuilding {config.backend.algorithm.name.upper()} algorithm...\n")
         self.algo = rllib_config.build_algo()
         self.algo_trainer.algo = self.algo
-        self._network_template_bytes = self._pickle_network(self._get_backbone())
 
         self._total_iterations = config.backend.algorithm.total_iterations
 
@@ -211,19 +209,10 @@ class RLlibBackend(AlgorithmBackend):
             self.step_queue.put(None)
 
     def _capture_snapshot(self) -> dict[str, Any]:
-        return {
-            "model_state_dict": deepcopy(self._get_backbone().state_dict()),
-            "network_template_bytes": self._network_template_bytes,
-        }
+        return {"model_state_dict": deepcopy(self._get_backbone().state_dict())}
 
     def _get_backbone(self) -> nn.Module:
         return self.algo.get_module(self._get_policy_name()).backbone
-
-    @staticmethod
-    def _pickle_network(model: nn.Module) -> bytes:
-        buf = io.BytesIO()
-        torch.save(model, buf)
-        return buf.getvalue()
 
     @override
     def print_step_info(self, iteration: int, metrics: dict[str, Any]) -> None:

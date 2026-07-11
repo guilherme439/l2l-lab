@@ -4,8 +4,6 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-import numpy as np
-import torch
 from torch import nn
 
 from l2l_lab._utils.checkpoint import CheckpointUtils
@@ -21,6 +19,7 @@ from l2l_lab.reporting import Reporter
 from l2l_lab.testing.tester import GameResults
 from l2l_lab.training.eval_worker import EvalRequest, EvalResult, EvalWorker
 from l2l_lab.training.evaluator import Evaluator
+from l2l_lab.training.metrics_store import MetricsStore, MetricsView
 import logging
 
 logger = logging.getLogger("l2l_lab")
@@ -28,6 +27,7 @@ logger = logging.getLogger("l2l_lab")
 MODELS_DIR = Path("models")
 
 _DESTRUCTIVE_ABORT_WAIT_SECONDS = 30
+_PLOT_MAX_POINTS = 2000
 
 
 class Trainer:
@@ -43,7 +43,7 @@ class Trainer:
             self.config.evaluation, self.backend, self.config.env, self.config.network,
             reports_to_capture=reports_to_capture,
         )
-        self.metrics: dict[str, Any] = {}
+        self._metrics_store: Optional[MetricsStore] = None
         self.current_model_dir: Optional[Path] = None
         self.reporter: Optional[Reporter] = None
         self.eval_worker: Optional[EvalWorker] = None
@@ -75,8 +75,6 @@ class Trainer:
                 f"{end}"
             )
 
-        self._init_metrics()
-
         if cfg.common.plot_memory:
             self._memory_sampler = MemorySampler()
 
@@ -90,13 +88,14 @@ class Trainer:
             self._is_rewind = CheckpointUtils.is_rewind(self.current_model_dir, loaded_iteration)
             if self._is_rewind:
                 self._clear_rewinded_iterations(loaded_iteration, _DESTRUCTIVE_ABORT_WAIT_SECONDS)
-            self._load_trainer_checkpoint(self.current_model_dir, loaded_iteration)
+            resume_from = loaded_iteration
             starting_iteration = loaded_iteration + 1
         else:
             if model_dir.exists():
                 self._clear_existing_model_dir(model_dir, _DESTRUCTIVE_ABORT_WAIT_SECONDS)
 
             self._setup_model_dir(model_dir)
+            resume_from = None
             starting_iteration = 0
             self.backend.new_run(cfg, self.current_model_dir)
 
@@ -108,6 +107,7 @@ class Trainer:
         )
 
         self._setup_reporter(cfg, starting_iteration)
+        self._setup_metrics_store(resume=backend_cfg.continue_training, truncate_to=resume_from)
 
         self._wandb_enabled = WandbUtils.init(
             run_name=cfg.name,
@@ -136,38 +136,26 @@ class Trainer:
         with ExceptionHandler(self._graceful_shutdown):
             self._run_training_loop()
 
-    def plot_progress(self, plot_memory: bool = True) -> None:
-        if not self.metrics.get("iteration"):
-            logger.info("No metrics to plot!")
-            return
+    def load_metrics(self) -> MetricsView:
+        """Read the full persisted metrics history back into memory."""
+        if self._metrics_store is None:
+            raise RuntimeError("Metrics store is not initialized.")
+        return self._metrics_store.load_view()
 
+    def plot_progress(self, plot_memory: bool = True) -> None:
+        if self._metrics_store is None:
+            raise RuntimeError("Metrics store is not initialized.")
         if self.current_model_dir is None:
             raise RuntimeError("No model directory.")
 
-        graphs_dir = self.current_model_dir / "graphs"
-        GraphsUtils.plot_metrics(graphs_dir, self.metrics, self.config.common.eval_graph_split, plot_memory=plot_memory)
-        logger.info(f"\n\n📊 Graphs saved to: {graphs_dir}\n\n")
-
-    def _save_trainer_checkpoint(self, checkpoint_dir: Path, iteration: int) -> None:
-        payload = {
-            "iteration": iteration,
-            "metrics": CheckpointUtils.trim_metrics_to_iteration(self.metrics, iteration),
-            "backend": self.backend.name,
-        }
-        CheckpointUtils.atomic_write(checkpoint_dir / "training.cp", lambda temp_path: torch.save(payload, temp_path))
-        logger.info(f"\n  [Trainer checkpoint saved: iter {iteration}]\n")
-
-    def _load_trainer_checkpoint(self, model_dir: Path, loaded_iteration: int) -> None:
-        cp_path = CheckpointUtils.get_training_checkpoint_path(model_dir, loaded_iteration)
-        if cp_path is None or not cp_path.exists():
+        view = self._metrics_store.load_view(max_points=_PLOT_MAX_POINTS)
+        if not view.scalars.get("iteration"):
+            logger.info("No metrics to plot!")
             return
-        data = CheckpointUtils.load_checkpoint_file(cp_path)
-        metrics = data.get("metrics") or {}
-        metrics = CheckpointUtils.trim_metrics_to_iteration(metrics, loaded_iteration)
-        if metrics:
-            for key, values in metrics.items():
-                self.metrics[key] = values
-            logger.info(f"✓ Loaded {len(self.metrics.get('iteration', []))} iterations of metrics from checkpoint\n")
+
+        graphs_dir = self.current_model_dir / "graphs"
+        GraphsUtils.plot_metrics(graphs_dir, view, self.config.common.eval_graph_split, plot_memory=plot_memory)
+        logger.info(f"\n\n📊 Graphs saved to: {graphs_dir}\n\n")
 
     def _run_training_loop(self) -> None:
         while True:
@@ -201,12 +189,7 @@ class Trainer:
         if self._memory_sampler is not None:
             self._collect_memory_metrics(step_metrics)
 
-        # Placeholder (all-None) eval buckets for this iteration; a completed
-        # EvalResult backfills them later via `_merge_eval_result`.
-        self._collect_eval_metrics({}, step_metrics)
-
-        self.metrics["iteration"].append(current_iteration)
-        self._update_metrics(step_metrics)
+        self._metrics_store.record_step(current_iteration, step_metrics)
 
         if self.reporter is not None:
             self.reporter.on_step(current_iteration, step_metrics)
@@ -256,27 +239,22 @@ class Trainer:
             self._evals_in_flight -= 1
 
     def _merge_eval_result(self, result: EvalResult) -> None:
-        """Backfill a completed eval into its iteration's metrics slot (appended
-        as a placeholder back in `_process_step`), then log, report, and
-        checkpoint whatever that result unblocks."""
-        idx = self.metrics["iteration"].index(result.iteration)
-        label_to_type = self.evaluator.label_to_type_map()
+        """Persist a completed eval into the metrics store, then log, report,
+        and run the checkpoint hook it unblocks."""
         for label, game_result in result.results.items():
             if game_result is None:
                 continue
-            bucket = self.metrics["evaluations"][label_to_type[label]][label]
             for position, side in (("as_p0", game_result.as_p0), ("as_p1", game_result.as_p1)):
                 if side is None:
                     continue
-                bucket[position]["wins"][idx] = side.wins
-                bucket[position]["losses"][idx] = side.losses
-                bucket[position]["draws"][idx] = side.draws
+                self._metrics_store.record_eval(
+                    result.iteration, label, position, side.wins, side.losses, side.draws
+                )
                 if self.reporter is not None:
                     for report in side.reports:
                         self.reporter.add_game_report(result.iteration, label, position, report)
 
-        wandb_metrics: dict[str, Any] = {}
-        eval_str = self._collect_eval_metrics(result.results, wandb_metrics)
+        eval_str = self._format_eval_results(result.results)
         if eval_str:
             logger.info("\n")
             logger.info("  ┌─ Eval Results ───────────────────────────────")
@@ -285,10 +263,9 @@ class Trainer:
             logger.info("")
 
         if self._wandb_enabled:
-            WandbUtils.log_evaluations(wandb_metrics, result.iteration)
+            WandbUtils.log_evaluations(self._build_eval_wandb_metrics(result.results), result.iteration)
 
         if result.checkpoint_path is not None:
-            self._save_trainer_checkpoint(result.checkpoint_path, result.iteration)
             self.backend.on_checkpoint_saved(self.current_model_dir, result.iteration)
 
     def _flush_deferred_snapshots(self) -> None:
@@ -297,7 +274,8 @@ class Trainer:
         if self._evals_in_flight > 0 or not self._deferred_snapshots or self.reporter is None:
             return
         for iteration, model in self._deferred_snapshots:
-            self.reporter.emit_snapshot(iteration, self.metrics, model)
+            view = self._metrics_store.load_view(up_to=iteration, tail=self.reporter.sparkline_window)
+            self.reporter.emit_snapshot(iteration, view, model)
         self._deferred_snapshots = []
 
     def _graceful_shutdown(self) -> None:
@@ -336,13 +314,13 @@ class Trainer:
             self.reporter.on_shutdown()
         if self._wandb_enabled:
             WandbUtils.finish()
+        if self._metrics_store is not None:
+            self._metrics_store.close()
 
     def _save_final_checkpoint(self, iteration: int) -> None:
         if iteration < self._starting_iteration:
             return
-        final_path = self.backend.save_final_checkpoint(iteration)
-        if final_path is not None:
-            self._save_trainer_checkpoint(final_path, iteration)
+        self.backend.save_final_checkpoint(iteration)
 
     def _setup_model_dir(self, model_dir: Path) -> None:
         model_dir.mkdir(parents=True, exist_ok=True)
@@ -367,26 +345,15 @@ class Trainer:
         )
         self.reporter.on_setup(starting_iteration=starting_iteration)
 
-    def _init_metrics(self) -> None:
-        evaluations: dict[str, dict[str, Any]] = {"training": {}, "checkpoint": {}}
-        for label, label_type in self.evaluator.label_to_type_map().items():
-            evaluations[label_type][label] = {
-                "as_p0": {"wins": [], "losses": [], "draws": []},
-                "as_p1": {"wins": [], "losses": [], "draws": []},
-            }
-        self.metrics = {
-            "iteration": [],
-            "evaluations": evaluations,
-            "weight_max": [],
-            "weight_min": [],
-            "weight_avg": [],
-        }
-        if self.config.common.plot_memory:
-            self.metrics["memory"] = {
-                "main_pss_mb": [],
-                "workers_pss_mb": [],
-                "total_pss_mb": [],
-            }
+    def _setup_metrics_store(self, resume: bool, truncate_to: Optional[int]) -> None:
+        if self.current_model_dir is None:
+            raise RuntimeError("Model directory must be set before wiring the metrics store.")
+        self._metrics_store = MetricsStore(
+            metrics_dir=self.current_model_dir / "metrics",
+            label_types=self.evaluator.label_to_type_map(),
+            resume=resume,
+            truncate_to=truncate_to,
+        )
 
     def _collect_memory_metrics(self, step_metrics: dict[str, Any]) -> None:
         sample = self._memory_sampler.sample()
@@ -396,87 +363,54 @@ class Trainer:
             "total_pss_mb": sample.total_pss_mb,
         }
 
-    def _update_metrics(self, step_metrics: dict[str, Any]) -> None:
-        target_len = len(self.metrics["iteration"])
-        self._update_into(self.metrics, step_metrics, target_len)
-        self._align_metrics(self.metrics, target_len)
-
-    def _update_into(self, target: dict[str, Any], source: dict[str, Any], target_len: int) -> None:
-        '''
-        Append source values into target (recursing into nested dicts).
-        '''
-        for key, value in source.items():
-            if isinstance(value, dict):
-                self._update_into(target.setdefault(key, {}), value, target_len)
-            else:
-                self._append_to_series(target.setdefault(key, []), value, target_len)
-
-    def _align_metrics(self, metrics: dict, target_len: int) -> None:
-        '''
-        Append None to all metrics that are shorter than the number of interations
-        '''
-        for key, value in metrics.items():
-            if key == "iteration":
-                continue
-            if isinstance(value, list):
-                self._pad_series_to_len(value, target_len)
-            elif isinstance(value, dict):
-                self._align_metrics(value, target_len)
-
-
-    def _append_to_series(self, series: list, value: Any, target_len: int) -> None:
-        deficit = target_len - 1 - len(series)
-        # front-pad with None - This series didnt cover past iterations
-        if deficit > 0:
-            series[:0] = [None] * deficit
-        series.append(value)
-
-    def _pad_series_to_len(self, series: list, target_len: int) -> None:
-        deficit = target_len - len(series)
-        if deficit > 0:
-            series.extend([None] * deficit)
-
     def _collect_weight_metrics(self, step_metrics: dict[str, Any]) -> None:
         parameters = self.backend.get_weight_parameters()
         if parameters is None:
             return
-        all_params = []
-        for p in parameters:
-            all_params.append(p.data.cpu().numpy().ravel())
-        if not all_params:
+        max_abs = 0.0
+        min_abs = float("inf")
+        abs_sum = 0.0
+        count = 0
+        for parameter in parameters:
+            abs_values = parameter.data.abs()
+            numel = abs_values.numel()
+            if numel == 0:
+                continue
+            max_abs = max(max_abs, abs_values.max().item())
+            min_abs = min(min_abs, abs_values.min().item())
+            abs_sum += abs_values.sum().item()
+            count += numel
+        if count == 0:
             step_metrics["weight_max"] = 0.0
             step_metrics["weight_min"] = 0.0
             step_metrics["weight_avg"] = 0.0
             return
-        all_weights = np.concatenate(all_params)
-        step_metrics["weight_max"] = float(np.max(np.abs(all_weights)))
-        step_metrics["weight_min"] = float(np.min(np.abs(all_weights)))
-        step_metrics["weight_avg"] = float(np.mean(np.abs(all_weights)))
+        step_metrics["weight_max"] = max_abs
+        step_metrics["weight_min"] = min_abs
+        step_metrics["weight_avg"] = abs_sum / count
 
-    def _collect_eval_metrics(self, results: dict[str, Optional[GameResults]], step_metrics: dict[str, Any]) -> str:
-        formatted: list[str] = []
-        eval_buckets: dict[str, dict[str, Any]] = {"training": {}, "checkpoint": {}}
-        label_to_type = self.evaluator.label_to_type_map()
-        for label in self.evaluator.labels():
-            result = results.get(label)
-            p0 = result.as_p0 if result is not None else None
-            p1 = result.as_p1 if result is not None else None
-            eval_buckets[label_to_type[label]][label] = {
-                "as_p0": {
-                    "wins": p0.wins if p0 else None,
-                    "losses": p0.losses if p0 else None,
-                    "draws": p0.draws if p0 else None,
-                },
-                "as_p1": {
-                    "wins": p1.wins if p1 else None,
-                    "losses": p1.losses if p1 else None,
-                    "draws": p1.draws if p1 else None,
-                },
-            }
-            if result is not None:
-                formatted.append(self._format_eval_line(label, result))
-        step_metrics["evaluations"] = eval_buckets
+    def _format_eval_results(self, results: dict[str, Optional[GameResults]]) -> str:
+        formatted = [
+            self._format_eval_line(label, result)
+            for label, result in results.items()
+            if result is not None
+        ]
         return "\n".join(formatted)
+
+    def _build_eval_wandb_metrics(self, results: dict[str, Optional[GameResults]]) -> dict[str, Any]:
+        """Build the nested ``evaluations/...`` payload logged to wandb, holding
+        only the labels present in `results`."""
+        label_to_type = self.evaluator.label_to_type_map()
+        buckets: dict[str, dict[str, Any]] = {"training": {}, "checkpoint": {}}
+        for label, result in results.items():
+            if result is None:
+                continue
+            buckets[label_to_type[label]][label] = {
+                position: {"wins": side.wins, "losses": side.losses, "draws": side.draws}
+                for position, side in (("as_p0", result.as_p0), ("as_p1", result.as_p1))
+                if side is not None
+            }
+        return {"evaluations": buckets}
 
     def _clear_existing_model_dir(self, model_dir: Path, wait_seconds: int) -> None:
         red_color_tags = "\033[31m", "\033[0m"

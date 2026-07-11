@@ -7,6 +7,8 @@ from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Iterator, Optional
 
+import torch
+
 from l2l_lab._utils.checkpoint import CheckpointUtils
 from l2l_lab._utils.common import CommonUtils
 
@@ -35,6 +37,7 @@ class AlgorithmBackend(ABC):
         self._training_thread: Optional[threading.Thread] = None
         self._checkpoint_interval: int = 0
         self._checkpoint_base_dir: Optional[Path] = None
+        self._network_template_path: Optional[Path] = None
         self._snapshot_intervals: list[int] = []
         self._starting_iteration: int = 0
         self._total_iterations: int = 0
@@ -131,6 +134,9 @@ class AlgorithmBackend(ABC):
         self._checkpoint_interval = checkpoint_interval
         self._checkpoint_base_dir = base_dir
         self._snapshot_intervals = sorted({checkpoint_interval, report_interval, *eval_intervals})
+        if checkpoint_interval > 0:
+            self._network_template_path = base_dir / "network_template.pkl"
+            self._write_network_template(self._network_template_path)
 
     def request_stop(self) -> None:
         """Signal the training thread to stop after the current step."""
@@ -210,6 +216,12 @@ class AlgorithmBackend(ABC):
         model_copy = deepcopy(self._get_live_model()).cpu()
         model_copy.eval()
         return model_copy
+
+    def _write_network_template(self, dest: Path) -> None:
+        """Pickle the current model to `dest` as the architecture template that
+        every checkpoint copies into its ``base_class.pkl``."""
+        model = self._get_live_model()
+        CheckpointUtils.atomic_write(dest, lambda temp_path: torch.save(model, temp_path))
 
     def _log_network_summary(self) -> None:
         model = self._get_live_model()

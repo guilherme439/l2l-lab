@@ -11,19 +11,19 @@ def test_alphazero_resnet_trains(clean_test_model_dirs) -> None:
     trainer = Trainer(os.path.join(CONFIG_DIR, "alphazero_resnet_tictactoe.yml"))
     trainer.train()
     assert_run_completed(trainer)
-    assert_eval_results(trainer.metrics, "training")
-    assert_eval_results(trainer.metrics, "checkpoint")
+    assert_eval_results(trainer.load_metrics(), "training")
+    assert_eval_results(trainer.load_metrics(), "checkpoint")
 
 
 def test_alphazero_snnet_resumes(clean_test_model_dirs) -> None:
     """AlphaZero + SNNet with epochs/SGD resumes from a checkpoint, with policy evals."""
     initial = Trainer(os.path.join(CONFIG_DIR, "alphazero_snnet_resume_init.yml"))
     initial.train()
-    initial_iterations = list(initial.metrics["iteration"])
+    initial_iterations = list(initial.load_metrics().scalars["iteration"])
 
     resumed = Trainer(os.path.join(CONFIG_DIR, "alphazero_snnet_resume_continue.yml"))
     resumed.train()
-    resumed_iterations = list(resumed.metrics["iteration"])
+    resumed_iterations = list(resumed.load_metrics().scalars["iteration"])
 
     assert len(resumed_iterations) > len(initial_iterations), (
         f"resume did not extend training: initial={initial_iterations}, resumed={resumed_iterations}"
@@ -31,7 +31,7 @@ def test_alphazero_snnet_resumes(clean_test_model_dirs) -> None:
     assert resumed_iterations[-1] > initial_iterations[-1], (
         f"resume did not progress past the initial run: initial={initial_iterations}, resumed={resumed_iterations}"
     )
-    assert_eval_results(resumed.metrics, "training")
+    assert_eval_results(resumed.load_metrics(), "training")
 
 
 def test_alphazero_snnet_rewinds(monkeypatch, clean_test_model_dirs) -> None:
@@ -42,7 +42,7 @@ def test_alphazero_snnet_rewinds(monkeypatch, clean_test_model_dirs) -> None:
 
     initial = Trainer(os.path.join(CONFIG_DIR, "alphazero_snnet_rewind_init.yml"))
     initial.train()
-    initial_iterations = list(initial.metrics["iteration"])
+    initial_iterations = list(initial.load_metrics().scalars["iteration"])
     initial_checkpoints = checkpoint_iterations(run_name)
     assert any(iteration > rewind_to for iteration in initial_checkpoints), (
         f"initial run needs a checkpoint past {rewind_to} to exercise rewind: {sorted(initial_checkpoints)}"
@@ -50,7 +50,7 @@ def test_alphazero_snnet_rewinds(monkeypatch, clean_test_model_dirs) -> None:
 
     rewound = Trainer(os.path.join(CONFIG_DIR, "alphazero_snnet_rewind_continue.yml"))
     rewound.train()
-    rewound_iterations = list(rewound.metrics["iteration"])
+    rewound_iterations = list(rewound.load_metrics().scalars["iteration"])
 
     assert rewound_iterations == list(range(len(rewound_iterations))), (
         f"rewound metrics are not contiguous from 0: {rewound_iterations}"
