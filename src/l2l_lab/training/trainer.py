@@ -176,8 +176,7 @@ class Trainer:
 
     def _process_step(self, step_result: StepResult) -> None:
         """Record a finished step's metrics and, if evals or a reporting
-        snapshot are due, hand them off to the eval/reporter workers. Never
-        blocks on game play, file I/O, or probe inference."""
+        snapshot are due, hand them off to the eval/reporter workers."""
         cfg = self.config
         current_iteration = step_result.iteration
         iterations_completed = current_iteration + 1

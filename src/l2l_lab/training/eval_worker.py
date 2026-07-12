@@ -77,14 +77,11 @@ class EvalWorker:
                 self._requests.task_done()
 
     def _safe_process(self, request: EvalRequest) -> EvalResult:
-        """Run a request's evals, converting any failure into an empty result.
+        """
+        Run a request's evals, converting any failure into an empty result.
 
         A failed eval must still yield exactly one `EvalResult` (so the caller's
-        in-flight accounting and `wait_for_idle` stay correct) and must not kill
-        the worker thread. Evaluations are diagnostic, so a failure is logged and
-        training continues; the iteration's eval slots simply stay empty. When
-        the request carried a checkpoint, its path rides back so the caller still
-        does the checkpoint bookkeeping.
+        in-flight accounting and `wait_for_idle` stay correct) and must not kill the worker thread. 
         """
         try:
             return self._process(request)
