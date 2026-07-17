@@ -73,17 +73,12 @@ def build_multi_policy_spec(
     return MultiRLModuleSpec(rl_module_specs=specs)
 
 
-def load_checkpoint_weights_into_policy(algo, policy_name: str, checkpoint_path: Path):
-    if not checkpoint_path.exists():
-        logger.warning(f"Warning: Checkpoint not found: {checkpoint_path}")
+def load_checkpoint_weights_into_policy(algo, policy_name: str, weights_path: Path):
+    if not weights_path.exists():
+        logger.warning(f"Warning: Checkpoint weights not found: {weights_path}")
         return False
     
-    checkpoint = CheckpointUtils.load_checkpoint_file(checkpoint_path)
-    backbone_state_dict = checkpoint.get("backbone_state_dict")
-    
-    if backbone_state_dict is None:
-        logger.warning(f"Warning: No backbone_state_dict in checkpoint: {checkpoint_path}")
-        return False
+    backbone_state_dict = CheckpointUtils.load_checkpoint_file(weights_path)
     
     try:
         rl_module = algo.get_module(policy_name)

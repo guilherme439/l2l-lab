@@ -1,5 +1,4 @@
 import math
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator, Optional, override
 
@@ -11,7 +10,6 @@ from gymnasium.spaces.utils import flatdim
 from l2l_lab._utils.checkpoint import CheckpointUtils
 from l2l_lab._utils.common import CommonUtils
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
-from l2l_lab.backends.checkpoint_writer import CheckpointWriter
 from l2l_lab.backends.obs_utils import make_wrapper, obs_to_state_provider
 from l2l_lab.configs.training.network import MLPNetConfig, SNNetConfig
 from l2l_lab.envs.registry import create_env
@@ -24,23 +22,6 @@ if TYPE_CHECKING:
     from l2l_lab.configs.training.training_config import TrainingConfig
 
 
-class _CheckpointWriter(CheckpointWriter):
-
-    def __init__(self, backend: AlphaZooBackend) -> None:
-        self._backend = backend
-        super().__init__()
-
-    @override
-    def write(self, snapshot: dict[str, Any], path: Path) -> None:
-        az = self._backend._alphazoo
-        az.save(path, save_model=False)
-
-        model_dir = path / "model"
-        model_dir.mkdir(exist_ok=True)
-        CheckpointUtils.atomic_write(model_dir / "weights.cp", lambda temp_path: torch.save(az.get_model_state_dict(), temp_path))
-        CheckpointUtils.atomic_write(model_dir / "base_class.pkl", lambda temp_path: shutil.copyfile(self._backend._network_template_path, temp_path))
-
-
 class AlphaZooBackend(AlgorithmBackend):
 
     def __init__(self):
@@ -51,7 +32,6 @@ class AlphaZooBackend(AlgorithmBackend):
         self._obs_to_state = None
         self._game = None
         self._az_config: Optional[AlphaZooConfig] = None
-        self._writer = _CheckpointWriter(self)
 
     @property
     @override
@@ -73,7 +53,6 @@ class AlphaZooBackend(AlgorithmBackend):
     def shutdown(self) -> None:
         import ray
 
-        self._writer.stop()
         if ray.is_initialized():
             ray.shutdown()
 
@@ -111,14 +90,14 @@ class AlphaZooBackend(AlgorithmBackend):
 
     @override
     def load_checkpoint(self, checkpoint_dir: Path) -> None:
-        weights_path = checkpoint_dir / "model" / "weights.cp"
+        weights_path = checkpoint_dir / "weights.pt"
         model_state_dict = CheckpointUtils.load_checkpoint_file(weights_path)
         CheckpointUtils.load_model_state_dict(self._model, model_state_dict)
         logger.info(f"\n✓ Model weights restored from {weights_path}")
 
         backend_cfg = self._config.backend
         self._alphazoo = AlphaZoo.from_checkpoint(
-            checkpoint_dir,
+            checkpoint_dir / "algo",
             env=self._game,
             config=self._az_config,
             model=self._model,
@@ -134,24 +113,13 @@ class AlphaZooBackend(AlgorithmBackend):
         logger.info(f"\n✓ AlphaZoo instance created successfully!")
 
     @override
-    def get_reporter_csv_keys(self) -> list[str]:
-        return [
-            "episode_len_mean",
-            "policy_loss",
-            "value_loss",
-            "combined_loss",
-            "learning_rate",
-        ]
-
-    @override
     def _get_live_model(self) -> nn.Module:
         return self._model
 
     @override
     def get_model_from_checkpoint(self, checkpoint_dir: Path) -> nn.Module:
-        model_dir = checkpoint_dir / "model"
-        model = torch.load(model_dir / "base_class.pkl", weights_only=False)
-        state_dict = CheckpointUtils.load_checkpoint_file(model_dir / "weights.cp")
+        model = torch.load(CheckpointUtils.get_network_template_path(checkpoint_dir), weights_only=False)
+        state_dict = CheckpointUtils.load_checkpoint_file(checkpoint_dir / "weights.pt")
         CheckpointUtils.load_model_state_dict(model, state_dict)
         model.eval()
         return model
@@ -164,15 +132,11 @@ class AlphaZooBackend(AlgorithmBackend):
     def save_final_checkpoint(self, iteration: int) -> Optional[Path]:
         if self._checkpoint_interval <= 0 or self._checkpoint_base_dir is None:
             return None
-        snapshot = self._checkpoint_payload()
         checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(iteration)
-        checkpoint_path.mkdir(exist_ok=True)
-        self._writer.write(snapshot, checkpoint_path)
+        # An abort can leave alphazoo's own step counter mid-step, past `iteration`,
+        # so the final save stamps the iteration explicitly.
+        self._write_checkpoint(checkpoint_path, iteration)
         return checkpoint_path
-
-    @override
-    def wait_for_pending_checkpoints(self) -> None:
-        self._writer.wait_for_idle()
 
     @override
     def train(self) -> None:
@@ -200,10 +164,11 @@ class AlphaZooBackend(AlgorithmBackend):
 
                 checkpoint_path: Optional[Path] = None
                 if CommonUtils.check_interval(iterations_completed, self._checkpoint_interval):
-                    snapshot = self._checkpoint_payload()
+                    logger.info(f"\nSaving {self.name} checkpoint for iteration {current_iteration}")
                     checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(current_iteration)
-                    checkpoint_path.mkdir(exist_ok=True)
-                    self._writer.enqueue(snapshot, checkpoint_path)
+                    # Written synchronously inside the step callback,
+                    # to garantee that the data saved is for this exact point in time.
+                    self._write_checkpoint(checkpoint_path)
 
                 eval_model = self._get_eval_model() if self._needs_snapshot(iterations_completed) else None
 
@@ -247,8 +212,11 @@ class AlphaZooBackend(AlgorithmBackend):
         total = self._config.backend.algorithm.total_iterations
         logger.info(f"\nIteration {iteration}/{total} finished | EpLen: {ep_len:6.1f}\n")
         
-    def _checkpoint_payload(self) -> dict[str, Any]:
-        return {}
+    def _write_checkpoint(self, path: Path, iteration: Optional[int] = None) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        az = self._alphazoo
+        az.save(path / "algo", save_model=False, iteration=iteration)
+        CheckpointUtils.atomic_write(path / "weights.pt", lambda temp_path: torch.save(az.get_model_state_dict(), temp_path))
 
     def _initialize_lazy_params(self, state_shape) -> None:
         with torch.no_grad():

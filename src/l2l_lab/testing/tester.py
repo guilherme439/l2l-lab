@@ -229,9 +229,8 @@ class Tester:
                 raise ValueError(f"Unknown agent config type: {type(agent_config)}")
 
     def _create_backbone(self, checkpoint_dir: Path) -> torch.nn.Module:
-        model_dir = checkpoint_dir / "model"
-        backbone = torch.load(model_dir / "base_class.pkl", weights_only=False)
-        state_dict = CheckpointUtils.load_checkpoint_file(model_dir / "weights.cp")
+        backbone = torch.load(CheckpointUtils.get_network_template_path(checkpoint_dir), weights_only=False)
+        state_dict = CheckpointUtils.load_checkpoint_file(checkpoint_dir / "weights.pt")
         CheckpointUtils.load_model_state_dict(backbone, state_dict)
         backbone.eval()
         return backbone

@@ -1,5 +1,3 @@
-import shutil
-from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator, Optional, override
 
@@ -11,7 +9,6 @@ from ray.tune.registry import register_env
 from l2l_lab._utils.checkpoint import CheckpointUtils
 from l2l_lab._utils.common import CommonUtils
 from l2l_lab.backends.backend_base import AlgorithmBackend, StepResult
-from l2l_lab.backends.checkpoint_writer import CheckpointWriter
 from l2l_lab.envs.registry import create_env
 import logging
 
@@ -20,21 +17,6 @@ logger = logging.getLogger("l2l_lab")
 if TYPE_CHECKING:
     from l2l_lab.configs.training.training_config import TrainingConfig
     from l2l_lab.rllib.algorithms.base import BaseAlgorithmTrainer
-
-
-class _CheckpointWriter(CheckpointWriter):
-
-    def __init__(self, backend: RLlibBackend) -> None:
-        self._backend = backend
-        super().__init__()
-
-    @override
-    def write(self, snapshot: dict[str, Any], path: Path) -> None:
-        model_dir = path / "model"
-        model_dir.mkdir(exist_ok=True)
-        CheckpointUtils.atomic_write(model_dir / "weights.cp", lambda temp_path: torch.save(snapshot["model_state_dict"], temp_path))
-        CheckpointUtils.atomic_write(model_dir / "base_class.pkl", lambda temp_path: shutil.copyfile(self._backend._network_template_path, temp_path))
-        self._backend.algo.save_to_path(str((path / "algo").absolute()))
 
 
 class RLlibBackend(AlgorithmBackend):
@@ -46,7 +28,6 @@ class RLlibBackend(AlgorithmBackend):
         self._config: Optional[TrainingConfig] = None
         self._input_shape: Optional[tuple] = None
         self._num_actions: Optional[int] = None
-        self._writer = _CheckpointWriter(self)
 
     @property
     @override
@@ -73,7 +54,6 @@ class RLlibBackend(AlgorithmBackend):
     
     @override
     def shutdown(self) -> None:
-        self._writer.stop()
         if self.algo is not None:
             self.algo.stop()
         import ray
@@ -130,9 +110,8 @@ class RLlibBackend(AlgorithmBackend):
 
     @override
     def get_model_from_checkpoint(self, checkpoint_dir: Path) -> nn.Module:
-        model_dir = checkpoint_dir / "model"
-        backbone = torch.load(model_dir / "base_class.pkl", weights_only=False)
-        state_dict = CheckpointUtils.load_checkpoint_file(model_dir / "weights.cp")
+        backbone = torch.load(CheckpointUtils.get_network_template_path(checkpoint_dir), weights_only=False)
+        state_dict = CheckpointUtils.load_checkpoint_file(checkpoint_dir / "weights.pt")
         CheckpointUtils.load_model_state_dict(backbone, state_dict)
         backbone.eval()
         return backbone
@@ -146,33 +125,13 @@ class RLlibBackend(AlgorithmBackend):
     def save_final_checkpoint(self, iteration: int) -> Optional[Path]:
         if self._checkpoint_interval <= 0 or self._checkpoint_base_dir is None:
             return None
-        snapshot = self._capture_snapshot()
         checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(iteration)
-        checkpoint_path.mkdir(exist_ok=True)
-        self._writer.write(snapshot, checkpoint_path)
+        self._write_checkpoint(checkpoint_path)
         return checkpoint_path
-
-    @override
-    def wait_for_pending_checkpoints(self) -> None:
-        self._writer.wait_for_idle()
 
     @override
     def on_checkpoint_saved(self, model_dir: Path, iteration: int) -> None:
         self.algo_trainer.update_opponent_policies(model_dir, iteration)
-
-    @override
-    def get_reporter_csv_keys(self) -> list[str]:
-        return [
-            "episode_len_mean",
-            "episode_reward_mean",
-            "total_loss",
-            "policy_loss",
-            "vf_loss",
-            "entropy",
-            "kl_divergence",
-            "vf_explained_var",
-            "learning_rate",
-        ]
 
     @override
     def train(self) -> None:
@@ -192,10 +151,10 @@ class RLlibBackend(AlgorithmBackend):
                 checkpoint_path: Optional[Path] = None
                 if CommonUtils.check_interval(iterations_completed, self._checkpoint_interval):
                     logger.info(f"\nSaving {self.name} checkpoint for iteration {current_iteration}")
-                    snapshot = self._capture_snapshot()
                     checkpoint_path = self._checkpoint_base_dir / "checkpoints" / str(current_iteration)
-                    checkpoint_path.mkdir(exist_ok=True)
-                    self._writer.enqueue(snapshot, checkpoint_path)
+                    # Written synchronously inside the step callback,
+                    # to garantee that the data saved is for this exact point in time.
+                    self._write_checkpoint(checkpoint_path)
 
                 eval_model = self._get_eval_model() if self._needs_snapshot(iterations_completed) else None
 
@@ -208,8 +167,10 @@ class RLlibBackend(AlgorithmBackend):
         finally:
             self.step_queue.put(None)
 
-    def _capture_snapshot(self) -> dict[str, Any]:
-        return {"model_state_dict": deepcopy(self._get_backbone().state_dict())}
+    def _write_checkpoint(self, path: Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        CheckpointUtils.atomic_write(path / "weights.pt", lambda temp_path: torch.save(self._get_backbone().state_dict(), temp_path))
+        self.algo.save_to_path(str((path / "algo").absolute()))
 
     def _get_backbone(self) -> nn.Module:
         return self.algo.get_module(self._get_policy_name()).backbone

@@ -73,6 +73,11 @@ class CheckpointUtils:
         model.load_state_dict(state_dict, strict=False)
 
     @staticmethod
+    def get_network_template_path(checkpoint_dir: Path) -> Path:
+        """Run-level architecture pickle for a ``models/{name}/checkpoints/{N}`` directory."""
+        return checkpoint_dir.parent.parent / "network_template.pkl"
+
+    @staticmethod
     def list_checkpoint_iterations(model_dir: Path) -> list[int]:
         """Return the iteration numbers of all checkpoint directories, sorted ascending."""
         checkpoints_dir = model_dir / "checkpoints"

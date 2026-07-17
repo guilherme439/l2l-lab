@@ -179,11 +179,11 @@ class PPOTrainer(BaseAlgorithmTrainer):
         
         for slot_idx, cp_iter in enumerate(recent):
             policy_name = f"checkpoint_{slot_idx}"
-            cp_path = model_dir / "checkpoints" / str(cp_iter) / "training" / "data.pt"
+            weights_path = model_dir / "checkpoints" / str(cp_iter) / "weights.pt"
             
             try:
                 if self.algo is not None:
-                    load_checkpoint_weights_into_policy(self.algo, policy_name, cp_path)
+                    load_checkpoint_weights_into_policy(self.algo, policy_name, weights_path)
             except Exception as e:
                 logger.warning(f"Warning: Could not load checkpoint {cp_iter} into {policy_name}: {e}")
         

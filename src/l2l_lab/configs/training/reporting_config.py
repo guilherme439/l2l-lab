@@ -6,8 +6,8 @@ class ReportingConfig:
     """Diagnostic reporting knobs.
 
     When ``enabled`` is False, the Reporter becomes a no-op and no files are
-    written. When enabled, per-iteration scalars stream to a CSV and a heavy
-    Markdown snapshot is emitted every ``interval`` iterations.
+    written. When enabled, a heavy Markdown snapshot is emitted every
+    ``interval`` iterations.
     """
     enabled: bool = False
     interval: int = 100

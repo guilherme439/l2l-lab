@@ -11,7 +11,6 @@ logger = logging.getLogger("l2l_lab")
 if TYPE_CHECKING:
     from torch import nn
 
-    from l2l_lab.backends.backend_base import AlgorithmBackend
     from l2l_lab.testing.tester import GameResults
     from l2l_lab.training.evaluator import Evaluator
 
@@ -37,9 +36,8 @@ class EvalWorker:
     so results are completed in iteration order.
     """
 
-    def __init__(self, evaluator: Evaluator, backend: AlgorithmBackend) -> None:
+    def __init__(self, evaluator: Evaluator) -> None:
         self._evaluator = evaluator
-        self._backend = backend
         self._requests: Queue[Optional[EvalRequest]] = Queue()
         self._results: Queue[EvalResult] = Queue()
         self._thread = Thread(target=self._run, daemon=True)
@@ -92,9 +90,6 @@ class EvalWorker:
             return EvalResult(iteration=request.iteration, results={}, checkpoint_path=request.checkpoint_path)
 
     def _process(self, request: EvalRequest) -> EvalResult:
-        if request.checkpoint_path is not None:
-            self._backend.wait_for_pending_checkpoints()
-
         results = self._evaluator.run_training_evals(request.iteration, request.eval_model)
         if request.checkpoint_path is not None:
             checkpoint_results = self._evaluator.run_checkpoint_evals(

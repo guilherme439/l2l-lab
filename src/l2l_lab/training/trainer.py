@@ -130,7 +130,7 @@ class Trainer:
         self._evals_in_flight = 0
         self._deferred_snapshots: list[tuple[int, Optional[nn.Module]]] = []
         self._previous_checkpoint: Optional[Path] = None
-        self.eval_worker = EvalWorker(self.evaluator, self.backend)
+        self.eval_worker = EvalWorker(self.evaluator)
         self.backend.start_training()
 
         with ExceptionHandler(self._graceful_shutdown):
@@ -189,9 +189,6 @@ class Trainer:
             self._collect_memory_metrics(step_metrics)
 
         self._metrics_store.record_step(current_iteration, step_metrics)
-
-        if self.reporter is not None:
-            self.reporter.on_step(current_iteration, step_metrics)
 
         if self._wandb_enabled:
             WandbUtils.log(step_metrics, current_iteration)
@@ -340,7 +337,6 @@ class Trainer:
             config_path=self.config_path,
             reports_dir=reports_dir,
             resume=cfg.backend.continue_training,
-            csv_keys=self.backend.get_reporter_csv_keys(),
         )
         self.reporter.on_setup(starting_iteration=starting_iteration)
 

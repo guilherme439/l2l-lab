@@ -83,14 +83,9 @@ class AlgorithmBackend(ABC):
 
     @abstractmethod
     def save_final_checkpoint(self, iteration: int) -> Optional[Path]:
-        """Capture and write a final checkpoint synchronously. Called after the
-        training thread has been joined. Return the checkpoint directory, or
-        None if checkpointing is disabled."""
-        ...
-
-    @abstractmethod
-    def wait_for_pending_checkpoints(self) -> None:
-        """Block until queued checkpoint writes have been flushed to disk."""
+        """Write a final checkpoint. Called after the training thread has been
+        joined. Return the checkpoint directory, or None if checkpointing is
+        disabled."""
         ...
 
     @abstractmethod
@@ -102,11 +97,6 @@ class AlgorithmBackend(ABC):
         """Run the training loop on the training thread. Push StepResult to
         `step_queue` after each step; push None when done."""
         ...
-
-    def get_reporter_csv_keys(self) -> list[str]:
-        """Return the step_metrics keys this backend wants written to the
-        per-iteration CSV. Default is no CSV columns; override per backend."""
-        return []
 
     def on_checkpoint_saved(self, model_dir: Path, iteration: int) -> None:
         """Post-save hook. Called by `Trainer` right after a checkpoint lands
@@ -218,8 +208,8 @@ class AlgorithmBackend(ABC):
         return model_copy
 
     def _write_network_template(self, dest: Path) -> None:
-        """Pickle the current model to `dest` as the architecture template that
-        every checkpoint copies into its ``base_class.pkl``."""
+        """Pickle the current model to `dest` as the run's architecture template,
+        which loaders pair with each checkpoint's ``weights.pt``."""
         model = self._get_live_model()
         CheckpointUtils.atomic_write(dest, lambda temp_path: torch.save(model, temp_path))
 
