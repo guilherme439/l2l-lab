@@ -1,10 +1,12 @@
 """
 Adapted from the Deepthinking repository.
 """
+from typing import Optional
+
 import hexagdly
 import torch
 from alphazoo import AlphaZooRecurrentNet
-from torch import nn
+from torch import Tensor, nn
 
 from l2l_lab.configs.training.network import RecurrentNetConfig
 from l2l_lab.neural_networks.utils.builders import (build_policy_head,
@@ -77,7 +79,12 @@ class RecurrentNet(AlphaZooRecurrentNet):
             num_filters=self.num_filters
         )
 
-    def forward(self, x, iters_to_do, interim_thought=None, **kwargs):
+    def forward(
+        self,
+        x: Tensor,
+        iters_to_do: int,
+        interim_thought: Optional[Tensor] = None,
+    ) -> tuple[tuple[Tensor, Tensor], Tensor]:
         initial_thought = self.projection(x)
 
         if interim_thought is None:
